@@ -1,9 +1,15 @@
 //! Mutect's engine-free hard filters, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.7.0.0; every filter
+//! class here is unchanged since 4.6.2.0).
 //!
-//! Seven filters that read one INFO annotation and answer without consulting the filtering engine:
-//! `BaseQualityFilter`, `MappingQualityFilter`, `ReadPositionFilter`, `StrictStrandBiasFilter`,
-//! `FragmentLengthFilter`, `ClusteredEventsFilter` and `MultiallelicFilter`.
+//! Seven filters that read their INFO annotations and answer without consulting the filtering
+//! engine: `BaseQualityFilter`, `MappingQualityFilter`, `ReadPositionFilter`,
+//! `StrictStrandBiasFilter`, `FragmentLengthFilter`, `ClusteredEventsFilter` (which reads two,
+//! `ECNT` and `ECNTH`) and `MultiallelicFilter`. Four more hard filters live here too:
+//! `DuplicatedAltReadFilter`, `MinAlleleFractionFilter` and `PanelOfNormalsFilter`, which do not
+//! consult the engine either, and `NRatioFilter`, which does
+//! (`filteringEngine.sumADsOverSamples(vc, true, true)`) and so takes the summed depths from its
+//! caller.
 //!
 //! # Only a long insertion is judged by the reference's mapping quality
 //!
@@ -30,8 +36,8 @@
 //! ```
 //!
 //! The guard is the workaround, and it is why `MPOS = -1` passes a filter that a position of 2
-//! fails. `MPOS` also has no reference entry, unlike `MBQ` and `MMQ`, so this filter reads its whole
-//! list where the other two skip the first element.
+//! fails. `MPOS` also has no reference entry, unlike `MBQ` and `MMQ`, so this filter reads its
+//! whole list where the other two skip the first element.
 //!
 //! # The multiallelic threshold is in other units than the annotation
 //!
@@ -43,10 +49,21 @@
 //! # Four filters break four ways on a record with no annotations
 //!
 //! Nothing here guards the annotations: the guard is `requiredInfoAnnotations` one level up, in
-//! `Mutect2VariantFilter.errorProbabilities`. Called directly, the mapping-quality filter and the
-//! fragment-length filter each run off the end of an empty list, the clustered-events filter takes
-//! the maximum of nothing, and the multiallelic filter dereferences a null array. [`HardFilterError`]
-//! is those four, with the exceptions the reference throws.
+//! `Mutect2AlleleFilter.errorProbabilities` (mapping quality) and
+//! `Mutect2VariantFilter.errorProbabilities` (the other three). Called directly, the
+//! mapping-quality filter and the fragment-length filter each run off the end of an empty list, the
+//! clustered-events filter takes the maximum of nothing, and the multiallelic filter dereferences a
+//! null array. [`HardFilterError`] is those four, with the exceptions the reference throws.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[i32]` is a borrowed, read-only view of a Java `int[]` or `List<Integer>`; the caller keeps
+//!   it. `Option<&[i32]>` is that view or nothing, Java's nullable list.
+//! - `x as f64` converts an `int` to a `double`, exactly, as Java's implicit widening does when an
+//!   `Integer` is compared with a `double` threshold.
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception, and
+//!   `let Some(x) = y else { return Err(...) }` is "unwrap, or throw".
+//! - `.iter().skip(1).map(..).collect()` is Java's `stream().skip(1).map(..).collect(toList())`.
 
 /// What a hard filter does when the annotation it needs is not there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +77,7 @@ pub enum HardFilterError {
 }
 
 impl HardFilterError {
+    /// The fully qualified Java exception class.
     pub fn class(&self) -> &'static str {
         match self {
             HardFilterError::IndexOutOfBounds { .. } => "java.lang.IndexOutOfBoundsException",
@@ -68,6 +86,8 @@ impl HardFilterError {
         }
     }
 
+    /// The JVM's message for that exception: `List.get`'s bounds message, `OptionalInt`'s "No
+    /// value present", and the helpful `NullPointerException` text of `Arrays.stream(null)`.
     pub fn message(&self) -> String {
         match self {
             HardFilterError::IndexOutOfBounds { index, length } => {
@@ -82,6 +102,16 @@ impl HardFilterError {
 }
 
 /// `BaseQualityFilter`: `MBQ` carries the reference first, which is skipped.
+///
+/// ```java
+/// return vc.getAttributeAsIntList(GATKVCFConstants.MEDIAN_BASE_QUALITY_KEY, 0)
+///         .stream().skip(1)  // skip ref
+///         .map(qual -> qual < minMedianBaseQuality).collect(Collectors.toList());
+/// ```
+///
+/// (The first line is one line in the reference, wrapped here.)
+///
+/// An empty `MBQ` answers an empty list, as `skip(1)` on an empty stream does.
 pub fn base_quality_artifacts(median_base_qualities: &[i32], minimum: f64) -> Vec<bool> {
     median_base_qualities
         .iter()
@@ -100,6 +130,8 @@ pub fn mapping_quality_artifacts(
     minimum: f64,
     long_indel_size: i32,
 ) -> Result<Vec<bool>, HardFilterError> {
+    // `split_first` answers the first element and the rest, or `None` for an empty slice: the
+    // reference's `mappingQualityByAllele.remove(0)`, which also leaves the alternates behind.
     let Some((reference_quality, alternates)) = median_mapping_qualities.split_first() else {
         // `remove(0)` on an empty list.
         return Err(HardFilterError::IndexOutOfBounds {
@@ -108,9 +140,13 @@ pub fn mapping_quality_artifacts(
         });
     };
     let mut qualities: Vec<i32> = alternates.to_vec();
+    // `iter_mut` yields a writable reference to each element, so `*quality = ...` is
+    // `mappingQualityByAllele.set(i, refQual)`.
     for (index, quality) in qualities.iter_mut().enumerate() {
         if let Some(lengths) = indel_lengths {
-            // `>=`, against a length that is negative for every deletion.
+            // `>=`, against a length that is negative for every deletion. `.get(index)` answers
+            // `None` past the end where the reference's `indelLengths.get(i)` would throw, so an
+            // `MMQ` longer than the record's alternates is not refused here.
             if lengths
                 .get(index)
                 .is_some_and(|length| *length >= long_indel_size)
@@ -126,6 +162,9 @@ pub fn mapping_quality_artifacts(
 }
 
 /// `ReadPositionFilter`: `MPOS` has no reference entry, and `-1` is never an artifact.
+///
+/// The reference's `readPositionByAllele.subList(0, readPositionByAllele.size())` is the whole
+/// list, so nothing is skipped.
 pub fn read_position_artifacts(median_read_positions: &[i32], minimum: f64) -> Vec<bool> {
     median_read_positions
         .iter()
@@ -137,6 +176,17 @@ pub fn read_position_artifacts(median_read_positions: &[i32], minimum: f64) -> V
 ///
 /// The answer is **empty**, not a list of falses, when the filter is switched off or the strand
 /// table is missing or holds one entry, so a caller cannot assume one boolean per allele.
+///
+/// ```java
+/// if (minReadsOnEachStrand == 0 || sbs == null || sbs.isEmpty() || sbs.size() <= 1) {
+///     return Collections.emptyList();
+/// }
+/// ```
+///
+/// The test is `anyMatch(x -> x == 0)`: a zero count, not fewer than `minReadsOnEachStrand`, so
+/// the argument switches the filter on and off and is otherwise unused. The reference also strips
+/// symbolic entries from the table before this mapping; this function does not, and the caller
+/// in `filtering_engine` passes the table unstripped.
 pub fn strict_strand_artifacts(
     strand_counts_by_allele: &[Vec<i32>],
     minimum_reads_on_each_strand: i32,
@@ -151,6 +201,15 @@ pub fn strict_strand_artifacts(
 }
 
 /// `FragmentLengthFilter`: the first alternate alone, against the reference.
+///
+/// ```java
+/// return Math.abs(fragmentLengthByAllele.get(1) - fragmentLengthByAllele.get(0))
+///         > maxMedianFragmentLengthDifference;
+/// ```
+///
+/// (One line in the reference, wrapped here.)
+///
+/// `get(1)` is evaluated first, so a one-element list fails on index 1, as this does.
 pub fn fragment_length_is_artifact(
     median_fragment_lengths: &[i32],
     maximum_difference: f64,
@@ -166,6 +225,8 @@ pub fn fragment_length_is_artifact(
 }
 
 /// `ClusteredEventsFilter`: the worst haplotype, or the whole region.
+///
+/// `haplotype_event_counts` is `ECNTH`, one count per alternate; `region_event_count` is `ECNT`.
 pub fn clustered_events_is_artifact(
     haplotype_event_counts: &[i32],
     region_event_count: i32,
@@ -195,6 +256,8 @@ pub fn multiallelic_is_artifact(
     let Some(log_10_odds) = tumour_log_10_odds else {
         return Err(HardFilterError::NullArray);
     };
+    // `Arrays.stream(tumorLods).filter(lod -> lod > MULTIALLELIC_LOD_THRESHOLD).count()`, over
+    // the converted values.
     let passing = log_10_odds
         .iter()
         .map(|odds| crate::allele_likelihoods::log10_to_log(*odds))
@@ -224,6 +287,9 @@ pub const DEFAULT_MIN_AF: f64 = 0.0;
 /// alleles: the filter maps over the annotation and nothing compares the two. A four-element
 /// annotation on a two-alternate record answers four probabilities, and a one-element one answers
 /// one.
+///
+/// The reference reads `getAttributeAsIntList(UniqueAltReadCount.KEY, 1)`; the `1` is a default
+/// for a missing element of a present list, which this function never sees: it receives the list.
 pub fn duplicated_alt_read_artifacts(unique_alt_read_counts: &[i32], threshold: i32) -> Vec<bool> {
     unique_alt_read_counts
         .iter()
@@ -242,6 +308,9 @@ pub fn duplicated_alt_read_artifacts(unique_alt_read_counts: &[i32], threshold: 
 /// `requiredInfoAnnotations`. The comparison is `>=`, so a ratio exactly at the maximum is an
 /// artifact.
 pub fn n_ratio_is_artifact(allele_depths: &[i32], n_count: i32, max_n_ratio: f64) -> bool {
+    // `(int) MathUtils.sum(ADs)`: `sum(int[])` returns a `long`, which the cast truncates to an
+    // `int`. Summing in `i64` and then `as i32` is the same: `as` between integer types keeps the
+    // low 32 bits, as Java's narrowing cast does.
     let total: i32 = allele_depths.iter().map(|d| i64::from(*d)).sum::<i64>() as i32;
     let alt_count = total - allele_depths[0];
     if alt_count == 0 {
@@ -279,7 +348,7 @@ pub fn min_allele_fraction_artifacts(
         .collect()
 }
 
-/// `PanelOfNormalsFilter`: `vc.hasAttribute(PON)`.
+/// `PanelOfNormalsFilter`: `vc.hasAttribute(GATKVCFConstants.IN_PON_KEY)`.
 ///
 /// Presence, not value. A record annotated `PON=false` or `PON=""` is filtered exactly as one
 /// annotated `PON=true` is.
@@ -288,6 +357,9 @@ pub fn panel_of_normals_is_artifact(has_pon_attribute: bool) -> bool {
 }
 
 /// `HardFilter.calculateErrorProbability`: a hard filter answers one or zero.
+///
+/// `return isArtifact(vc, filteringEngine) ? 1 : 0;`, and `HardAlleleFilter` maps
+/// `value -> value ? 1.0 : 0.0` the same way over its list.
 pub fn error_probability(is_artifact: bool) -> f64 {
     if is_artifact {
         1.0

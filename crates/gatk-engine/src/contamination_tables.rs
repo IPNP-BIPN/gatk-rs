@@ -1,5 +1,6 @@
 //! `ContaminationRecord` and `MinorAlleleFractionRecord`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.contamination` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.contamination` (GATK 4.7.0.0; both files are
+//! unchanged since 4.6.2.0).
 //!
 //! The two tables `CalculateContamination` writes: the answer, and the segments of minor allele
 //! fraction it was computed over. Both sit on the same tsv layer as [`crate::pileup_summary`], and
@@ -22,6 +23,16 @@
 //! **record** is built, so the failure is `IllegalArgumentException: Invalid interval. Contig:chr1
 //! start:100 end:50` rather than the table's `BadInput`. A start of zero goes the same way, since
 //! the interval is one-based.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception, and `?` returns the
+//!   error to the caller at once; `impl From<TableError> for ContaminationTableError` is what lets
+//!   `?` wrap the tsv layer's refusal.
+//! - `Option<String>` is a string or nothing: the segments table's sample, `None` when the file has
+//!   no `SAMPLE` metadata line, as `getMetadata().get(...)` answers `null`.
+//! - The readers take the file's text and a `source` name for messages, where the reference opens
+//!   a `File`; the writers return the text rather than writing it.
 
 use crate::interval::SimpleInterval;
 use crate::pileup_summary::SAMPLE_METADATA_TAG;
@@ -32,7 +43,8 @@ pub const CONTAMINATION_COLUMNS: [&str; 3] = ["sample", "contamination", "error"
 /// The segments table's columns.
 pub const SEGMENT_COLUMNS: [&str; 4] = ["contig", "start", "end", "minor_allele_fraction"];
 
-/// One estimate: a sample, its contamination and the error on it.
+/// One estimate: a sample, its contamination and the error on it. `ContaminationRecord`'s three
+/// fields; the getters are the public fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContaminationRecord {
     pub sample: String,
@@ -40,7 +52,7 @@ pub struct ContaminationRecord {
     pub error: f64,
 }
 
-/// One segment and the minor allele fraction over it.
+/// One segment and the minor allele fraction over it: `MinorAlleleFractionRecord`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MinorAlleleFractionRecord {
     pub segment: SimpleInterval,
@@ -88,6 +100,8 @@ impl From<TableError> for ContaminationTableError {
 }
 
 /// `ContaminationRecord.writeToFile`: no metadata line, so the header is the first line.
+///
+/// Each double is `DataLine.set(name, double)`, which renders `Double.toString(value)`.
 pub fn write_contamination(records: &[ContaminationRecord]) -> String {
     let rows: Vec<Vec<String>> = records
         .iter()
@@ -103,6 +117,9 @@ pub fn write_contamination(records: &[ContaminationRecord]) -> String {
 }
 
 /// `ContaminationRecord.readFromFile`, which takes its columns by name and ignores any metadata.
+///
+/// The fields are read in `createRecord`'s order, sample, contamination, error, so a row bad in two
+/// columns is refused for the first.
 pub fn read_contamination(
     text: &str,
     source: &str,
@@ -110,6 +127,7 @@ pub fn read_contamination(
     let table = Table::parse(text, source)?;
     let mut records = Vec::with_capacity(table.rows.len());
     for (index, row) in table.rows.iter().enumerate() {
+        // The row's line number in the file, for the refusal's message.
         let line = table.row_lines[index];
         records.push(ContaminationRecord {
             sample: table.get(row, "sample")?.to_string(),
@@ -151,6 +169,8 @@ pub fn read_segments(
         let fraction = get_double(&table, row, "minor_allele_fraction", source, line)?;
         // The interval is what refuses a backwards or zero-based segment, once every column has
         // already been read.
+        // `SimpleInterval::new` answers `None` where the Java constructor throws; `.ok_or(e)` turns
+        // that into the error `e`.
         let segment = SimpleInterval::new(&contig, start, end).ok_or(
             ContaminationTableError::InvalidInterval {
                 contig: contig.clone(),
@@ -189,6 +209,12 @@ fn get_double(
     })
 }
 
+/// `Double.parseDouble` for the spellings `Double.toString` writes.
+///
+/// The three special values are matched by their Java spelling first. Every other string goes to
+/// Rust's `parse::<f64>`, which is not `parseDouble`: Rust also accepts `inf`, `infinity` and `nan`
+/// in any case, and refuses what Java accepts (surrounding whitespace, a trailing `d` or `f`, a
+/// hexadecimal literal). The two agree on the decimal and scientific forms `Double.toString` emits.
 fn parse_java_double(value: &str) -> Option<f64> {
     match value {
         "NaN" => Some(f64::NAN),

@@ -1,6 +1,7 @@
 //! `Mutect2AlleleFilter` and `Mutect2Filter`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.6.2.0), with
-//! `TumorEvidenceFilter` on top of them.
+//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.7.0.0;
+//! `Mutect2AlleleFilter.java`, `Mutect2Filter.java` and `TumorEvidenceFilter.java` are unchanged
+//! since 4.6.2.0), with `TumorEvidenceFilter` on top of them.
 //!
 //! What every per-allele filter stands on: gather one value per allele across the samples, answer a
 //! probability per alternate allele, and refuse to answer at all when the record lacks what the
@@ -11,15 +12,15 @@
 //! ```java
 //! Iterator<T> alleleDataIterator = getData.apply(g).iterator();
 //! Iterator<List<T>> dataByAlleleIterator = dataByAllele.values().iterator();
-//! while (alleleDataIterator.hasNext() && dataByAlleleIterator.hasNext())
+//! while(alleleDataIterator.hasNext() && dataByAlleleIterator.hasNext())
 //!     dataByAlleleIterator.next().add(alleleDataIterator.next());
 //! ```
 //!
 //! No exception and no padding. Two consequences the measurement pinned:
 //!
-//!  * **a short list shifts the gather rather than shortening one allele's list.** A genotype giving
-//!    `[1]` against three alleles contributes to the first allele alone, so a second sample's
-//!    `[4, 5, 6]` lands as `A=[1, 4]`, `C=[5]`, `G=[6]`;
+//!  * **a short list shifts the gather rather than shortening one allele's list.** A genotype
+//!    giving `[1]` against three alleles contributes to the first allele alone, so a second
+//!    sample's `[4, 5, 6]` lands as `A=[1, 4]`, `C=[5]`, `G=[6]`;
 //!  * **`getAltDataByAllele` does not skip the reference in the data.** Its map is keyed by the
 //!    alternate alleles alone, but the walk still starts at the caller's first element, so a caller
 //!    passing a full-length per-allele list gives the first alternate the *reference's* value and
@@ -30,6 +31,22 @@
 //! `errorProbabilities` checks that every required annotation is present and returns an **empty
 //! list** if one is not. `ErrorProbabilities` drops an empty list entirely rather than counting it
 //! as zero, so a filter that cannot be evaluated is not a filter that found nothing.
+//!
+//! The pins are rows of `allele_filter_base.txt.gz` (suite `allele-filter-base`):
+//! `byallele short-list C=[5]` and `altbyallele three-alleles-three-values C=[1, 4]` for the zip,
+//! `evidence no-tlod []` for the empty answer.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `<T: Clone>` is a generic parameter, Java's `<T>`, restricted to types that can be copied
+//!   with `.clone()`; `impl Fn(&GenotypeData<T>) -> bool` is any lambda of that shape, Java's
+//!   `Predicate<Genotype>`.
+//! - A `Vec<(String, Vec<T>)>` of pairs stands in for the `LinkedHashMap`: it keeps insertion
+//!   order, and a key is found by walking it.
+//! - `a.iter_mut().zip(b)` walks two sequences together and stops at the shorter, which is exactly
+//!   the reference's two-iterator `while` above.
+//! - `Result<T, E>` is "a value or an error"; `ok_or(e)?` turns a missing value into the error `e`
+//!   and returns it to the caller, Java's `throw` at that one site.
 
 use crate::allele_fraction_cluster::Datum;
 use crate::error_probabilities::ErrorType;
@@ -57,8 +74,8 @@ pub fn data_by_allele<T: Clone>(
     genotypes: &[GenotypeData<T>],
     precondition: impl Fn(&GenotypeData<T>) -> bool,
 ) -> Vec<(String, Vec<T>)> {
-    // `Collectors.toMap(identity, .., (a, b) -> a, LinkedHashMap::new)`: a repeated allele collapses
-    // to one key, and the first occurrence wins.
+    // `Collectors.toMap(identity, .., (a, b) -> a, LinkedHashMap::new)`: a repeated allele
+    // collapses to one key, and the first occurrence wins.
     let mut gathered: Vec<(String, Vec<T>)> = Vec::new();
     for allele in alleles {
         if !gathered.iter().any(|(key, _)| key == allele) {
@@ -71,8 +88,8 @@ pub fn data_by_allele<T: Clone>(
 
 /// `getAltDataByAllele`: one list per **alternate** allele.
 ///
-/// The caller is expected to supply alternate-only data. Nothing checks that: the walk starts at the
-/// first element either way.
+/// The caller is expected to supply alternate-only data. Nothing checks that: the walk starts at
+/// the first element either way.
 pub fn alt_data_by_allele<T: Clone>(
     alleles: &[String],
     genotypes: &[GenotypeData<T>],
@@ -113,8 +130,8 @@ impl AlleleDepthTooShort {
 
 /// `Mutect2FilteringEngine.sumADsOverSamples(vc, includeTumor, includeNormal)`.
 ///
-/// Every selected genotype is indexed by the **record's** allele count, so a genotype whose AD array
-/// is shorter is an out-of-bounds rather than a skip.
+/// Every selected genotype is indexed by the **record's** allele count, so a genotype whose AD
+/// array is shorter is an out-of-bounds rather than a skip.
 pub fn sum_ads_over_samples<T>(
     allele_count: usize,
     genotypes: &[GenotypeData<T>],
@@ -150,7 +167,8 @@ pub fn sum_ads_over_samples<T>(
 /// returns the lower half's element.
 pub fn weighted_median_posterior_probability(depths_and_posteriors: &mut [(i32, f64)]) -> f64 {
     let total_alt_depth: i32 = depths_and_posteriors.iter().map(|(depth, _)| depth).sum();
-    // `Comparator.comparingDouble`, a stable sort on the posterior alone.
+    // `Comparator.comparingDouble`, a stable sort on the posterior alone. `total_cmp` orders as
+    // `Double.compare` does on every value but a NaN with its sign bit set, which it puts first.
     depths_and_posteriors.sort_by(|a, b| a.1.total_cmp(&b.1));
     let mut cumulative = 0;
     for (depth, posterior) in depths_and_posteriors.iter() {
@@ -170,13 +188,24 @@ pub const TUMOR_EVIDENCE_ANNOTATION: &str = "SEQQ";
 
 /// `TumorEvidenceFilter.errorProbabilities(vc, engine, referenceContext)`.
 ///
-/// `tumor_log_odds` is `getTumorLogOdds(vc)`, already converted from log10, and `None` is the record
-/// that has no `TLOD` at all: the required-annotation check answers an empty list rather than a
-/// probability.
+/// `tumor_log_odds` is `getTumorLogOdds(vc)`, already converted from log10, and `None` is the
+/// record that has no `TLOD` at all: the required-annotation check answers an empty list rather
+/// than a probability.
 ///
 /// The `Datum` is built with **both** probabilities zero, so the filter reads the clustering model
-/// without contributing to it; and the list is as long as the log-odds, not as long as the alternate
-/// alleles, so a `TLOD` shorter than the record answers for the alleles it covers and no more.
+/// without contributing to it; and the list is as long as the log-odds, not as long as the
+/// alternate alleles, so a `TLOD` shorter than the record answers for the alleles it covers and no
+/// more.
+///
+/// ```java
+/// return IntStream.range(0, tumorLods.length).mapToObj(i ->
+/// ```
+///
+/// Two refusals of the reference are not refusals here. An AD array shorter than the record is
+/// `sumADsOverSamples`' `ArrayIndexOutOfBoundsException` in Java and an empty list (the filter
+/// not evaluated) below; and a clustering sum that is not finite, which is `logSumExp`'s
+/// exception in `NaturalLogUtils`, becomes `NaN` through `unwrap_or`. No golden row reaches
+/// either.
 pub fn tumor_evidence_error_probabilities<T>(
     model: &mut SomaticClusteringModel,
     tumor_log_odds: Option<&[f64]>,
@@ -184,6 +213,7 @@ pub fn tumor_evidence_error_probabilities<T>(
     alleles: &[AlternateAllele],
     reference_length: i32,
 ) -> Vec<f64> {
+    // `let Some(x) = y else { ... }`: unwrap the `Option`, or take the early exit.
     let Some(log_odds) = tumor_log_odds else {
         return Vec::new();
     };

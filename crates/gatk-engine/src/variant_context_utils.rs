@@ -1,4 +1,7 @@
-//! `GATKVariantContextUtils.leftAlignAndTrim`, ported from GATK 4.6.2.0.
+//! `GATKVariantContextUtils.leftAlignAndTrim`, ported from GATK 4.7.0.0
+//! (`GATKVariantContextUtils.java` is unchanged since 4.6.2.0), with the same class's
+//! `trimAlleles`, `splitVariantContextToBiallelics` and the pileup helpers
+//! `BasicSomaticShortMutationValidator` calls.
 //!
 //! The workhorse under `LeftAlignAndTrimVariants`: it slides an indel as far left as the reference
 //! lets it. [`crate::alignment_utils::normalize_alleles`] does the sliding; what is here is the
@@ -7,7 +10,8 @@
 //! # The window widens, and it can stop short without saying so
 //!
 //! ```java
-//! for (int leadingBases = Math.min(maxLeadingBases, 10); leadingBases <= maxLeadingBases; leadingBases = Math.min(2*leadingBases, maxLeadingBases)) {
+//! for(int leadingBases = Math.min(maxLeadingBases, 10); leadingBases <= maxLeadingBases;
+//!         leadingBases = Math.min(2*leadingBases, maxLeadingBases)) {
 //! ...
 //! } else if (shifts.getLeft() == variantOffsetInRef && leadingBases < maxLeadingBases) {
 //!     continue;
@@ -16,9 +20,12 @@
 //!
 //! Ten bases first, then twenty, then forty, until the shift stops landing on the edge of the
 //! slice. When the shift **does** land on the edge and the window is already at its maximum, the
-//! loop falls through and the partly-aligned record is returned: the same deletion comes out at 15
-//! with a window of 2, at 49 with 10, at 39 with 20, and at the start of its run with a wide
-//! enough one. Nothing in the record says which of those happened.
+//! loop falls through and the partly-aligned record is returned. In this file's tests, the `AA`
+//! deletion at 17 comes out at 15 with a window of 2 and at 10 with a wide one, and the `TT`
+//! deletion at 59 comes out at 49 with a window of 10, at 39 with 20, and at 30, the start of its
+//! run, with a wide enough one. Nothing in the record says which of those happened.
+//!
+//! (`GATKVariantContextUtils.java` line 2233 is wrapped above at a space.)
 //!
 //! # The window that ran out is not the same as the record that had nowhere to go
 //!
@@ -33,12 +40,33 @@
 //! A non-indel, a `maxLeadingBases` of zero or less, and a shift of zero all return the input
 //! itself. The first is a **type** test, so a MIXED site is never aligned; the second is what the
 //! caller produces for two adjacent variants, `min(maxLeadingBases, distanceToLastVariant - 1)`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of a `byte[]`; `&x[a..b]` is the sub-array from `a`
+//!   up to but not including `b`, Java's `Arrays.copyOfRange(x, a, b)` without the copy (and
+//!   `.to_vec()` makes the copy). An index out of range panics rather than throwing.
+//! - `x as usize` and `x as i32` are casts. `as usize` from a negative `i32` would wrap to a huge
+//!   index and then panic on the slice; the casts here are of positions and lengths the code
+//!   expects to be non-negative.
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//!   `Result<T, E>` is "a value or an error", `Ok(..)` the return and `Err(..)` the throw, and
+//!   `?` passes an `Err` straight to the caller.
+//! - `match` must cover every case, and `matches!(x, pattern)` is a one-line `match` answering
+//!   whether `x` fits the pattern.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect; `.enumerate()` pairs each item
+//!   with its index.
+//! - genotypes hold allele **indices** here (`Option<usize>`, `None` a no-call), not `Allele`
+//!   objects, so remapping an allele never touches them unless the list's order changes.
 
 use crate::alignment_utils::{normalize_alleles, AlignmentError, IndexRange};
 use crate::pileup::PileupElement;
 use crate::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
 
-/// One allele: its bases and whether it is the reference.
+/// One allele: its bases and whether it is the reference. htsjdk's `Allele`, without its no-call
+/// flag and its upper-casing.
+///
+/// The derived `==` compares the bases and the reference flag, as `Allele.equals` does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Allele {
     pub bases: Vec<u8>,
@@ -46,6 +74,7 @@ pub struct Allele {
 }
 
 impl Allele {
+    /// `Allele.create(bases, isRef)`, without htsjdk's checks on the bases.
     pub fn new(bases: &[u8], is_reference: bool) -> Allele {
         Allele {
             bases: bases.to_vec(),
@@ -53,6 +82,8 @@ impl Allele {
         }
     }
 
+    /// The number of bases. Unlike `Allele.length()`, which is 0 for a symbolic allele, this
+    /// counts the characters of `<DEL>` too.
     pub fn len(&self) -> usize {
         self.bases.len()
     }
@@ -64,12 +95,19 @@ impl Allele {
     /// `Allele.isSymbolic()`, as far as the trimmer needs it: `<DEL>` and its kind.
     ///
     /// htsjdk also calls a breakend symbolic; nothing measured here reaches one, and the trimmer
-    /// treats both the same way, which is to leave them alone.
+    /// treats both the same way, which is to leave them alone. htsjdk's own test is wider than
+    /// this one: `bases[0] == Allele.SYMBOLIC_ALLELE_START || bases[bases.length - 1] ==
+    /// Allele.SYMBOLIC_ALLELE_END` (either end, for two bases or more), plus the breakend forms.
     pub fn is_symbolic(&self) -> bool {
         self.bases.first() == Some(&b'<') && self.bases.last() == Some(&b'>')
     }
 
     /// `Allele.SPAN_DEL`, the `*` a record carries for a deletion that started earlier.
+    ///
+    /// The bases alone. `Allele.SPAN_DEL` is non-reference and `equals` compares the flag too,
+    /// but htsjdk refuses to build a reference `*` (`if (wouldBeStarAllele(bases)) return
+    /// !isReferenceAllele;` in `acceptableAlleleBases`), so for any allele htsjdk can hold the
+    /// two tests agree.
     pub fn is_span_del(&self) -> bool {
         self.bases == b"*"
     }
@@ -94,17 +132,26 @@ impl Variant {
     /// `isIndel()`: the type is INDEL only when every alternate differs from the reference in
     /// length in the same way. Two alternates of different types are MIXED, which is not an indel.
     ///
-    /// The same rule as [`crate::pileup_summary`]'s neighbours; it lives here because this is what
+    /// The same rule as `crate::pileup_summary`'s neighbours; it lives here because this is what
     /// decides whether the alignment runs at all.
+    ///
+    /// htsjdk types each alternate with `typeOfBiallelicVariant`: same length is SNP or MNP, a
+    /// different length is INDEL, and differing types are MIXED. With one reference length, every
+    /// same-length alternate has the same type, so the one bit kept here is enough. A symbolic
+    /// alternate is SYMBOLIC in htsjdk before any length is compared; here it is typed by its
+    /// length like any other.
     pub fn is_indel(&self) -> bool {
         if self.alleles.len() < 2 {
             return false;
         }
         let reference = &self.alleles[0];
+        // `None` until the first alternate fixes the type, as the reference's `type == null`.
         let mut kind: Option<bool> = None;
         for allele in &self.alleles[1..] {
             // An alternate is "indel-shaped" when its length differs from the reference's.
             let this = allele.len() != reference.len();
+            // The guard `if seen != this` makes the second arm the "different type" case:
+            // MIXED, which is not INDEL.
             match kind {
                 None => kind = Some(this),
                 Some(seen) if seen != this => return false,
@@ -166,7 +213,12 @@ pub fn left_align_and_trim_reporting(
     }
 
     let mut leading_bases = max_leading_bases.min(10);
+    // The reference's `for` never ends through its condition: `leadingBases` never exceeds
+    // `maxLeadingBases`, and every pass either returns or `continue`s with a smaller window than
+    // the maximum. So a `loop` with the same exits is the same control flow, and the reference's
+    // final `return vc;` after the loop has no counterpart.
     loop {
+        // `Math.max(vc.getStart() - leadingBases, 1)`: never before the contig's first base.
         let ref_start = (variant.start - leading_bases).max(1);
         // The slice the reference context would return: from `ref_start` to the variant's end.
         let slice = &reference_bases[(ref_start - 1) as usize..variant.stop as usize];
@@ -190,10 +242,13 @@ pub fn left_align_and_trim_reporting(
             .map(|allele| IndexRange::new(variant_offset + 1, variant_offset + allele.len() as i32))
             .collect();
 
+        // Views of the owned sequences, which is the shape `normalize_alleles` takes.
         let borrowed: Vec<&[u8]> = sequences
             .iter()
             .map(|sequence| sequence.as_slice())
             .collect();
+        // `&mut ranges` lends the ranges for writing: as in the reference, the call shifts them as
+        // a side effect.
         let (left, right) = normalize_alleles(&borrowed, &mut ranges, variant_offset, trim)?;
 
         if left == 0 && right == 0 {
@@ -219,6 +274,9 @@ pub fn left_align_and_trim_reporting(
             Alignment::Complete
         };
 
+        // `Arrays.copyOfRange(sequences.get(n), variantOffsetInRef - shifts.getLeft(),
+        // variantOffsetInRef - shifts.getRight() + vc.getAlleles().get(n).length())`, and
+        // `n == 0` is the reference flag.
         let alleles: Vec<Allele> = variant
             .alleles
             .iter()
@@ -237,6 +295,8 @@ pub fn left_align_and_trim_reporting(
                 stop: variant.stop - right,
                 // The reference builds this list from a HashMap's values, so the order is the
                 // map's. Rebuilding it in record order is what the golden shows, and all it shows.
+                // The genotypes keep their indices: the reference maps each genotype allele
+                // through the same map, falling back to a no-call for one it does not hold.
                 alleles,
                 genotypes: variant.genotypes.clone(),
                 attributes: variant.attributes.clone(),
@@ -250,6 +310,9 @@ pub fn left_align_and_trim_reporting(
 ///
 /// Left alignment slides base by base, so a record that can still move moves by at least one when
 /// it is given one more base. A record already at the start of the contig cannot be given one.
+///
+/// Not in the reference: this is the extra pass behind [`Alignment::WindowExhausted`], and it
+/// builds the sequences exactly as the main loop does, one base earlier.
 fn would_shift_further(
     variant: &Variant,
     reference_bases: &[u8],
@@ -289,10 +352,13 @@ fn would_shift_further(
 /// `trimAlleles(inputVC, trimForward, trimReverse)`: cut the bases every allele shares.
 ///
 /// ```java
-/// if ( inputVC.getNAlleles() <= 1 || inputVC.getAlleles().stream().anyMatch(a -> a.length() == 1 && !a.equals(Allele.SPAN_DEL)) ) {
+/// if ( inputVC.getNAlleles() <= 1 || inputVC.getAlleles().stream().anyMatch(a ->
+///         a.length() == 1 && !a.equals(Allele.SPAN_DEL)) ) {
 ///     return inputVC;
 /// }
 /// ```
+///
+/// (`GATKVariantContextUtils.java` line 1458, wrapped at a space.)
 ///
 /// **One allele of length one turns the whole thing off.** A record carrying a snp beside a
 /// deletion is never trimmed, however much its other alleles share. The spanning deletion is the
@@ -312,6 +378,8 @@ pub fn trim_alleles(
         return Ok(variant.clone());
     }
 
+    // Lines 1462 and 1463: the sequences and their full-length ranges, symbolic alleles and
+    // spanning deletions left out.
     let comparable: Vec<&Allele> = variant
         .alleles
         .iter()
@@ -349,6 +417,8 @@ pub fn trim_alleles(
         start_trim
     };
 
+    // `(trimForward ? startBasesToClip : 0) - 1`: the `- 1` applies to both branches, so "no
+    // forward trim" arrives as `-1`.
     trim_alleles_at(
         variant,
         if trim_forward { start_bases_to_clip } else { 0 } - 1,
@@ -369,6 +439,8 @@ pub fn trim_alleles_at(
         return Ok(variant.clone());
     }
 
+    // `Arrays.copyOfRange(a.getBases(), fwdTrimEnd+1, a.length()-revTrim)` for every allele but
+    // the symbolic ones and `*`, which are kept as they are.
     let alleles: Vec<Allele> = variant
         .alleles
         .iter()
@@ -409,24 +481,31 @@ pub fn trim_alleles_at(
 /// # One 1/2 call empties every record
 ///
 /// ```java
-/// final GenotypeAssignmentMethod genotypeAssignmentMethodUsed = hasHetNonRef(vc.getGenotypes()) ? GenotypeAssignmentMethod.SET_TO_NO_CALL_NO_ANNOTATIONS : genotypeAssignmentMethod;
+/// final GenotypeAssignmentMethod genotypeAssignmentMethodUsed = hasHetNonRef(vc.getGenotypes()) ?
+///     GenotypeAssignmentMethod.SET_TO_NO_CALL_NO_ANNOTATIONS : genotypeAssignmentMethod;
 /// ```
+///
+/// (`GATKVariantContextUtils.java` line 1726, wrapped at a space.)
 ///
 /// One het-non-ref genotype in one sample switches the method for the whole record, so every
 /// sample's call in every output record becomes a no-call and every attribute is stripped.
 ///
-/// # What this port does not do
+/// # Where the genotypes go
 ///
-/// `AlleleSubsettingUtils.subsetAlleles` reindexes PLs, ADs and the annotations whose length
-/// follows the allele count. Nothing in the golden carries any of those, so none of it is measured
-/// and none of it is written here: [`SplitError::LikelihoodsNotPorted`] is returned instead of a
-/// guess. What is ported is the path a record without likelihoods takes, where
-/// `BEST_MATCH_TO_ORIGINAL` turns an allele that is not in the pair into the REFERENCE.
+/// Each split record's genotypes go through `crate::subset_alleles::subset_alleles`, the port of
+/// `AlleleSubsettingUtils.subsetAlleles`, with the method chosen above. On a record without
+/// likelihoods, `BEST_MATCH_TO_ORIGINAL` turns an allele that is not in the pair into the
+/// REFERENCE. Of the INFO attributes only AC, AF and AN are kept, and then recomputed; every other
+/// key is dropped, including those whose length follows the allele count. (An earlier version of
+/// this comment named a `LikelihoodsNotPorted` refusal. There is none: [`SplitError`] has two
+/// variants, and the PLs are subset in `subset_alleles`.)
 pub fn split_variant_context_to_biallelics(
     variant: &Variant,
     trim_left: bool,
 ) -> Result<Vec<Variant>, SplitError> {
-    // `isVariant()` is "more than one allele", and `isBiallelic()` is "exactly two".
+    // `isVariant()` is `getType() != Type.NO_VARIATION`, and htsjdk types a record of two or
+    // more alleles as SNP, MNP, INDEL, SYMBOLIC or MIXED, never NO_VARIATION, so it amounts to
+    // "more than one allele". `isBiallelic()` is `getNAlleles() == 2`.
     if variant.alleles.len() <= 1 {
         return Ok(Vec::new());
     }
@@ -434,6 +513,7 @@ pub fn split_variant_context_to_biallelics(
         return Ok(vec![variant.clone()]);
     }
 
+    // `hasHetNonRef(vc.getGenotypes())`, decided once for the whole record.
     let no_annotations = has_het_non_ref(variant);
     let mut out = Vec::with_capacity(variant.alleles.len() - 1);
 
@@ -471,6 +551,13 @@ pub fn split_variant_context_to_biallelics(
         .map_err(SplitError::GenotypeIndex)?;
         // And then they are recomputed from the genotypes, which is why a record with none loses
         // all three however well they survived the filter.
+        //
+        // The reference recomputes them (`addInfoFieldAnnotations`, line 1746) BEFORE it sets
+        // the subset genotypes (line 1748), so it counts the original genotypes against the two
+        // kept alleles. Counting the subset ones gives the same numbers here: under
+        // `BEST_MATCH_TO_ORIGINAL` a called allele stays called (an unkept one becomes the
+        // reference) and a no-call stays a no-call, so AN is unchanged, and only the kept
+        // alternate, index 1 in the pair, is counted for AC either way.
         let attributes = if no_annotations {
             attributes
         } else {
@@ -485,6 +572,8 @@ pub fn split_variant_context_to_biallelics(
             genotypes,
             attributes,
         };
+        // `trimAlleles(builder.make(), trimLeft, true)`: always trimmed at the end, at the front
+        // only when asked.
         out.push(trim_alleles(&split, trim_left, true).map_err(SplitError::Alignment)?);
     }
     Ok(out)
@@ -500,6 +589,7 @@ pub enum SplitError {
 }
 
 impl SplitError {
+    /// The message of the refusal underneath, unchanged.
     pub fn message(&self) -> String {
         match self {
             SplitError::Alignment(error) => error.message(),
@@ -509,6 +599,11 @@ impl SplitError {
 }
 
 /// `hasHetNonRef`: a genotype calling two different alternates, `1/2`.
+///
+/// htsjdk's `Genotype.isHetNonRef()` is `getType() == GenotypeType.HET &&
+/// getAllele(0).isNonReference() && getAllele(1).isNonReference()`, which is not limited to two
+/// alleles. This test is, so a polyploid call such as `1/1/2` that htsjdk would count is not
+/// counted here.
 fn has_het_non_ref(variant: &Variant) -> bool {
     variant.genotypes.iter().any(|genotype| {
         genotype.alleles.len() == 2
@@ -522,6 +617,10 @@ fn has_het_non_ref(variant: &Variant) -> bool {
 /// AN is every called allele, AC is the alternate's, and AF is the one over the other. A record
 /// with no genotypes gets none of the three, which is why they vanish however well they survived
 /// the attribute filter.
+///
+/// That is htsjdk's `VariantContextUtils.calculateChromosomeCounts` with `removeStaleValues`
+/// true: `if (AN == 0 && removeStaleValues)` removes all three, and a record with no samples has
+/// an AN of zero. AF is `(double) AC / AN` there too, written with `Double.toString`.
 fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(String, String)> {
     if original_samples == 0 {
         return Vec::new();
@@ -539,6 +638,7 @@ fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(St
     if allele_number == 0 {
         return Vec::new();
     }
+    // `f64::from` widens an integer to a `double` exactly, Java's `(double)` cast.
     let frequency = f64::from(allele_count) / f64::from(allele_number);
     vec![
         ("AC".to_string(), allele_count.to_string()),
@@ -550,7 +650,8 @@ fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(St
     ]
 }
 
-/// `VariantContext.Type`, as far as `typeOfVariant` produces it.
+/// `VariantContext.Type`, as far as `typeOfVariant` produces it. A Rust `enum` is a closed list
+/// of values like a Java enum, and `match` on it must name every one.
 ///
 /// MIXED is not here: the comment in the reference says a pairwise comparison cannot produce it,
 /// and the code proves it by returning INDEL for everything that is not a symbolic allele, a
@@ -577,7 +678,7 @@ impl VariantType {
     }
 }
 
-/// `Trilean`, which is what `doesReadContainAllele` answers.
+/// `org.broadinstitute.hellbender.utils.Trilean`, which is what `doesReadContainAllele` answers.
 ///
 /// The third value is not a convenience: a read that ends inside the allele is UNKNOWN, and
 /// `calculateMaxAltRatio` counts UNKNOWN into neither the numerator nor the denominator.
@@ -603,6 +704,7 @@ pub enum PileupAlleleError {
 }
 
 impl PileupAlleleError {
+    /// The exception class the reference throws for this refusal.
     pub fn java_class(&self) -> &'static str {
         match self {
             PileupAlleleError::SymbolicReference | PileupAlleleError::SpanDelReference => {
@@ -615,6 +717,7 @@ impl PileupAlleleError {
         }
     }
 
+    /// The exception's message, copied from the reference's throw site.
     pub fn message(&self) -> String {
         match self {
             PileupAlleleError::SymbolicReference => {
@@ -665,6 +768,8 @@ pub fn type_of_variant(
         if allele.len() == 1 {
             return Ok(VariantType::Snp);
         }
+        // `IntStream.range(0, ref.length()).filter(i -> ref.getBases()[i] !=
+        // allele.getBases()[i]).count() == 1`: `zip` walks the two alleles' bases side by side.
         let differences = reference
             .bases
             .iter()

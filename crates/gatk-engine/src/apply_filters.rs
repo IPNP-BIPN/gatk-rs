@@ -1,5 +1,6 @@
 //! `Mutect2FilteringEngine.applyFiltersAndAccumulateOutputStats`, ported from
-//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering` (GATK 4.7.0.0;
+//! `Mutect2FilteringEngine.java` and `ErrorProbabilities.java` are unchanged since 4.6.2.0).
 //!
 //! The step above the ten filters: probabilities in, the FILTER column and the `AS_FilterStatus`
 //! annotation out. No arithmetic beyond one comparison and one rounding.
@@ -11,11 +12,17 @@
 //! strings derived from those already-shortened lists:
 //!
 //! ```java
-//! List<List<String>> filtersNonSymbolicAlleles = GATKVariantContextUtils.removeDataForSymbolicAltAlleles(vc, distinctFiltersByAllele);
-//! if (!filtersNonSymbolicAlleles.stream().anyMatch(filterList -> filterList.contains(SITE_LEVEL_FILTERS))) {
+//! List<List<String>> filtersNonSymbolicAlleles =
+//!     GATKVariantContextUtils.removeDataForSymbolicAltAlleles(vc, distinctFiltersByAllele);
+//! // if any allele passed, don't fail the site
+//! if (!filtersNonSymbolicAlleles.stream().anyMatch(filterList ->
+//!         filterList.contains(GATKVCFConstants.SITE_LEVEL_FILTERS))) {
+//!     // we know the allele level filters exceeded their threshold - so set this prob to 1
 //!     siteFiltersWithErrorProb.put(GATKVCFConstants.FAIL, 1.0);
 //! }
 //! ```
+//!
+//! (`Mutect2FilteringEngine.java` lines 223 to 228, the long lines wrapped at a space.)
 //!
 //! On a record whose symbolic allele comes **first**, the second removal deletes the only surviving
 //! entry, `anyMatch` over an empty list is false, and the site is `FAIL`ed although its one real
@@ -26,16 +33,23 @@
 //!
 //! `orderedASFilterStrings` walks a `ListIterator` over the transposed per-allele strings, and a
 //! symbolic allele takes `SITE` **without advancing it**. If no filter answered per allele, that
-//! iterator is empty and the first real alternate is a `NoSuchElementException` -- which is one
+//! iterator is empty and the first real alternate is a `NoSuchElementException`. That is one
 //! record's worth of missing annotations away, since every per-allele filter answers an empty list
 //! when its annotations are absent.
 //!
 //! # A filter can fire without being named
 //!
 //! ```java
-//! final double maxErrorProb = siteFiltersWithErrorProb.values().stream().mapToDouble(p->p).max().orElse(1);
-//! if (entry.getValue() >= Math.min(maxErrorProb, MIN_REPORTABLE_ERROR_PROBABILITY)) { vcb.filter(entry.getKey()); }
+//! final double maxErrorProb =
+//!     siteFiltersWithErrorProb.values().stream().mapToDouble(p->p).max().orElse(1);
+//! siteFiltersWithErrorProb.entrySet().stream().forEach(entry -> {
+//!     if (entry.getValue() >= Math.min(maxErrorProb, MIN_REPORTABLE_ERROR_PROBABILITY)) {
+//!         vcb.filter(entry.getKey());
+//!     }
+//! });
 //! ```
+//!
+//! (`Mutect2FilteringEngine.java` lines 233 to 238, the first wrapped at a space.)
 //!
 //! The comment beside it says this "will not change the status of whether a variant is actually
 //! filtered or not". It changes which names appear: `contamination` at `0.05` beside `germline` at
@@ -43,9 +57,20 @@
 //!
 //! # `SITE` is a placeholder, not a filter
 //!
-//! Every allele that passes a filter is recorded as `SITE`; `getDistinctFiltersForAllele` removes it
-//! when the allele has any real filter and adds it back when it has none. So a triallelic record can
-//! be `PASS` with `base_qual|SITE` beside it: one allele filtered, the site not.
+//! Every allele that passes a filter is recorded as `SITE`; `getDistinctFiltersForAllele` removes
+//! it when the allele has any real filter and adds it back when it has none. So a triallelic
+//! record can be `PASS` with `base_qual|SITE` beside it: one allele filtered, the site not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The reference's `LinkedHashMap<String, Double>` is a `Vec<(String, f64)>` here, a list of
+//!   name and value pairs kept in insertion order; `put` below gives it `Map.put`'s behaviour.
+//! - `Result<AppliedRecord, ApplyError>` is "the record, or one of the two throws below";
+//!   `Ok(..)` is the return, `Err(..)` the throw, and `?` passes an `Err` to the caller at once.
+//! - `.iter().filter(..).map(..).collect()` is Java's `stream().filter(..).map(..).collect(..)`,
+//!   and the closures `|answer| ...` are its lambdas.
+//! - `&[T]` is a borrowed, read-only view of a list; the caller keeps ownership, and `.clone()`
+//!   makes the copy a Java reference would have shared.
 
 use crate::qual_quantizer::error_prob_to_qual;
 use crate::somatic_clustering_model::AlternateAllele;
@@ -75,13 +100,22 @@ pub enum FilterKind {
 }
 
 /// One filter's answer, as `ErrorProbabilities` holds it: **after** its own symbolic removal.
+///
+/// ```java
+/// alleleProbabilitiesByFilter.replaceAll((k, v) ->
+///     GATKVariantContextUtils.removeDataForSymbolicAltAlleles(vc, v));
+/// ```
+///
+/// (`ErrorProbabilities.java` line 34, wrapped at a space.) So `probabilities` has one entry per
+/// non-symbolic alternate for a per-allele filter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterAnswer {
+    /// `filterName()`, which is what the FILTER column and `AS_FilterStatus` print.
     pub name: String,
     pub kind: FilterKind,
     /// Empty when the filter was not evaluated, which `ErrorProbabilities` drops entirely.
     pub probabilities: Vec<f64>,
-    /// `phredScaledPosteriorAnnotationName`.
+    /// `phredScaledPosteriorAnnotationName()`, an `Optional<String>` in the reference.
     pub annotation: Option<String>,
     /// Whether `requiredInfoAnnotations().stream().allMatch(vc::hasAttribute)`, which is checked a
     /// second time here for the annotation alone.
@@ -93,6 +127,8 @@ pub struct FilterAnswer {
 pub struct AppliedRecord {
     /// The FILTER column, in the order the names were recorded. Empty is `PASS`.
     pub filters: Vec<String>,
+    /// The `AS_FilterStatus` value: one entry per alternate, pipe-separated, each entry the
+    /// allele's filters comma-separated or `SITE`.
     pub as_filter_status: String,
     /// The phred-scaled posterior annotations, in the order they were written.
     pub annotations: Vec<(String, u8)>,
@@ -108,6 +144,7 @@ pub enum ApplyError {
 }
 
 impl ApplyError {
+    /// The exception class the reference throws for this refusal.
     pub fn class(&self) -> &'static str {
         match self {
             ApplyError::RaggedLists => "java.lang.IllegalArgumentException",
@@ -128,7 +165,12 @@ impl ApplyError {
 /// `applyFiltersAndAccumulateOutputStats`, without the statistics.
 ///
 /// `alternates` is the record's alternate alleles in order, symbolic ones included; `answers` are
-/// the filters' probabilities as `ErrorProbabilities` holds them.
+/// the filters' probabilities as `ErrorProbabilities` holds them. The `filteringOutputStats` and
+/// the `VariantContextBuilder` are not modelled: what the builder would have been given comes back
+/// as an [`AppliedRecord`].
+///
+/// The steps run in the reference's order, which is observable in the FILTER column: the
+/// allele-level site filters are put first, then the variant filters, then `FAIL`.
 pub fn apply_filters(
     answers: &[FilterAnswer],
     alternates: &[AlternateAllele],
@@ -140,7 +182,10 @@ pub fn apply_filters(
     // A `LinkedHashMap`: insertion order, and a repeated key keeps its first position.
     let mut site_filters: Vec<(String, f64)> = Vec::new();
 
-    // `addFilterStrings` over the per-allele filters that answered.
+    // `addFilterStrings` over the per-allele filters that answered: per allele, the filter's name
+    // when the probability is strictly above the threshold, `SITE` otherwise.
+    // `getProbabilitiesForAlleleFilters` keeps the filters' order, so `answers` must arrive in
+    // that order for the FILTER column to come out in the reference's.
     let allele_status_by_filter: Vec<Vec<String>> = answers
         .iter()
         .filter(|answer| answer.kind == FilterKind::PerAllele)
@@ -160,6 +205,8 @@ pub fn apply_filters(
         })
         .collect();
 
+    // `ErrorProbabilities.transpose`: from one list per filter to one list per allele. `?` is the
+    // `RaggedLists` refusal.
     let filters_by_allele = transpose(&allele_status_by_filter)?;
     let distinct_filters_by_allele: Vec<Vec<String>> = filters_by_allele
         .iter()
@@ -173,6 +220,9 @@ pub fn apply_filters(
         .collect();
 
     // The walk: a symbolic alternate takes `SITE` and does NOT advance the iterator.
+    // `merged.iter()` is the reference's `listIterator()`, and `next.next()` its `.next()`, which
+    // answers `None` where Java's throws `NoSuchElementException`; `.ok_or(..)?` turns that
+    // `None` into the refusal.
     let mut next = merged.iter();
     let mut ordered = Vec::with_capacity(alternates.len());
     for alternate in alternates {
@@ -189,7 +239,11 @@ pub fn apply_filters(
     // `encodeAnyASListWithRawDelim`, which joins with a pipe.
     let as_filter_status = ordered.join("|");
 
-    // A site-level filter from the allele-level ones, only when every allele agrees.
+    // A site-level filter from the allele-level ones, only when every allele agrees:
+    // `alleleStatusForFilter.stream().distinct().count() == 1` and not `SITE`. The set below
+    // counts the distinct names; its ordering is never used. This list is the one from before
+    // the transpose, so it still has an entry for every non-symbolic alternate, and the site
+    // filter's value is `1.0` whatever the probabilities were.
     for status in &allele_status_by_filter {
         if !status.is_empty()
             && status
@@ -203,27 +257,42 @@ pub fn apply_filters(
         }
     }
 
-    // The per-site filters, whose annotation is written under its own check.
+    // The per-site filters, whose annotation is written under its own check: present,
+    // `requiredInfoAnnotations().stream().allMatch(vc::hasAttribute)`, then
+    // `QualityUtils.errorProbToQual(entry.getValue())`. The annotation is written whether or not
+    // the filter fires.
     let mut annotations = Vec::new();
     for answer in answers
         .iter()
         .filter(|answer| answer.kind == FilterKind::PerSite)
         .filter(|answer| !answer.probabilities.is_empty())
     {
+        // `entry.getValue().get(0)` in `getProbabilitiesForVariantFilters`: a variant filter's
+        // one probability.
         let probability = answer.probabilities[0];
         if let Some(annotation) = &answer.annotation {
             if answer.required_annotations_present {
+                // `None` is a probability outside `[0, 1]` or NaN. The reference's
+                // `errorProbToQual` refuses such a value with `Utils.validateArg`; this skips the
+                // annotation instead.
                 if let Some(qual) = error_prob_to_qual(probability) {
                     annotations.push((annotation.clone(), qual));
                 }
             }
         }
+        // Strictly above, as for the allele filters, and with the filter's own probability as
+        // the value, which is what the reporting floor below compares.
         if probability > error_threshold {
             put(&mut site_filters, &answer.name, probability);
         }
     }
 
-    // Every allele filtered, for different reasons. The removal below is the second one.
+    // Every allele filtered, for different reasons. The removal below is the second one: it keeps
+    // the entries at the positions of non-symbolic alternates in the full alternate list, while
+    // the list it filters already has one entry per non-symbolic alternate. That mismatch is the
+    // defect in the module header, reproduced. `alternates.get(index)` answers `None` past the end
+    // of the list, and `unwrap_or(false)` keeps such an entry, as `removeItemsByIndex` keeps any
+    // index it was not asked to remove.
     if site_filters.is_empty() && !distinct_filters_by_allele.iter().all(Vec::is_empty) {
         let non_symbolic: Vec<&Vec<String>> = distinct_filters_by_allele
             .iter()
@@ -239,7 +308,8 @@ pub fn apply_filters(
         }
     }
 
-    // Only the entries that reach the floor are named.
+    // Only the entries that reach the floor are named. `fold` is the stream's `max()`, with
+    // `None` for an empty map so that `unwrap_or(1.0)` is `orElse(1)`.
     let max_error_probability = site_filters
         .iter()
         .map(|(_, value)| *value)
@@ -264,7 +334,9 @@ pub fn apply_filters(
     })
 }
 
-/// `Map.put`, which overwrites the value and keeps the key's first position.
+/// `Map.put` on a `LinkedHashMap`, which overwrites the value and keeps the key's first position.
+///
+/// A linear search; the map holds at most one entry per filter plus `FAIL`.
 fn put(map: &mut Vec<(String, f64)>, key: &str, value: f64) {
     match map.iter_mut().find(|(name, _)| name == key) {
         Some(entry) => entry.1 = value,
@@ -272,7 +344,12 @@ fn put(map: &mut Vec<(String, f64)>, key: &str, value: f64) {
     }
 }
 
-/// `Math.max`, which propagates NaN where `f64::max` does not.
+/// `Math.max`, which propagates NaN where `f64::max` does not: Rust's `max` returns the other
+/// operand when one is NaN, and a NaN probability would then vanish from the maximum.
+///
+/// `-0.0` against `0.0` is not ordered here as `Math.max` orders it. That cannot change which
+/// names are written: the maximum is only used through the `>=` of the reporting floor, and `>=`
+/// treats the two zeros as equal.
 fn java_max(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
@@ -283,6 +360,18 @@ fn java_max(a: f64, b: f64) -> f64 {
 
 /// `ErrorProbabilities.transpose`, which refuses ragged input and answers the input unchanged when
 /// it is empty.
+///
+/// ```java
+/// if (list.isEmpty()) {
+///     return list;
+/// }
+/// Utils.validateArg(list.stream().map(List::size).distinct().count() == 1,
+///     "lists are not the same size");
+/// ```
+///
+/// (`ErrorProbabilities.java` lines 83 to 86, the last wrapped at a space.) The size test reads
+/// differently here, "any list whose length is not the first one's", and accepts exactly the
+/// same inputs.
 fn transpose(lists: &[Vec<String>]) -> Result<Vec<Vec<String>>, ApplyError> {
     if lists.is_empty() {
         return Ok(Vec::new());
@@ -301,12 +390,15 @@ fn transpose(lists: &[Vec<String>]) -> Result<Vec<Vec<String>>, ApplyError> {
 /// `List.remove(Object)` removes the **first** occurrence, and the list has been deduplicated by
 /// then, so there is only one to remove.
 fn distinct_filters_for_allele(filters: &[String]) -> Vec<String> {
+    // `stream().distinct()`, which keeps the first occurrence of each name in its original
+    // position.
     let mut results: Vec<String> = Vec::new();
     for filter in filters {
         if !results.contains(filter) {
             results.push(filter.clone());
         }
     }
+    // `results.size() > 1 && results.contains(SITE_LEVEL_FILTERS)` then `results.remove(..)`.
     if results.len() > 1 {
         if let Some(index) = results.iter().position(|name| name == SITE_LEVEL_FILTERS) {
             results.remove(index);

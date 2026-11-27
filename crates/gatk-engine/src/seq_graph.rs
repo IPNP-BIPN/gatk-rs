@@ -1,25 +1,44 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.graphs` (`SeqGraph`,
 //! `SeqVertex`, `BaseEdge`, `BaseGraph`'s clean-ups, `MergeDiamonds`, `MergeTails`,
 //! `SplitCommonSuffices`, `MergeCommonSuffices`, `SharedVertexSequenceSplitter`,
-//! `CommonSuffixSplitter`, `SharedSequenceMerger`, `GraphUtils`) and the sequence-graph half of
-//! `readthreading.ReadThreadingAssembler` (`cleanupSeqGraph`), GATK 4.6.2.0.
+//! `CommonSuffixSplitter`, `SharedSequenceMerger`, `GraphUtils`, `VertexBasedTransformer`), GATK
+//! 4.7.0.0; every one of those `.java` files is unchanged since 4.6.2.0. These are the steps
+//! `readthreading.ReadThreadingAssembler.cleanupSeqGraph` calls; that method itself is
+//! `read_threading_assembler::cleanup_seq_graph`.
 //!
 //! # The graph underneath
 //!
 //! The reference is a JGraphT 1.1.0 `DefaultDirectedGraph`, and three of its rules decide what the
 //! transforms produce:
 //!
-//! * vertices (`SeqVertex` compares by identity) and edges keep insertion order, in the graph and in
-//!   each vertex's incoming and outgoing lists, and a removal keeps the others' order;
+//! * vertices (`SeqVertex` compares by identity) and edges keep insertion order, in the graph and
+//!   in each vertex's incoming and outgoing lists, and a removal keeps the others' order;
 //! * `addEdge(u, v, e)` does nothing when an edge `u -> v` already exists: no multiple edges. So
 //!   when two predecessors that share a source are merged, the second edge to the merged vertex is
 //!   refused and its multiplicity is lost, rather than added;
 //! * `addEdge(u, v, e)` also does nothing when the edge OBJECT `e` is already in the graph, which
-//!   is how `SharedVertexSequenceSplitter`, whose split graph lends its edges to the outer one, never
-//!   adds the direct prefix-to-suffix edge twice.
+//!   is how `SharedVertexSequenceSplitter`, whose split graph lends its edges to the outer one,
+//!   never adds the direct prefix-to-suffix edge twice.
 //!
 //! Here a vertex or an edge is its index, `add_edge` answers `None` where JGraphT answers `false`,
 //! and the splitter keeps the split graph's edges as identities in its own map.
+//!
+//! Every transform walks `vertexSet()` from the start after each change, so vertex order decides
+//! which diamond, tail or suffix is taken first, and the new vertices go to the end of it.
+//! `tests/seq_graph.rs` prints every stage of `cleanupSeqGraph` line for line against
+//! `seq_graph.txt.gz`, so both the order and the contents are pinned.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - A vertex or an edge is a `usize` index; a removal clears its `alive` flag and nothing is
+//!   renumbered, so an index is an identity, as a `SeqVertex` reference is.
+//! - `Option<usize>` is a possibly-absent index: `Some(i)` or `None`, Java's `null`.
+//! - `Result<(), SeqGraphError>` is a method that may throw: `Err(..)` is the throw and `?`
+//!   passes it on to the caller.
+//! - `self.incoming[v].clone()` before a loop that changes the graph copies the list first, as
+//!   the compiler requires; the reference iterates the live set, which the loops below never
+//!   change while iterating.
+//! - `SeqEdge` is `Copy`: `let edge = self.edges[e];` takes a copy, not a reference.
 
 use crate::read_threading_graph::ReadThreadingGraph;
 
@@ -50,7 +69,10 @@ pub struct SeqEdge {
     pub is_ref: bool,
     pub multiplicity: i32,
     /// A `MultiSampleEdge`'s pruning multiplicity, which only the dot files show: the
-    /// multiplicity it was copied with. `None` for a plain `BaseEdge`.
+    /// multiplicity it was copied with. `None` for a plain `BaseEdge`. A copy restarts the queue,
+    /// `return new MultiSampleEdge(isRef(), getMultiplicity(), singleSampleCapacity);`
+    /// (MultiSampleEdge.java:56), so the read threading graph's per-sample counts never arrive
+    /// here.
     pub pruning: Option<i32>,
 }
 
@@ -94,7 +116,9 @@ impl SeqGraph {
         self.add_edge_with(source, target, is_ref, multiplicity, None)
     }
 
-    /// `addEdge(source, target, e)` for an edge that may be a `MultiSampleEdge`.
+    /// `addEdge(source, target, e)` for an edge that may be a `MultiSampleEdge`. `None` where
+    /// JGraphT answers false because a `source -> target` edge exists: the new edge, and its
+    /// multiplicity, are dropped.
     fn add_edge_with(
         &mut self,
         source: usize,
@@ -132,10 +156,12 @@ impl SeqGraph {
         &self.info[vertex]
     }
 
+    /// `vertexSet()`, in its order: creation order, removed vertices skipped.
     pub fn vertex_ids(&self) -> impl Iterator<Item = usize> + '_ {
         (0..self.sequences.len()).filter(|&v| self.vertex_alive[v])
     }
 
+    /// `edgeSet()`, in its order.
     pub fn edge_ids(&self) -> impl Iterator<Item = usize> + '_ {
         (0..self.edges.len()).filter(|&e| self.edge_alive[e])
     }
@@ -184,7 +210,8 @@ impl SeqGraph {
             .find(|&e| self.edges[e].target == target)
     }
 
-    /// `outgoingVerticesOf`: a `LinkedHashSet` of targets, in edge order.
+    /// `outgoingVerticesOf`: a `LinkedHashSet` of targets, in edge order. With no multiple edges
+    /// the de-duplication never removes anything, but it is kept as the reference has it.
     pub fn outgoing_vertices(&self, vertex: usize) -> Vec<usize> {
         let mut out: Vec<usize> = Vec::new();
         for &e in &self.outgoing[vertex] {
@@ -208,6 +235,7 @@ impl SeqGraph {
         out
     }
 
+    /// `removeEdge(e)`: out of the edge set and both endpoints' lists, the rest in order.
     pub fn remove_edge(&mut self, edge: usize) {
         if !self.edge_alive[edge] {
             return;
@@ -243,6 +271,7 @@ impl SeqGraph {
             || self.vertex_count() == 1
     }
 
+    /// `isRefSource(v)`: no incoming reference edge and an outgoing one, or the only vertex.
     pub fn is_ref_source(&self, vertex: usize) -> bool {
         if self.incoming[vertex].iter().any(|&e| self.edges[e].is_ref) {
             return false;
@@ -253,6 +282,7 @@ impl SeqGraph {
         self.vertex_count() == 1
     }
 
+    /// `isRefSink(v)`: the mirror of `is_ref_source`.
     pub fn is_ref_sink(&self, vertex: usize) -> bool {
         if self.outgoing[vertex].iter().any(|&e| self.edges[e].is_ref) {
             return false;
@@ -263,20 +293,24 @@ impl SeqGraph {
         self.vertex_count() == 1
     }
 
+    /// `getReferenceSourceVertex()`: the first reference source in vertex order.
     pub fn reference_source_vertex(&self) -> Option<usize> {
         self.vertex_ids().find(|&v| self.is_ref_source(v))
     }
 
+    /// `getReferenceSinkVertex()`: the first reference sink in vertex order.
     pub fn reference_sink_vertex(&self) -> Option<usize> {
         self.vertex_ids().find(|&v| self.is_ref_sink(v))
     }
 
+    /// `getSources()`: in-degree zero, in vertex order.
     pub fn sources(&self) -> Vec<usize> {
         self.vertex_ids()
             .filter(|&v| self.in_degree(v) == 0)
             .collect()
     }
 
+    /// `getSinks()`: out-degree zero, in vertex order.
     pub fn sinks(&self) -> Vec<usize> {
         self.vertex_ids()
             .filter(|&v| self.out_degree(v) == 0)
@@ -288,6 +322,8 @@ impl SeqGraph {
     /// threading graph's order.
     pub fn from_read_threading_graph(graph: &ReadThreadingGraph) -> SeqGraph {
         let mut seq = SeqGraph::new();
+        // `vertexMap`, read-threading vertex to sequence vertex; `usize::MAX` marks a removed
+        // vertex, which no live edge can name.
         let mut map = vec![usize::MAX; graph.vertex_ids().max().map_or(0, |m| m + 1)];
         for v in graph.vertex_ids() {
             let sequence = &graph.vertex(v).sequence;
@@ -298,6 +334,8 @@ impl SeqGraph {
             };
             seq.info[map[v]] = graph.vertex(v).additional_info.clone();
         }
+        // `seqGraph.addEdge(seqInV, seqOutV, e.copy());` (BaseGraph.java:121): the copy's
+        // pruning multiplicity is its multiplicity, not the original's.
         for e in graph.edge_ids() {
             let edge = graph.edge(e);
             seq.add_edge_with(
@@ -314,7 +352,8 @@ impl SeqGraph {
     /// `cleanNonRefPaths`: remove the non-reference edges reachable backward from the reference
     /// source, and forward from the reference sink, through non-reference edges, then the
     /// orphans. The reference walks a `HashSet` in identity-hash order; what it removes is that
-    /// closure whatever the order.
+    /// closure whatever the order. A reference edge stops the walk without being followed; here
+    /// a stack replaces the set, and the alive check skips an edge met a second time.
     pub fn clean_non_ref_paths(&mut self) {
         if self.reference_source_vertex().is_none() || self.reference_sink_vertex().is_none() {
             return;
@@ -352,6 +391,8 @@ impl SeqGraph {
         }
     }
 
+    /// `BaseGraphIterator(graph, start, followIncomingEdges, followOutgoingEdges)`, of which only
+    /// the membership is read: which vertices `start` reaches, itself included.
     fn reachable(&self, start: usize, backward: bool, forward: bool) -> Vec<bool> {
         let mut seen = vec![false; self.sequences.len()];
         let mut stack = vec![start];
@@ -370,7 +411,8 @@ impl SeqGraph {
         seen
     }
 
-    /// `removeVerticesNotConnectedToRefRegardlessOfEdgeDirection`.
+    /// `removeVerticesNotConnectedToRefRegardlessOfEdgeDirection`: keep what the reference source
+    /// reaches along edges either way; with no reference source, remove everything.
     pub fn remove_vertices_not_connected_to_ref_regardless_of_edge_direction(&mut self) {
         let keep = match self.reference_source_vertex() {
             Some(source) => self.reachable(source, true, true),
@@ -382,7 +424,9 @@ impl SeqGraph {
         }
     }
 
-    /// `removePathsNotConnectedToRef`.
+    /// `removePathsNotConnectedToRef`: keep the vertices both forward of the reference source and
+    /// backward of the reference sink, then refuse a graph left with more than one sink or
+    /// source. The reference removes a `HashSet`, whose order does not change the result.
     pub fn remove_paths_not_connected_to_ref(&mut self) -> Result<(), SeqGraphError> {
         let (Some(source), Some(sink)) =
             (self.reference_source_vertex(), self.reference_sink_vertex())
@@ -410,13 +454,15 @@ impl SeqGraph {
     // ----------------------------------------------------------------------------------------
     // Zipping.
 
-    /// `isLinearChainStart`.
+    /// `isLinearChainStart`: one way out, and not the middle of a chain (either not exactly one
+    /// way in, or a predecessor that forks).
     fn is_linear_chain_start(&self, v: usize) -> bool {
         self.out_degree(v) == 1
             && (self.in_degree(v) != 1 || self.out_degree(self.incoming_vertices(v)[0]) > 1)
     }
 
-    /// `traceLinearChain`.
+    /// `traceLinearChain`: extend while the next vertex has one way in, is not a self-loop, and
+    /// is on the reference exactly when the chain so far is.
     fn trace_linear_chain(&self, start: usize) -> Vec<usize> {
         let mut chain = vec![start];
         let mut last_is_ref = self.is_reference_node(start);
@@ -440,7 +486,8 @@ impl SeqGraph {
         chain
     }
 
-    /// `zipLinearChains`.
+    /// `zipLinearChains`: every chain start is listed first, in vertex order, then each chain is
+    /// traced and merged in that order. True if any merge happened.
     pub fn zip_linear_chains(&mut self) -> bool {
         let starts: Vec<usize> = self
             .vertex_ids()
@@ -457,7 +504,8 @@ impl SeqGraph {
         merged
     }
 
-    /// `mergeLinearChainVertex`.
+    /// `mergeLinearChainVertex`: one vertex with the chain's bases concatenated, given copies of
+    /// the last vertex's outgoing edges and then of the first's incoming ones, in that order.
     fn merge_linear_chain(&mut self, chain: &[usize]) -> bool {
         let first = chain[0];
         let last = *chain.last().expect("a chain has a vertex");
@@ -486,7 +534,9 @@ impl SeqGraph {
     // ----------------------------------------------------------------------------------------
     // Simplification.
 
-    /// `simplifyGraph()`.
+    /// `simplifyGraph()`: one zip, then rounds of the four transforms and a zip until a round
+    /// does nothing. Past round five each round is compared with the previous one by
+    /// `graph_equals`, which stops a loop between states; past round 100 it refuses.
     pub fn simplify_graph(&mut self) -> Result<(), SeqGraphError> {
         self.zip_linear_chains();
         let mut previous: Option<SeqGraph> = None;
@@ -511,6 +561,8 @@ impl SeqGraph {
         Ok(())
     }
 
+    /// `simplifyGraphOnce`: the transforms in the reference's order. `|=` runs every one,
+    /// whatever the earlier ones answered.
     fn simplify_graph_once(&mut self) -> Result<bool, SeqGraphError> {
         let mut did = false;
         did |= self.transform_until_complete(Transform::MergeDiamonds)?;
@@ -525,10 +577,13 @@ impl SeqGraph {
     /// first that transforms, start again from the first vertex.
     fn transform_until_complete(&mut self, transform: Transform) -> Result<bool, SeqGraphError> {
         let mut did = false;
-        // `SplitCommonSuffices.alreadySplit`, which lives as long as the transformer.
+        // `SplitCommonSuffices.alreadySplit`, which lives as long as the transformer: a
+        // `HashSet` of vertices, here a flag per index, grown as new vertices appear.
         let mut already_split = vec![false; 0];
         loop {
             let mut found = false;
+            // Taken before the walk; the reference iterates the live set, which is safe there
+            // only because the loop stops at the first change, as it does here.
             let vertices: Vec<usize> = self.vertex_ids().collect();
             for v in vertices {
                 found = match transform {
@@ -559,7 +614,9 @@ impl SeqGraph {
         Ok(did)
     }
 
-    /// `MergeDiamonds.tryToTransform`.
+    /// `MergeDiamonds.tryToTransform`: `top` forks into middles that each have one way in and
+    /// lead only to the same `bottom`, which has no other way in; their shared prefix and suffix
+    /// are factored out if either is at least one base.
     fn merge_diamonds(&mut self, top: usize) -> Result<bool, SeqGraphError> {
         let middles = self.outgoing_vertices(top);
         if middles.len() <= 1 {
@@ -591,7 +648,8 @@ impl SeqGraph {
         Ok(true)
     }
 
-    /// `MergeTails.tryToTransform`.
+    /// `MergeTails.tryToTransform`: `top` forks into sinks with at most one way in; their shared
+    /// suffix is factored out if it is at least 10 bases.
     fn merge_tails(&mut self, top: usize) -> Result<bool, SeqGraphError> {
         let tails = self.outgoing_vertices(top);
         if tails.len() <= 1 {
@@ -611,7 +669,9 @@ impl SeqGraph {
         Ok(true)
     }
 
-    /// `CommonSuffixSplitter.split`.
+    /// `CommonSuffixSplitter.split`: each predecessor of `v` is replaced by its own copy of the
+    /// shared suffix, preceded by the rest of its bases when there is any. The reference's list of
+    /// edges to remove is not kept: those edges all touch removed vertices and are already gone.
     fn split_common_suffix(&mut self, v: usize) -> bool {
         let to_split = self.incoming_vertices(v);
         let Some(suffix) = self.common_suffix_template(v, &to_split) else {
@@ -642,7 +702,9 @@ impl SeqGraph {
         true
     }
 
-    /// `CommonSuffixSplitter.commonSuffix(graph, v, toSplit)`.
+    /// `CommonSuffixSplitter.commonSuffix(graph, v, toSplit)`: the shared suffix, or `None` where
+    /// splitting is unsafe, the suffix is empty, it is a whole reference source, or it is every
+    /// one of them whole.
     fn common_suffix_template(&self, v: usize, to_split: &[usize]) -> Option<Vec<u8>> {
         if to_split.len() < 2 || !self.safe_to_split(v, to_split) {
             return None;
@@ -673,7 +735,8 @@ impl SeqGraph {
         Some(suffix)
     }
 
-    /// `CommonSuffixSplitter.safeToSplit`.
+    /// `CommonSuffixSplitter.safeToSplit`: every vertex has `bottom` as its only way out, and none
+    /// is `bottom` or one of its successors.
     fn safe_to_split(&self, bottom: usize, to_merge: &[usize]) -> bool {
         let outgoing_of_bottom = self.outgoing_vertices(bottom);
         for &m in to_merge {
@@ -690,7 +753,8 @@ impl SeqGraph {
         true
     }
 
-    /// `SharedSequenceMerger.merge`.
+    /// `SharedSequenceMerger.merge`: predecessors of `v` with the same bases, each leading only to
+    /// `v` and none a source, become one vertex carrying their bases then `v`'s.
     fn merge_shared_sequence(&mut self, v: usize) -> bool {
         let prevs = self.incoming_vertices(v);
         if !self.can_merge(v, &prevs) {
@@ -717,7 +781,8 @@ impl SeqGraph {
         true
     }
 
-    /// `SharedSequenceMerger.canMerge`.
+    /// `SharedSequenceMerger.canMerge`: the first predecessor, in edge order, is the one the
+    /// others must match.
     fn can_merge(&self, v: usize, incoming: &[usize]) -> bool {
         let Some(&first) = incoming.first() else {
             return false;
@@ -735,6 +800,7 @@ impl SeqGraph {
     }
 }
 
+/// The four `VertexBasedTransformer`s `simplifyGraphOnce` runs.
 #[derive(Debug, Clone, Copy)]
 enum Transform {
     MergeDiamonds,
@@ -743,7 +809,7 @@ enum Transform {
     MergeCommonSuffices,
 }
 
-/// `GraphUtils.commonMaximumPrefixLength`.
+/// `GraphUtils.commonMaximumPrefixLength`: how many leading bases all of them share.
 fn common_maximum_prefix_length(kmers: &[&[u8]]) -> usize {
     let min = kmers.iter().map(|k| k.len()).min().unwrap_or(0);
     for i in 0..min {
@@ -755,7 +821,9 @@ fn common_maximum_prefix_length(kmers: &[&[u8]]) -> usize {
     min
 }
 
-/// `GraphUtils.commonMaximumSuffixLength`.
+/// `GraphUtils.commonMaximumSuffixLength`: how many trailing bases all of them share, at most
+/// `min`. `SharedVertexSequenceSplitter` passes the shortest length less the prefix, so the two
+/// never overlap.
 fn common_maximum_suffix_length(kmers: &[&[u8]], min: usize) -> usize {
     for suffix_len in 0..min {
         let first = kmers[0];
@@ -818,7 +886,8 @@ struct SplitEdge {
 }
 
 impl Splitter {
-    /// `new SharedVertexSequenceSplitter(graph, toSplits)`: `commonPrefixAndSuffixOfVertices`.
+    /// `new SharedVertexSequenceSplitter(graph, toSplits)`: `commonPrefixAndSuffixOfVertices`,
+    /// both taken from the first vertex's bases.
     fn new(graph: &SeqGraph, to_splits: &[usize]) -> Splitter {
         let kmers: Vec<&[u8]> = to_splits.iter().map(|&v| graph.sequence(v)).collect();
         let min = kmers.iter().map(|k| k.len()).min().unwrap_or(0);
@@ -840,7 +909,8 @@ impl Splitter {
         bottom: Option<usize>,
     ) -> Result<(), SeqGraphError> {
         // `split()`. The split graph: prefix, suffix, then each remaining middle, and its edges
-        // in the order they were added; `addOrUpdateEdge` adds to an existing prefix -> suffix edge.
+        // in the order they were added; `addOrUpdateEdge` adds to an existing prefix -> suffix
+        // edge.
         let mut middles: Vec<Vec<u8>> = Vec::new();
         let mut edges: Vec<SplitEdge> = Vec::new();
         for &mid in &self.to_splits {
@@ -869,7 +939,11 @@ impl Splitter {
                     pruning: from_mid.2,
                 });
             } else {
-                // `toMid.copy().add(fromMid)`: the sum, and the OR of the reference flags.
+                // `toMid.copy().add(fromMid)` (SharedVertexSequenceSplitter.java:156), given to
+                // `addOrUpdateEdge(getPrefixV(), getSuffixV(), ...)`: the sum, and the OR of the
+                // reference flags. The copy's pruning multiplicity is `toMid`'s multiplicity
+                // alone, and an existing edge keeps its own, because `add` changes only the total
+                // and the flag.
                 let combined = (
                     to_mid.0 || from_mid.0,
                     to_mid.1 + from_mid.1,
@@ -894,7 +968,9 @@ impl Splitter {
             }
         }
 
-        // `updateGraph(top, bot)`.
+        // `updateGraph(top, bot)`: the old vertices out, the middles in (in split order), then the
+        // prefix and suffix if needed, each joined to `top` or `bottom` by a plain edge of
+        // multiplicity one that is reference if any split edge on that side is.
         for &v in &self.to_splits {
             outer.remove_vertex(v);
         }
@@ -940,7 +1016,13 @@ impl Splitter {
         let top_for_connect = if need_prefix { prefix_id } else { top };
         let bottom_for_connect = if need_suffix { suffix_id } else { bottom };
 
-        // Which split edges the outer graph already holds: JGraphT's `containsEdge(e)`.
+        // Which split edges the outer graph already holds: JGraphT's `containsEdge(e)`. The
+        // reference hands the same edge object to `outer.addEdge` twice: as `top -> bottom`
+        // (`outer.addEdge(topForConnect, botForConnect, e);`, line 223) and again as
+        // `prefix -> bottom` (`outer.addEdge(splitGraph.getEdgeSource(e), botForConnect, e);`,
+        // line 213). The second is a no-op because the edge is already in the graph. Here that
+        // is checked before the endpoints, so it never reaches a prefix vertex that was not
+        // needed and so not added.
         let mut taken = vec![false; edges.len()];
         let resolve = |v: SplitVertex| -> Option<usize> {
             match v {
@@ -949,6 +1031,8 @@ impl Splitter {
                 SplitVertex::Middle(i) => Some(middle_ids[i]),
             }
         };
+        // A closure taking the graph and the flags as arguments rather than capturing them, so
+        // that it can change both while `edges` and `resolve` stay borrowed read-only.
         let add = |outer: &mut SeqGraph,
                    taken: &mut Vec<bool>,
                    i: usize,

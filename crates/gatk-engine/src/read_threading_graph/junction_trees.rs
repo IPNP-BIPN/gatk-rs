@@ -1,7 +1,8 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.
 //! JunctionTreeLinkedDeBruijnGraph` (its junction trees) and `haplotypecaller.graphs`
-//! (`JTBestHaplotype`, `JunctionTreeKBestHaplotypeFinder`), GATK 4.6.2.0: the linked de Bruijn
-//! graph's memory of which way each read went at each fork, and the search that follows it.
+//! (`JTBestHaplotype`, `JunctionTreeKBestHaplotypeFinder`), GATK 4.7.0.0; the three `.java` files
+//! are unchanged since 4.6.2.0. The linked de Bruijn graph's memory of which way each read went
+//! at each fork, and the search that follows it.
 //!
 //! # The trees
 //!
@@ -17,6 +18,27 @@
 //! reference walks them in an order that depends on the JVM's identity hashes. Here they are kept
 //! in the order they were first recorded. The order reaches the search only through the queue,
 //! where it decides which of two paths of exactly the same score is taken first.
+//!
+//! The same holds for `readThreadingJunctionTrees`, a `HashMap` keyed by vertex (a
+//! `MultiDeBruijnVertex` hashes by identity), which the dot files' junction-tree lines walk: here
+//! the trees are listed in the order they were opened. No golden in this crate runs the linked
+//! graph, so neither order is pinned by a test here.
+//!
+//! # Orders that are the reference's
+//!
+//! * the pivotal edges are a `LinkedHashSet`, so the first unvisited one is the first found;
+//! * the search queue is a `java.util.PriorityQueue` reproduced by `JavaPriorityQueue`, so equal
+//!   scores come out as the reference's heap gives them, given the same offers in the same order;
+//! * a path's active tree nodes are an `ArrayList`, oldest first; at a fork they are read in
+//!   that order, each adding its edges, until one has enough evidence to stop the reading.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - A tree node is an index into `JunctionTrees::nodes`; a tree is an index into `trees`.
+//! - `Option<(&mut ThreadingHelper, &mut JunctionTrees)>` is the reference's `alterTrees` flag
+//!   and the objects it alters in one: `None` is `alterTrees == false`. `&mut *trees` lends the
+//!   caller's writable reference on for one call without giving it up.
+//! - `std::mem::take(&mut x)` moves the value out of `x` and leaves an empty one behind.
 
 use std::collections::{HashMap, HashSet};
 
@@ -36,7 +58,8 @@ const MAX_PATHS_WITHOUT_RESULT: usize = 1000;
 const MAX_PATHS_EVER: usize = 10000;
 
 /// `ThreadingNode`: the edge that led here (none at a root), how many threads passed, and the
-/// children by edge, in the order first recorded.
+/// children by edge, in the order first recorded. The reference's `childrenNodes` is a `HashMap`
+/// keyed by edge identity (`BaseEdge` does not override `hashCode`), searched here linearly.
 #[derive(Debug, Clone)]
 struct ThreadingNode {
     prev_edge: Option<usize>,
@@ -50,7 +73,9 @@ pub struct JunctionTrees {
     nodes: Vec<ThreadingNode>,
     /// `readThreadingJunctionTrees`: each tree's vertex and root node.
     trees: Vec<(usize, usize)>,
+    /// Vertex to its tree: the lookup half of the map, never iterated.
     by_vertex: HashMap<usize, usize>,
+    /// `SYMBOLIC_END_EDGE`: reference sink to the `_` vertex.
     symbolic_end_edge: usize,
 }
 
@@ -65,6 +90,7 @@ pub enum JunctionTreeError {
 }
 
 impl JunctionTrees {
+    /// `childrenNodes.get(edge)`.
     fn child(&self, node: usize, edge: usize) -> Option<usize> {
         self.nodes[node]
             .children
@@ -92,7 +118,10 @@ impl JunctionTrees {
         next
     }
 
-    /// `getJunctionTreeForNode`, after pruning: a tree whose root has a child.
+    /// `getJunctionTreeForNode`, after pruning: a tree whose root has a child. The reference
+    /// filters the map with `ThreadingTree::isEmptyTree`, which despite its name is true for a
+    /// tree that has children: `return !rootNode.childrenNodes.isEmpty();`
+    /// (JunctionTreeLinkedDeBruijnGraph.java:583).
     pub fn tree_for_vertex(&self, vertex: usize) -> Option<usize> {
         self.by_vertex
             .get(&vertex)
@@ -100,8 +129,8 @@ impl JunctionTrees {
             .filter(|&tree| !self.nodes[self.trees[tree].1].children.is_empty())
     }
 
-    /// `getExtraGraphFileLines()`: each tree (only those with a child once `pruned`) as its vertex's
-    /// edge to a point, then its nodes depth first. The reference walks hash maps keyed by
+    /// `getExtraGraphFileLines()`: each tree (only those with a child once `pruned`) as its
+    /// vertex's edge to a point, then its nodes depth first. The reference walks hash maps keyed by
     /// identity here, so its order is the JVM's; a node is named by its index in hex.
     pub fn dot_lines(&self, graph: &ReadThreadingGraph, pruned: bool) -> Vec<String> {
         let mut out = Vec::new();
@@ -119,7 +148,9 @@ impl JunctionTrees {
         out
     }
 
-    /// `edgesForNodeRecursive`.
+    /// `edgesForNodeRecursive`: each child, depth first. The format puts the label straight
+    /// after the child's name and leaves a space after the `;`
+    /// (JunctionTreeLinkedDeBruijnGraph.java:534), which the text below keeps.
     fn node_dot_lines(&self, graph: &ReadThreadingGraph, node: usize, out: &mut Vec<String>) {
         for &(edge, child) in &self.nodes[node].children {
             out.push(format!(
@@ -135,10 +166,12 @@ impl JunctionTrees {
         }
     }
 
+    /// `ThreadingTree.getRootNode()`.
     fn root(&self, tree: usize) -> usize {
         self.trees[tree].1
     }
 
+    /// `JTBestHaplotype.getTotalOutForBranch`: the children's counts summed.
     fn total_out(&self, node: usize) -> i32 {
         self.nodes[node]
             .children
@@ -147,12 +180,13 @@ impl JunctionTrees {
             .sum()
     }
 
+    /// `isSymbolicEnd()`: `prevEdge == SYMBOLIC_END_EDGE`, by identity.
     fn is_symbolic_end(&self, node: usize) -> bool {
         self.nodes[node].prev_edge == Some(self.symbolic_end_edge)
     }
 }
 
-/// `JunctionTreeThreadingHelper`.
+/// `JunctionTreeThreadingHelper`: the nodes, one per open tree, that a read is currently at.
 struct ThreadingHelper {
     tracked: Vec<usize>,
 }
@@ -186,7 +220,10 @@ impl ReadThreadingGraph {
         trees
     }
 
-    /// `threadSequenceForJunctionTree`.
+    /// `threadSequenceForJunctionTree`: thread a read again through the finished graph, from the
+    /// first tracked k-mer, recording its choices in the trees. A k-mer the graph lacks is
+    /// stepped over when the way forward is unambiguous for up to k bases; otherwise the read
+    /// drops its open trees and looks each later k-mer up until one is found.
     fn thread_for_junction_trees(
         &self,
         trees: &mut JunctionTrees,
@@ -254,6 +291,8 @@ impl ReadThreadingGraph {
                 }
             }
         }
+        // `if (lastVertex == getReferenceSinkVertex())`: a read that ends on the sink tells its
+        // open trees so, through the symbolic end edge.
         if last == sink {
             let symbolic = trees.symbolic_end_edge;
             add_edge_to_tracked(trees, &mut helper, symbolic);
@@ -275,6 +314,8 @@ impl ReadThreadingGraph {
         for &edge in outgoing {
             let target = self.edges[edge].target;
             if self.vertices[target].suffix() == next_base {
+                // The tree is opened before the edge is recorded, so a tree opened here at
+                // `previous` records this very edge when `previous` is a fork.
                 if let Some((helper, trees)) = alter {
                     // `addTreeIfNecessary`.
                     let warrants = outgoing
@@ -321,6 +362,9 @@ fn add_edge_to_tracked(trees: &mut JunctionTrees, helper: &mut ThreadingHelper, 
 
 /// `JTBestHaplotype`: a path (its first vertex and edges), its score, the junction tree nodes it
 /// follows and the trees it has visited, and the forks taken since a tree last guided it.
+///
+/// `visited` is the reference's `HashSet` of trees, only asked membership. `score` is the sum
+/// of `log10(edge multiplicity) - log10(total out)` over the forks taken.
 #[derive(Debug, Clone)]
 pub struct JtPath {
     first: usize,
@@ -404,7 +448,9 @@ impl JtPath {
         out.edges.extend_from_slice(chain);
         let last_edge = *chain.last().expect("a chain");
         out.last = graph.edge(last_edge).target;
-        // `computeLogPenaltyScore`, added as one term.
+        // `computeLogPenaltyScore` (KBestHaplotype.java:32), added as one term: the base-ten
+        // logarithm of the multiplicity minus that of the total, each through `jmath`'s port of
+        // Java's `Math` logarithm, and the difference formed before it is added to the score.
         out.score = self.score
             + (jmath::math::log10(f64::from(multiplicity)) - jmath::math::log10(f64::from(total)));
         // `traverseEdgeForAllTrees`.
@@ -432,13 +478,15 @@ impl JtPath {
         }
     }
 
-    /// `removeEmptyNodesAndReturnIterator`.
+    /// `removeEmptyNodesAndReturnIterator`: drop the active nodes with no evidence out, and
+    /// answer the rest, oldest first.
     fn remove_empty_nodes(&mut self, trees: &JunctionTrees) -> Vec<usize> {
         self.active.retain(|&node| trees.total_out(node) > 0);
         self.active.clone()
     }
 
-    /// `hasStoppingEvidence`.
+    /// `hasStoppingEvidence`: true where a tree, read oldest first, has a read that ended here
+    /// before one has enough evidence to go on; also true where no tree has anything to say.
     fn has_stopping_evidence(&mut self, trees: &JunctionTrees, threshold: i32) -> bool {
         for node in self.remove_empty_nodes(trees) {
             let total = trees.total_out(node);
@@ -456,7 +504,12 @@ impl JtPath {
         true
     }
 
-    /// `getApplicableNextEdgesBasedOnJunctionTrees`.
+    /// `getApplicableNextEdgesBasedOnJunctionTrees`: the edges the trees chose, oldest tree first
+    /// until one has `threshold` evidence; failing that, every outgoing edge by its multiplicity,
+    /// bar a reference edge only the reference walked while there is any other choice.
+    ///
+    /// The children are read in the order recorded where the reference reads a `HashMap` (see
+    /// the module note), and that order is the order the candidates join the queue.
     fn next_paths(
         &mut self,
         graph: &ReadThreadingGraph,
@@ -465,6 +518,7 @@ impl JtPath {
         outgoing: &[usize],
         threshold: i32,
     ) -> Result<Vec<JtPath>, JunctionTreeError> {
+        // `edgesAccountedForByJunctionTrees`, a `HashSet` only asked membership.
         let mut accounted: Vec<usize> = Vec::new();
         let mut output = Vec::new();
         for node in self.remove_empty_nodes(trees) {
@@ -519,6 +573,12 @@ impl JtPath {
 
 /// `JunctionTreeKBestHaplotypeFinder.findBestHaplotypes`, from the reference source to the
 /// reference sink, `recover` being `experimentalEndRecoveryMode`.
+///
+/// Pop the best path, run it along its unforked chain (cached per vertex, as
+/// `graphKmerChainCache` is), open the tree there, finish it at the sink if the trees allow,
+/// then queue its continuations. The queue's comparator is
+/// `Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed()`
+/// (JunctionTreeKBestHaplotypeFinder.java:105): highest score first, ties as the heap gives them.
 pub fn find_best_haplotypes(
     graph: &ReadThreadingGraph,
     trees: &JunctionTrees,
@@ -537,6 +597,7 @@ pub fn find_best_haplotypes(
     let mut queue =
         JavaPriorityQueue::new(|a: &JtPath, b: &JtPath| java_double_compare(b.score, a.score));
     queue.add(JtPath::new(source));
+    // `graphKmerChainCache`: only looked up, so its hash order is not observable.
     let mut chain_cache: HashMap<usize, Vec<usize>> = HashMap::new();
     while result.len() < max_haplotypes && (!queue.is_empty() || !unvisited.is_empty()) {
         let limit = if result.is_empty() {
@@ -558,6 +619,8 @@ pub fn find_best_haplotypes(
 
         let mut vertex = path.last;
         let mut outgoing = graph.outgoing_edges(vertex).to_vec();
+        // An empty cached chain is recomputed, as the reference's `if (chain.isEmpty())` does
+        // with the empty list `computeIfAbsent` hands it.
         let chain = match chain_cache.get(&path.last).filter(|c| !c.is_empty()) {
             Some(cached) => {
                 vertex = graph.edge(*cached.last().expect("non-empty")).target;
@@ -597,6 +660,9 @@ pub fn find_best_haplotypes(
                 return Err(JunctionTreeError::NotFromSource);
             }
             result.push(finished);
+            // The popped path's own edges, not the chain appended to it:
+            // `pathToExtend.getEdges().forEach(unvisitedPivotalEdges::remove);`
+            // (JunctionTreeKBestHaplotypeFinder.java:181).
             for edge in &path.edges {
                 if let Some(at) = unvisited.iter().position(|e| e == edge) {
                     unvisited.remove(at);
@@ -631,7 +697,8 @@ pub fn find_best_haplotypes(
 }
 
 /// `enqueueNextPivotalEdge`: the first unvisited pivotal edge, appended to the best finished path
-/// through its source, cut after that path's last arrival there.
+/// through its source, cut after that path's last arrival there. The new path starts from the
+/// best path's score and counts every tree on it as visited.
 fn enqueue_next_pivotal_edge<F: Fn(&JtPath, &JtPath) -> std::cmp::Ordering>(
     graph: &ReadThreadingGraph,
     trees: &JunctionTrees,
@@ -682,6 +749,13 @@ fn enqueue_next_pivotal_edge<F: Fn(&JtPath, &JtPath) -> std::cmp::Ordering>(
 /// `createMapOfPivotalEdgesInTopologicalOrder`: a breadth-first walk from the source whose queue
 /// scores every edge 0, so that it pops in the heap's order; at every fork, the edges out not yet
 /// visited, bar reference edges walked only by the reference.
+///
+/// The score is always 0 because the helper's constructor assigns the field to itself and
+/// drops its argument: `score = score();` (JunctionTreeKBestHaplotypeFinder.java:391). So the
+/// queue's comparator never separates two entries, and the walk's order is purely the binary
+/// heap's: the root, then whatever `poll` moves into its place. That is why this uses
+/// `JavaPriorityQueue` with a comparator that always answers `Equal`. The source's own edges
+/// are queued without being marked visited, as in the reference.
 fn pivotal_edges_in_topological_order(graph: &ReadThreadingGraph, source: usize) -> Vec<usize> {
     let mut visited: HashSet<usize> = HashSet::new();
     let mut queue = JavaPriorityQueue::new(|_: &usize, _: &usize| std::cmp::Ordering::Equal);

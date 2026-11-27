@@ -1,5 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.mutect.SomaticLikelihoodsEngine` and
-//! the `Dirichlet` under it (GATK 4.6.2.0).
+//! the `Dirichlet` under it (GATK 4.7.0.0; `SomaticLikelihoodsEngine.java` and `Dirichlet.java`
+//! are unchanged since 4.6.2.0).
 //!
 //! The variational fixed point `AllelePseudoDepth` ends in, and the place G1.9's open question
 //! lives. `NaturalLogUtils` (G1.9.1) established that one ulp is what enters here; what the
@@ -7,14 +8,19 @@
 //!
 //! # Two risks, and they are different
 //!
+//! The loop, with the reference's trailing comments dropped and its two longest lines wrapped at
+//! a space:
+//!
 //! ```java
 //! double[] dirichletPosterior = new IndexRange(0, numberOfAlleles).mapToDouble(n -> 1.0);
 //! boolean converged = false;
-//! while (!converged) {
-//!     final double[] alleleCounts = getEffectiveCounts(logLikelihoods, dirichletPosterior, weights);
+//!
+//! while(!converged) {
+//!     final double[] alleleCounts =
+//!         getEffectiveCounts(logLikelihoods, dirichletPosterior, weights);
 //!     final double[] newDirichletPosterior = MathArrays.ebeAdd(alleleCounts, priorPseudocounts);
-//!     converged = MathArrays.distance1(dirichletPosterior, newDirichletPosterior)
-//!                     / MathUtils.sum(newDirichletPosterior) < CONVERGENCE_THRESHOLD;
+//!     converged = MathArrays.distance1(dirichletPosterior, newDirichletPosterior)/MathUtils.sum(
+//!         newDirichletPosterior) < CONVERGENCE_THRESHOLD;
 //!     dirichletPosterior = newDirichletPosterior;
 //! }
 //! ```
@@ -30,7 +36,7 @@
 //! [`allele_fractions_posterior`] returns the count alongside the result: a divergence has to be
 //! attributable to one cause or the other, not merely observed.
 //!
-//! # `while (!converged)` tests **after** the step
+//! # `while(!converged)` tests **after** the step
 //!
 //! The loop is not `do { } while`, but it behaves as one: `converged` is false on entry, so the
 //! body always runs at least once, and the test uses the value the body just computed. So the
@@ -43,6 +49,19 @@
 //! reads in a different order gives a different `double`. The reference's order is transcribed
 //! rather than rewritten, and the same goes for `MathUtils.sum`, which the convergence test
 //! divides by.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of a `double[]`; the caller keeps the array.
+//!   `&[Vec<f64>]` is the same over a list of rows, which is how the `RealMatrix` arrives.
+//! - `Option<T>` is "a value or nothing". Here `None` stands for every way the reference would
+//!   have thrown part-way through (a `digamma` refusal, a mismatched length, no reads), and `?`
+//!   after an `Option` returns `None` from the enclosing function at once, the way an exception
+//!   would leave it.
+//! - `Result<T, E>` is "a value or an error": `Ok(..)` is the return, `Err(..)` the throw.
+//! - `.iter().map(..).collect()` is Java's stream, map, collect; `.zip(other)` walks two lists in
+//!   step, stopping at the shorter.
+//! - the last expression of a body, with no `return` and no semicolon, is its value.
 
 use jmath::gamma;
 
@@ -71,13 +90,35 @@ pub struct Posterior {
 /// ```
 ///
 /// `digamma` is commons-math3's, ported and oracle-backed in htsjdk-rs (#62), so this is
-/// composition rather than new numerics — and unlike everything downstream of it, it carries no
+/// composition rather than new numerics. Unlike everything downstream of it, it carries no
 /// `exp` and therefore no 1-ulp bound. `sum` accumulates in index order.
+///
+/// **What is not here**: the `Dirichlet` constructor's checks, which run before this method in
+/// the reference:
+///
+/// ```java
+/// Utils.validateArg(alpha.length >= 1,
+///     "Dirichlet parameters must have at least one element");
+/// Utils.validateArg(MathUtils.allMatch(alpha, x -> x >= 0),
+///     "Dirichlet parameters may not be negative");
+/// Utils.validateArg(MathUtils.allMatch(alpha, Double::isFinite),
+///     "Dirichlet parameters must be finite");
+/// ```
+///
+/// (`Dirichlet.java` lines 25 to 27, each wrapped at a space.)
+///
+/// No such refusal exists in this port: an input the reference would refuse goes on to
+/// `digamma`, and only what `digamma` itself refuses becomes `None`. [`allele_fractions_posterior`]
+/// then reports every `None` as [`NonFiniteSum`].
 pub fn effective_log_multinomial_weights(alpha: &[f64]) -> Option<Vec<f64>> {
+    // `.ok()` turns the `Result` into an `Option`, dropping the error; `?` then leaves with `None`.
     let digamma_of_sum = gamma::digamma(sum(alpha)).ok()?;
     alpha
         .iter()
+        // `*a` reads the `f64` through the reference the iterator yields.
         .map(|a| gamma::digamma(*a).ok().map(|d| d - digamma_of_sum))
+        // Collecting `Option`s into `Option<Vec<_>>` stops at the first `None` and answers
+        // `None` for the whole list, which is the one-shot failure a Java exception would be.
         .collect()
 }
 
@@ -85,24 +126,30 @@ pub fn effective_log_multinomial_weights(alpha: &[f64]) -> Option<Vec<f64>> {
 ///
 /// ```java
 /// final double logNumerator = Gamma.logGamma(MathUtils.sum(dirichletParams));
-/// final double logDenominator = MathUtils.sum(MathUtils.applyToArray(dirichletParams, Gamma::logGamma));
+/// final double logDenominator =
+///     MathUtils.sum(MathUtils.applyToArray(dirichletParams, Gamma::logGamma));
 /// return logNumerator - logDenominator;
 /// ```
 ///
-/// Four of these make the allele-fraction clusters' correction, so the two sides of the subtraction
-/// matter more than the value does.
+/// (`SomaticLikelihoodsEngine.java` lines 109 to 111, the second wrapped at a space.)
+///
+/// Four of these make the allele-fraction clusters' correction, so the two sides of the
+/// subtraction matter more than the value does.
 ///
 /// # A single parameter of one is negative zero
 ///
 /// `logGamma(1.0)` is `-0.0`, and the denominator's sum starts from `0.0` and stays there, so the
-/// answer is `-0.0 - 0.0`. At `0.5` both sides are the same positive number and the answer is `0.0`.
-/// The two differ only in a sign bit no `==` can see.
+/// answer is `-0.0 - 0.0`. At `0.5` both sides are the same positive number and the answer is
+/// `0.0`. The two differ only in a sign bit no `==` can see.
 ///
 /// # A parameter of zero is NaN, not an infinity
 ///
 /// commons-math's `logGamma` answers `NaN` at and below zero rather than diverging, so a zero
 /// parameter poisons the denominator and the subtraction carries the `NaN` out.
 pub fn log_dirichlet_normalization(dirichlet_params: &[f64]) -> f64 {
+    // `MathUtils.applyToArray` builds a new array and then `MathUtils.sum` adds it up; the
+    // intermediate `Vec` keeps that two-step shape, so the denominator is the same index-order
+    // sum the reference takes.
     let log_numerator = gamma::log_gamma(sum(dirichlet_params));
     let logs: Vec<f64> = dirichlet_params
         .iter()
@@ -112,8 +159,19 @@ pub fn log_dirichlet_normalization(dirichlet_params: &[f64]) -> f64 {
 }
 
 /// `MathUtils.sum(double[])`, accumulating in index order.
+///
+/// ```java
+/// double s = 0.0;
+/// for (double v : values)
+///     s += v;
+/// return s;
+/// ```
+///
+/// Written out rather than with an iterator's `sum()`, so the start value and the order of the
+/// additions are visibly the reference's.
 pub fn sum(values: &[f64]) -> f64 {
     let mut total = 0.0;
+    // `value` is a reference to each element; `+=` reads through it.
     for value in values {
         total += value;
     }
@@ -121,6 +179,10 @@ pub fn sum(values: &[f64]) -> f64 {
 }
 
 /// `MathArrays.distance1`: the sum of absolute differences, again in index order.
+///
+/// commons-math3's own source is not quoted here. `zip` pairs the two lists element by element
+/// and stops at the end of the shorter, so two lists of different lengths are not detected by
+/// this function; the only caller passes two posteriors of the same allele count.
 pub fn distance1(first: &[f64], second: &[f64]) -> f64 {
     let mut total = 0.0;
     for (a, b) in first.iter().zip(second) {
@@ -141,14 +203,23 @@ pub fn effective_counts(
     dirichlet_prior: &[f64],
     weights: Option<&[f64]>,
 ) -> Option<Vec<f64>> {
+    // `new Dirichlet(dirichletPrior).effectiveLogMultinomialWeights()`, once for every read.
     let effective_log_weights = effective_log_multinomial_weights(dirichlet_prior)?;
+    // The column count of the matrix, read off the first row (zero when there are no rows).
     let read_count = log_likelihoods.first().map_or(0, Vec::len);
+    // No reads. `sumArrayFunction(0, 0, ...)` does not answer an empty sum: it still runs
+    // `final double[] result = function.apply(min);`, which asks for column 0 of a matrix with
+    // none. This port answers `None` rather than modelling that exception.
     if read_count == 0 {
         return None;
     }
 
+    // `None` until the first read, then that read's vector. The reference starts the same way,
+    // from `function.apply(min)` rather than from an array of zeros, so the first read's
+    // posteriors are taken as they are and never added to `0.0`.
     let mut total: Option<Vec<f64>> = None;
     for read in 0..read_count {
+        // `logLikelihoods.getColumn(read)`: one entry per allele, from each row in turn.
         let column: Vec<f64> = log_likelihoods.iter().map(|row| row[read]).collect();
         let mut unweighted = posteriors(&effective_log_weights, &column)?;
         if let Some(weights) = weights {
@@ -157,6 +228,9 @@ pub fn effective_counts(
                 *value *= weights[read];
             }
         }
+        // `for (int i = 0; i < result.length; i++) { result[i] += newValues[i]; }`, without the
+        // reference's equal-length check. `iter_mut()` hands out writable references, and
+        // `*slot += value` writes through one.
         total = Some(match total {
             None => unweighted,
             Some(mut running) => {
@@ -183,20 +257,29 @@ pub fn allele_fractions_posterior(
     prior_pseudocounts: &[f64],
     weights: Option<&[f64]>,
 ) -> Result<Posterior, NonFiniteSum> {
+    // `logLikelihoods.getRowDimension()`.
     let allele_count = log_likelihoods.len();
+    // `Utils.validateArg(numberOfAlleles == priorPseudocounts.length, ...)` with the same text.
+    // `assert_eq!` panics (stops the program) instead of returning an `Err`, so this is the one
+    // refusal here that a caller cannot catch.
     assert_eq!(
         allele_count,
         prior_pseudocounts.len(),
         "Must have one pseudocount per allele."
     );
 
+    // `vec![1.0; n]` is an array of `n` ones: the reference's `mapToDouble(n -> 1.0)`.
     let mut dirichlet_posterior = vec![1.0; allele_count];
     let mut iterations = 0usize;
+    // `loop` runs until a `return`. The convergence test sits at the end of the body, exactly
+    // where the reference's `while(!converged)` would next look at it.
     loop {
+        // `let Some(x) = .. else { .. }` takes the value or runs the block, which must leave.
         let Some(allele_counts) = effective_counts(log_likelihoods, &dirichlet_posterior, weights)
         else {
             return Err(NonFiniteSum);
         };
+        // `MathArrays.ebeAdd(alleleCounts, priorPseudocounts)`, element by element.
         let new_posterior: Vec<f64> = allele_counts
             .iter()
             .zip(prior_pseudocounts)

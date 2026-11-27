@@ -1,18 +1,18 @@
 //! `StrandArtifactFilter`'s E step, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.StrandArtifactFilter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `StrandArtifactFilter.java` is unchanged since 4.6.2.0).
 //!
 //! "Do the reads supporting this allele all come from one strand?" Three hypotheses are weighed
-//! against each other for every alternate: a forward-strand artifact, a reverse-strand artifact, and
-//! neither. The filter reports the first two added together.
+//! against each other for every alternate: a forward-strand artifact, a reverse-strand artifact,
+//! and neither. The filter reports the first two added together.
 //!
 //! The M step re-estimates the prior and the beta shape between passes, the shape by brute-force
 //! single-parameter optimisation: see [`learn_parameters`].
 //!
 //! # The strand counts come out of a string
 //!
-//! `AS_SB_TABLE` is read with `getAttributeAsString` and split on `|` and then on `,`, with brackets
-//! stripped and each field trimmed before `Integer.parseInt`. So:
+//! `AS_SB_TABLE` is read with `getAttributeAsString` and split on `|` and then on `,`, with
+//! brackets stripped and each field trimmed before `Integer.parseInt`. So:
 //!
 //!  * a non-integer field, an empty field included, is a `NumberFormatException` out of a filter;
 //!  * an absent or empty annotation is an empty list;
@@ -22,14 +22,17 @@
 //! # Two branches answer a hard zero
 //!
 //! ```java
-//! if (altSB.stream().mapToInt(Integer::intValue).sum() == 0 || altIndelSize > LONGEST_STRAND_ARTIFACT_INDEL_SIZE) {
+//! if (altSB.stream().mapToInt(Integer::intValue).sum() == 0
+//!         || altIndelSize > LONGEST_STRAND_ARTIFACT_INDEL_SIZE) {
 //!     return new EStep(0, 0, totalFwd, totalRev, altSB.get(0), altSB.get(1));
 //! }
 //! ```
 //!
+//! (The condition is one line in the reference, wrapped here.)
+//!
 //! An alternate with no reads on either strand, and an indel longer than four, are both an `EStep`
-//! with both responsibilities zero. The filter still reports for that allele: zero is an answer, not
-//! an abstention.
+//! with both responsibilities zero. The filter still reports for that allele: zero is an answer,
+//! not an abstention.
 //!
 //! # The normalisation is in log10 and the likelihoods are natural
 //!
@@ -48,11 +51,21 @@
 //! # What is not modelled, and why
 //!
 //! `indelSizes` is computed over **every** alternate allele while the strand table has had its
-//! symbolic entries removed, and the two are then indexed by the same `i`. A symbolic allele that is
-//! not the last alternate therefore pairs each remaining table entry with the wrong allele's indel
-//! size. Nothing measured reaches it -- the golden's symbolic allele is last, where the shift cannot
-//! show -- so [`calculate_artifact_probabilities`] takes the sizes already paired with the table and
-//! refuses to guess at the shifted case.
+//! symbolic entries removed, and the two are then indexed by the same `i`. A symbolic allele that
+//! is not the last alternate therefore pairs each remaining table entry with the wrong allele's
+//! indel size. Nothing measured reaches it -- the golden's symbolic allele is last, where the shift
+//! cannot show -- so [`calculate_artifact_probabilities`] takes the sizes already paired with the
+//! table and refuses to guess at the shifted case.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception; `?` returns the error
+//!   to the caller at once, and `impl From<X> for StrandArtifactError` is what lets it convert.
+//! - `.expect(msg)` unwraps a `Result` and stops the program with `msg` on an error: it marks a
+//!   refusal the reference's constants rule out.
+//! - `let objective = |alpha: f64| { ... };` is a lambda that captures the surrounding variables,
+//!   Java's `DoubleUnaryOperator objective = alpha -> { ... };`.
+//! - `[f64; 3]` is a fixed-length array of three doubles, Java's `new double[3]`.
 
 use crate::allele_fraction_cluster::double_stream_sum;
 use crate::beta_binomial::{BetaBinomialDistribution, BetaBinomialError};
@@ -63,10 +76,13 @@ use jmath::combinatorics::{binomial_coefficient_log, CombinatoricsError};
 /// `StrandArtifactFilter`'s identity.
 pub const FILTER_NAME: &str = "strand_bias";
 
-/// `phredScaledPosteriorAnnotationName`, `STRAND_QUAL_KEY`.
+/// `phredScaledPosteriorAnnotationName`, `GATKVCFConstants.STRAND_QUAL_KEY`.
 pub const ANNOTATION: &str = "STRANDQ";
 
 /// `INITIAL_ALPHA_STRAND`, the beta prior on the artifact allele fraction.
+///
+/// An instance field in the reference (`private double INITIAL_ALPHA_STRAND = 1.0;`) that nothing
+/// reassigns, so a constant here.
 pub const INITIAL_ALPHA_STRAND: f64 = 1.0;
 
 /// `INITIAL_BETA_STRAND`.
@@ -108,6 +124,7 @@ pub enum StrandArtifactError {
 }
 
 impl StrandArtifactError {
+    /// The Java exception class, for the refusal that has one measured; `None` for the others.
     pub fn class(&self) -> Option<&'static str> {
         match self {
             StrandArtifactError::NumberFormat { .. } => Some("java.lang.NumberFormatException"),
@@ -139,6 +156,9 @@ impl From<CombinatoricsError> for StrandArtifactError {
 }
 
 /// `StrandArtifactFilter.EStep`: two responsibilities and the counts they were computed from.
+///
+/// `forward_count` and `reverse_count` are the site's totals over every allele, the reference
+/// included (`totalFwd`, `totalRev`), not the alternate's own depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EStep {
     pub forward_artifact_responsibility: f64,
@@ -158,18 +178,23 @@ impl EStep {
 
 /// `StrandBiasUtils.getSBsForAlleles`: `AS_SB_TABLE` split on `|` and then on `,`.
 ///
-/// `None` for an absent or empty annotation, which is the reference's empty list.
+/// An empty string is an empty table, the reference's empty list; an absent annotation never
+/// reaches here (the caller's `None`).
 pub fn parse_strand_bias_table(table: &str) -> Result<Vec<Vec<i32>>, StrandArtifactError> {
     if table.is_empty() {
         return Ok(Vec::new());
     }
     // `replaceAll(BRACKET_REGEX, "")` strips every bracket anywhere, not only at the ends.
+    // `.chars().filter(..).collect()` rebuilds the string without the filtered characters.
     let stripped: String = table.chars().filter(|c| *c != '[' && *c != ']').collect();
     // `splitByWholeSeparatorPreserveAllTokens`, so an empty field is kept and then refused.
     let mut rows = Vec::new();
     for entry in stripped.split('|') {
         let mut counts = Vec::new();
         for field in entry.split(',') {
+            // `map(String::trim)`. Rust's `trim` strips Unicode whitespace, Java's every code
+            // point up to U+0020: a field padded with a control character such as U+0001 parses
+            // in the reference and is refused here.
             let field = field.trim();
             counts.push(
                 field
@@ -184,7 +209,8 @@ pub fn parse_strand_bias_table(table: &str) -> Result<Vec<Vec<i32>>, StrandArtif
     Ok(rows)
 }
 
-/// `Math.abs(vc.getReference().length() - alt.length())`.
+/// `Math.abs(vc.getReference().length() - alt.length())`, from `calculateArtifactProbabilities`'s
+/// `indelSizes`: zero for a SNP, and computed for every alternate, symbolic ones included.
 pub fn indel_size(reference_length: i32, alternate: AlternateAllele) -> i32 {
     (reference_length - alternate.length).abs()
 }
@@ -205,6 +231,8 @@ pub fn calculate_artifact_probabilities(
     if strand_bias_table.len() <= 1 {
         return Ok(Vec::new());
     }
+    // `sbs.stream().map(sb -> sb.get(0)).mapToInt(i -> i).sum()` and the same for `get(1)`: the
+    // reference entry included, over the table as given.
     let mut total_forward = 0;
     let mut total_reverse = 0;
     for (index, entry) in strand_bias_table.iter().enumerate() {
@@ -213,6 +241,8 @@ pub fn calculate_artifact_probabilities(
     }
 
     let mut steps = Vec::with_capacity(strand_bias_table.len() - 1);
+    // `altSBs = sbs.subList(1, sbs.size())`: `index` is the alternate's position, so the table
+    // entry is `index + 1` and the indel size is `index`.
     for (index, entry) in strand_bias_table[1..].iter().enumerate() {
         let forward_alt = *at(entry, 0, index + 1)?;
         let reverse_alt = *at(entry, 1, index + 1)?;
@@ -248,10 +278,12 @@ pub const ARTIFACT_PSEUDOCOUNT: f64 = 1.0;
 /// `NON_ARTIFACT_PSEUDOCOUNT`, a thousand times the artifact one.
 pub const NON_ARTIFACT_PSEUDOCOUNT: f64 = 1000.0;
 
-/// The threshold above which an accumulated `EStep` counts as a potential artifact.
+/// The threshold above which an accumulated `EStep` counts as a potential artifact: the literal
+/// `0.1` of `learnParameters`'s `filter(eStep -> eStep.getArtifactProbability() > 0.1)`.
 pub const POTENTIAL_ARTIFACT_THRESHOLD: f64 = 0.1;
 
-/// What one pass learned: the prior and the beta shape the next pass reads.
+/// What one pass learned: the prior and the beta shape the next pass reads. The reference keeps
+/// these as the filter's mutable fields `strandArtifactPrior`, `alphaStrand` and `betaStrand`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LearnedParameters {
     pub strand_artifact_prior: f64,
@@ -275,10 +307,15 @@ impl Default for LearnedParameters {
 /// # Two sums over two different sets
 ///
 /// ```java
-/// final List<EStep> potentialArtifacts = eSteps.stream().filter(e -> e.getArtifactProbability() > 0.1)...
-/// final double totalArtifacts = potentialArtifacts.stream()...sum();
-/// final double totalNonArtifacts = eSteps.stream().mapToDouble(e -> 1 - e.getArtifactProbability()).sum();
+/// final List<EStep> potentialArtifacts = eSteps.stream()
+///         .filter(eStep -> eStep.getArtifactProbability() > 0.1).collect(Collectors.toList());
+/// final double totalArtifacts = potentialArtifacts.stream()
+///         .mapToDouble(EStep::getArtifactProbability).sum();
+/// final double totalNonArtifacts = eSteps.stream()
+///         .mapToDouble(e -> 1 - e.getArtifactProbability()).sum();
 /// ```
+///
+/// (The last two statements are one line each in the reference, wrapped here.)
 ///
 /// The artifact mass is over the sites that look like artifacts; the non-artifact mass is over
 /// **all** of them. Every one of these sums is `DoubleStream.sum`, which is Kahan-compensated, so a
@@ -286,9 +323,9 @@ impl Default for LearnedParameters {
 ///
 /// # The guess is the initial alpha, not the current one
 ///
-/// `OptimizationUtils.max(objective, 0.01, 100, INITIAL_ALPHA_STRAND, 0.01, 0.01, 100)`. A pass that
-/// accumulated nothing therefore does not keep the previous pass's shape: the objective over an
-/// empty set is constant, and a constant objective answers the guess, which is `1.0`.
+/// `OptimizationUtils.max(objective, 0.01, 100, INITIAL_ALPHA_STRAND, 0.01, 0.01, 100)`. A pass
+/// that accumulated nothing therefore does not keep the previous pass's shape: the objective over
+/// an empty set is constant, and a constant objective answers the guess, which is `1.0`.
 ///
 /// # The mean is fixed and only alpha is searched
 ///
@@ -363,6 +400,8 @@ pub fn learn_parameters(e_steps: &[EStep]) -> LearnedParameters {
         )
     };
 
+    // `OptimizationUtils.max(objective, 0.01, 100, INITIAL_ALPHA_STRAND, 0.01, 0.01, 100)`, whose
+    // arguments are the interval, the start, the two tolerances and the evaluation budget.
     let alpha_strand = jmath::brent::maximize(
         objective,
         0.01,
@@ -384,11 +423,19 @@ pub fn learn_parameters(e_steps: &[EStep]) -> LearnedParameters {
 }
 
 /// `calculateErrorProbabilityForAlleles`: the two responsibilities added, or an empty list.
+///
+/// `forwardArtifactResponsibility + reverseArtifactResponsibility` per step, the same sum
+/// `getArtifactProbability` makes.
 pub fn error_probabilities(steps: &[EStep]) -> Vec<f64> {
     steps.iter().map(EStep::artifact_probability).collect()
 }
 
 /// `strandArtifactProbability`, the three-hypothesis comparison.
+///
+/// Forward artifact: the forward strand's alt reads from the artifact beta binomial and the
+/// reverse strand's from the sequencing-error one; reverse artifact the other way round; none: the
+/// alt reads split between the strands at random. The reference reads `alphaStrand` and
+/// `betaStrand` from its fields; here they are arguments.
 #[allow(clippy::too_many_arguments)]
 pub fn strand_artifact_probability(
     strand_artifact_prior: f64,
@@ -414,7 +461,10 @@ pub fn strand_artifact_probability(
             alpha_strand,
             beta_strand,
         )? + non_artifact_strand_log_likelihood(forward_count, forward_alt_count, indel_size)?;
-    // Three binomial coefficients and a beta binomial, in one expression.
+    // Three binomial coefficients and a beta binomial, in one expression, summed left to right as
+    // the reference writes them. `i64::from` widens each `int` to a `long` before the third
+    // coefficient's sums are formed, where the reference adds in `int`; the two differ only past
+    // `Integer.MAX_VALUE` reads.
     let none_log_likelihood =
         binomial_coefficient_log(i64::from(forward_count), i64::from(forward_alt_count))?
             + binomial_coefficient_log(i64::from(reverse_count), i64::from(reverse_alt_count))?
@@ -430,6 +480,7 @@ pub fn strand_artifact_probability(
     let reverse_log_prior = jmath::math::log(strand_artifact_prior / 2.0);
     let none_log_prior = jmath::math::log(1.0 - strand_artifact_prior);
 
+    // `MathUtils.normalizeLog10(new double[] {(...) * MathUtils.LOG10_E, ...}, false, true)`.
     let log10_e = log10_e();
     let unnormalized = [
         (forward_log_likelihood + forward_log_prior) * log10_e,
@@ -454,6 +505,9 @@ fn log10_e() -> f64 {
 }
 
 /// `MathUtils.normalizeLog10(array, false, true)`: subtract the log10 sum, then raise ten to it.
+///
+/// [`log10_sum_log10`] is the capital-S `log10SumLog10` that `normalizeLog10` calls, and each entry
+/// is raised separately, so the three need not sum to exactly one.
 fn normalize_log10(values: &[f64; 3]) -> [f64; 3] {
     let log10_sum = log10_sum_log10(values);
     [
@@ -475,6 +529,13 @@ fn artifact_strand_log_likelihood(
 }
 
 /// `nonArtifactStrandLogLikelihood`, whose beta takes three steps in the indel size.
+///
+/// ```java
+/// final double betaSeq = indelSize == 0 ? BETA_SEQ_SNV
+///         : (indelSize < LONG_INDEL_SIZE ? BETA_SEQ_SHORT_INDEL : BETA_SEQ_LONG_INDEL);
+/// ```
+///
+/// (One line in the reference, wrapped here.)
 fn non_artifact_strand_log_likelihood(
     strand_count: i32,
     strand_alt_count: i32,

@@ -1,5 +1,5 @@
 //! `AssemblyRegion`, ported from `org.broadinstitute.hellbender.engine.AssemblyRegion`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `AssemblyRegion.java` is unchanged since 4.6.2.0).
 //!
 //! [`crate::activity_profile`] decides *where* a region starts and stops. This is what the region
 //! **is** once it exists, and it is the object `HaplotypeCaller` and `Mutect2` assemble: two spans
@@ -39,6 +39,25 @@
 //! would put a lifetime on every region and on everything that stores one, so it is passed to the
 //! operations that need it instead. That is a Rust shape, not a behavioural difference: the same
 //! header reaches the same three call sites.
+//!
+//! The record type has no contig name of its own, only an index into the header's sequence
+//! list, so the header is also passed wherever a read's contig is named (the validation in
+//! [`AssemblyRegion::add`] and the messages). Java's `GATKRead.getContig()` needs no header.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, RegionError>` is "a value or an error", how the reference's exceptions are
+//!   modelled; a trailing `?` returns the error to the caller at once, and `.map_err(f)` wraps
+//!   another module's error in this one's;
+//! - `Option<T>` is "a value or nothing", Java's `null` checked by the compiler, and
+//!   `let Some(x) = y else { ... };` unwraps it or takes the early exit;
+//! - `&[BamRecord]` is a borrowed, read-only view of the reads: the caller sees the region's
+//!   own list without copying it, and cannot change it; `&mut [BamRecord]` is the writable form;
+//! - `impl IntoIterator<Item = BamRecord>` is "anything that yields reads", Java's
+//!   `Collection<GATKRead>`, and `impl Fn(&BamRecord) -> bool` is a predicate, Java's
+//!   `Predicate<GATKRead>`;
+//! - `match` on an enum must cover every variant (or name a catch-all `_`), and the compiler
+//!   checks it.
 
 use crate::clipping::{self, ClipError};
 use crate::interval::{trim_interval_to_contig, SimpleInterval};
@@ -179,6 +198,8 @@ fn contig_name(record: &BamRecord, header: &SamHeader) -> String {
         .unwrap_or_else(|| "null".to_string())
 }
 
+/// `header.getSequence(contig).getSequenceLength()`, with `None` where `getSequence` answers
+/// `null`.
 fn contig_length(header: &SamHeader, contig: &str) -> Option<i32> {
     header
         .sequences
@@ -199,12 +220,19 @@ fn pretty_print_sequence_records(header: &SamHeader) -> String {
 }
 
 /// A region of the genome the assembly engine works over.
+///
+/// The reference's `alignmentData` list (`getAlignmentData`, `addAllAlignmentData`) and its
+/// `getAssemblyRegionReference` have no counterpart here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssemblyRegion {
+    /// `activeSpan`: where variants are called.
     active_span: SimpleInterval,
+    /// `paddedSpan`: what is assembled; always contains `active_span`.
     padded_span: SimpleInterval,
     is_active: bool,
+    /// `reads`, each added through the ordering checks of [`AssemblyRegion::add`].
     reads: Vec<BamRecord>,
+    /// `hardClippedPileupReads`, kept to the same checks independently of `reads`.
     hard_clipped_pileup_reads: Vec<BamRecord>,
     has_been_finalized: bool,
 }
@@ -261,14 +289,17 @@ impl AssemblyRegion {
         })
     }
 
+    /// `getSpan()`, the active span.
     pub fn span(&self) -> &SimpleInterval {
         &self.active_span
     }
 
+    /// `getPaddedSpan()`.
     pub fn padded_span(&self) -> &SimpleInterval {
         &self.padded_span
     }
 
+    /// `isActive()`.
     pub fn is_active(&self) -> bool {
         self.is_active
     }
@@ -279,14 +310,18 @@ impl AssemblyRegion {
         self.is_active = value;
     }
 
+    /// `isFinalized()`.
     pub fn is_finalized(&self) -> bool {
         self.has_been_finalized
     }
 
+    /// `setFinalized(value)`.
     pub fn set_finalized(&mut self, value: bool) {
         self.has_been_finalized = value;
     }
 
+    /// `getReads()`. The reference returns an unmodifiable copy; a read-only borrow gives the
+    /// caller the same guarantee without the copy.
     pub fn reads(&self) -> &[BamRecord] {
         &self.reads
     }
@@ -297,6 +332,7 @@ impl AssemblyRegion {
         &mut self.reads
     }
 
+    /// `getHardClippedPileupReads()`, read-only as [`AssemblyRegion::reads`] is.
     pub fn hard_clipped_pileup_reads(&self) -> &[BamRecord] {
         &self.hard_clipped_pileup_reads
     }
@@ -312,21 +348,24 @@ impl AssemblyRegion {
         self.hard_clipped_pileup_reads.clear();
     }
 
-    /// `removeAll(readsToRemove)`, as the reads to keep: their order is kept.
+    /// `removeAll(readsToRemove)`, as the reads to keep: their order is kept. Only `reads` is
+    /// touched, as in the reference; the hard-clipped pileup reads stay.
     pub fn retain_reads(&mut self, keep: impl Fn(&BamRecord) -> bool) {
         self.reads.retain(|read| keep(read));
     }
 
-    /// `AssemblyRegion.add`.
+    /// `AssemblyRegion.add`: validated against the padded span and the last read, then appended.
     pub fn add(&mut self, record: BamRecord, header: &SamHeader) -> Result<(), RegionError> {
+        // `record` is taken by value: the region now owns the read, where Java would share the
+        // reference.
         let padded = self.padded_span.clone();
         validate_addition(&self.reads, &record, &padded, header)?;
         self.reads.push(record);
         Ok(())
     }
 
-    /// `AssemblyRegion.addHardClippedPileupReads`, which validates against the same padded span but
-    /// keeps its own ordering invariant.
+    /// One read of `AssemblyRegion.addHardClippedPileupReads`, which validates against the same
+    /// padded span but keeps its own ordering invariant.
     pub fn add_hard_clipped_pileup_read(
         &mut self,
         record: BamRecord,
@@ -338,7 +377,8 @@ impl AssemblyRegion {
         Ok(())
     }
 
-    /// `AssemblyRegion.addHardClippedPileupReads`.
+    /// `AssemblyRegion.addHardClippedPileupReads`: one at a time, so it stops at the first
+    /// refusal with the reads before it already added, as `forEach` does.
     pub fn add_hard_clipped_pileup_reads(
         &mut self,
         records: impl IntoIterator<Item = BamRecord>,
@@ -369,6 +409,13 @@ impl AssemblyRegion {
     /// with the region's existing padded span, which is the only thing keeping it inside the
     /// original region. This is the entry point whose javadoc describes a different answer from the
     /// one the code produces.
+    ///
+    /// ```java
+    /// Utils.validateArg( padding >= 0, "the padding size must be 0 or greater");
+    /// final SimpleInterval paddedSpan =
+    ///         span.expandWithinContig(padding, header.getSequenceDictionary());
+    /// return trim(span, paddedSpan);
+    /// ```
     pub fn trim_with_padding(
         &self,
         span: &SimpleInterval,
@@ -391,6 +438,21 @@ impl AssemblyRegion {
     /// dropped, and the survivors are sorted by `ReadCoordinateComparator`. The sort is the part a
     /// port is most likely to skip, and it is observable: a region trimmed to a span its reads
     /// already fit inside still comes back in comparator order rather than in the order it held.
+    ///
+    /// ```java
+    /// final List<GATKRead> trimmedReads = reads.stream()
+    ///         .map(read -> {GATKRead clipped = ReadClipper.hardClipToRegion(read,
+    ///                               newPaddedSpan.getStart(), newPaddedSpan.getEnd());
+    ///                       return clipped;})
+    ///         .filter(read -> !read.isEmpty() && read.overlaps(result.paddedSpan))
+    ///         .sorted(new ReadCoordinateComparator(header))
+    ///         .collect(Collectors.toList());
+    /// ```
+    ///
+    /// (Long lines of the quotes in this file are broken at token boundaries to fit its width.)
+    ///
+    /// The new region is built (and its containment checked) before any read is clipped, as in
+    /// the reference, so a bad span is refused before clipping can fail.
     pub fn trim(
         &self,
         span: &SimpleInterval,
@@ -436,6 +498,8 @@ impl AssemblyRegion {
             }
             trimmed.push(clipped);
         }
+        // `sort_by` is a stable sort: reads the comparator calls equal keep the order they were
+        // held in, as the JDK documents `Stream.sorted` doing for a list's (ordered) stream.
         trimmed.sort_by(read_utils::compare_read_coordinate);
 
         result.add_all(trimmed, header)?;
@@ -448,6 +512,17 @@ impl AssemblyRegion {
 /// The order of the checks is the behaviour: the read's own interval is built **first**, so an
 /// unmapped read fails on `SimpleInterval`'s validation and the message talks about an invalid
 /// interval rather than about an unmapped read.
+///
+/// ```java
+/// final SimpleInterval readLoc = new SimpleInterval( read );
+/// Utils.validateArg(paddedSpan.overlaps(read), () ->
+///         "Read location " + readLoc + " doesn't overlap with active region padded span "
+///         + paddedSpan);
+/// ```
+///
+/// Then, against the last read of the same collection only: the same contig, and a start no
+/// earlier than its start. A read may therefore start where the last one did, and nothing
+/// checks it against the other collection.
 fn validate_addition(
     collection: &[BamRecord],
     record: &BamRecord,
@@ -457,6 +532,8 @@ fn validate_addition(
     let contig = contig_name(record, header);
     let start = read_utils::start(record);
     let end = read_utils::end(record);
+    // `new SimpleInterval(read)`'s own validation: a null contig (an unmapped read), a start
+    // below 1, or an end before the start.
     if read::is_unmapped(record) || start < 1 || end < start {
         return Err(RegionError::InvalidReadInterval { contig, start, end });
     }
@@ -487,6 +564,7 @@ fn validate_addition(
     Ok(())
 }
 
+/// `read.overlaps(interval)`, the `Locatable` test, on the read's contig name and span.
 fn overlaps(record: &BamRecord, interval: &SimpleInterval, header: &SamHeader) -> bool {
     interval.overlaps(
         &contig_name(record, header),

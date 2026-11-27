@@ -1,7 +1,9 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading`
 //! (`AbstractReadThreadingGraph`: `recoverDanglingTails`, `recoverDanglingHeads` and their
 //! helpers), `haplotypecaller.graphs.BaseGraph` (`isReferenceNode`, `getNextReferenceVertex`,
-//! `getPrevReferenceVertex`) and `utils.read.AlignmentUtils.removeTrailingDeletions`, GATK 4.6.2.0.
+//! `getPrevReferenceVertex`) and `utils.read.AlignmentUtils.removeTrailingDeletions`, GATK
+//! 4.7.0.0; `AbstractReadThreadingGraph.java`, `BaseGraph.java` and `AlignmentUtils.java` are
+//! unchanged since 4.6.2.0.
 //!
 //! A dangling tail is a vertex with no outgoing edge that is not the reference sink; a dangling
 //! head, one with no incoming edge that is not the reference source. Each is walked back to where
@@ -24,6 +26,22 @@
 //! * the extension copies a new vertex's bases with `Arrays.copyOfRange`, so the walk never
 //!   reads past the extended sequence, and its edges take the source edge's multiplicity but keep
 //!   a pruning multiplicity of one.
+//!
+//! `tests/dangling_ends.rs` compares the graph after the tails, after the heads and after
+//! `removePathsNotConnectedToRef` line for line against `dangling_ends.txt.gz`, vertex and edge
+//! order included: the order the tails are visited in (vertex order) is the order their edges
+//! are added.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - The reference's `null` returns are `Option`: `None` for no path or no merge.
+//! - Java's unchecked list and array reads, which throw `IndexOutOfBoundsException`, go through
+//!   `at`, which turns an out-of-range index into `Err(GraphError::IndexOutOfBounds)`; the `?`
+//!   after it passes that error up as the exception would propagate.
+//! - Indices the reference computes as `int`, and which can go negative, are kept as `i32`;
+//!   `as i32` and `as usize` convert between them and the unsigned index type.
+//! - `impl Fn(&Self, usize) -> bool` in `find_path` is a lambda parameter, the reference's
+//!   `Predicate<MultiDeBruijnVertex>`; `&dyn SmithWatermanAligner` is an interface reference.
 
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
@@ -33,7 +51,8 @@ use crate::smith_waterman::{SmithWatermanAligner, SwOverhangStrategy, SwParamete
 /// `MAX_CIGAR_COMPLEXITY`.
 const MAX_CIGAR_COMPLEXITY: usize = 3;
 
-/// `DanglingChainMergeHelper`.
+/// `DanglingChainMergeHelper`: the branch's vertices, the reference's from the same point, both
+/// as bases, and the Smith-Waterman CIGAR of the branch against the reference.
 struct DanglingChainMergeHelper {
     dangling_path: Vec<usize>,
     reference_path: Vec<usize>,
@@ -42,7 +61,8 @@ struct DanglingChainMergeHelper {
     cigar: Cigar,
 }
 
-/// `List.get` and an array read: Java's bounds check, as an error.
+/// `List.get` and an array read: Java's bounds check, as an error. A negative index fails too,
+/// because `usize::try_from` refuses it.
 fn at<T: Copy>(items: &[T], index: i32) -> Result<T, GraphError> {
     usize::try_from(index)
         .ok()
@@ -50,7 +70,8 @@ fn at<T: Copy>(items: &[T], index: i32) -> Result<T, GraphError> {
         .ok_or(GraphError::IndexOutOfBounds)
 }
 
-/// `cigarIsOkayToMerge`.
+/// `cigarIsOkayToMerge`: one to `MAX_CIGAR_COMPLEXITY` elements, with an M first (heads) or last
+/// (tails) where required.
 fn cigar_is_okay_to_merge(cigar: &Cigar, require_first_m: bool, require_last_m: bool) -> bool {
     let elements = &cigar.elements;
     if elements.is_empty() || elements.len() > MAX_CIGAR_COMPLEXITY {
@@ -74,7 +95,8 @@ fn longest_suffix_match(seq: &[u8], kmer: &[u8], seq_start: i32) -> Result<i32, 
     Ok(kmer.len() as i32)
 }
 
-/// `AlignmentUtils.removeTrailingDeletions`.
+/// `AlignmentUtils.removeTrailingDeletions`: drop a last D element. An empty CIGAR is the
+/// reference's `IndexOutOfBoundsException` on reading its last element.
 fn remove_trailing_deletions(cigar: Cigar) -> Result<Cigar, GraphError> {
     let last = cigar.elements.last().ok_or(GraphError::IndexOutOfBounds)?;
     if last.op != Op::D {
@@ -85,6 +107,7 @@ fn remove_trailing_deletions(cigar: Cigar) -> Result<Cigar, GraphError> {
     Ok(Cigar::new(elements))
 }
 
+/// The reference bases the elements consume: the sum `bestPrefixMatch` starts `refIdx` from.
 fn reference_bases(elements: &[CigarElement]) -> i32 {
     elements
         .iter()
@@ -106,6 +129,8 @@ impl ReadThreadingGraph {
     ) -> Result<(), GraphError> {
         self.validate_recovery(prune_factor, min_dangling_branch_length)?;
         // Only edges are added, so the vertex set iterated is the one the loop started with.
+        // The test is made as each vertex comes up, as the reference's loop over `vertexSet()`
+        // does, so a tail an earlier merge has given an outgoing edge is skipped.
         for vertex in 0..self.vertices.len() {
             if self.vertex_alive[vertex]
                 && self.out_degree(vertex) == 0
@@ -124,7 +149,8 @@ impl ReadThreadingGraph {
         Ok(())
     }
 
-    /// `recoverDanglingHeads`, over the heads listed before any is merged.
+    /// `recoverDanglingHeads`, over the heads listed before any is merged, because a merge can
+    /// add vertices.
     pub fn recover_dangling_heads(
         &mut self,
         prune_factor: i32,
@@ -151,6 +177,7 @@ impl ReadThreadingGraph {
         Ok(())
     }
 
+    /// The argument checks both recoveries open with, in the reference's order.
     fn validate_recovery(&self, prune_factor: i32, min_branch: i32) -> Result<(), GraphError> {
         if prune_factor < 0 {
             return Err(GraphError::IllegalArgument(
@@ -193,6 +220,8 @@ impl ReadThreadingGraph {
             aligner,
             parameters,
         )?;
+        // `match` with a guard: the first arm takes a `Some` whose CIGAR passes; everything else,
+        // `None` included, is the `_` arm.
         match merge {
             Some(merge) if cigar_is_okay_to_merge(&merge.cigar, false, true) => {
                 self.merge_dangling_tail(&merge)
@@ -201,7 +230,8 @@ impl ReadThreadingGraph {
         }
     }
 
-    /// `recoverDanglingHead`.
+    /// `recoverDanglingHead`: 1 when an edge was added (or refused as a duplicate), 0 otherwise.
+    /// `numDanglingMatchingPrefixBases` of -1 takes the legacy merge.
     fn recover_dangling_head(
         &mut self,
         vertex: usize,
@@ -234,7 +264,8 @@ impl ReadThreadingGraph {
         }
     }
 
-    /// `mergeDanglingTail`.
+    /// `mergeDanglingTail`: join the branch to the reference after their longest common suffix,
+    /// capped at the last M element's length.
     fn merge_dangling_tail(&mut self, merge: &DanglingChainMergeHelper) -> Result<i32, GraphError> {
         let elements = &merge.cigar.elements;
         let last = elements[elements.len() - 1];
@@ -275,7 +306,9 @@ impl ReadThreadingGraph {
         Ok(1)
     }
 
-    /// `mergeDanglingHeadLegacy`: the old merge, which does not handle indels.
+    /// `mergeDanglingHeadLegacy`: the old merge, which does not handle indels. The edge goes from
+    /// the reference vertex one past the index to the branch vertex at it; a branch too short to
+    /// reach the index is first extended with reference bases.
     fn merge_dangling_head_legacy(
         &mut self,
         merge: &mut DanglingChainMergeHelper,
@@ -307,7 +340,8 @@ impl ReadThreadingGraph {
         Ok(1)
     }
 
-    /// `mergeDanglingHead`.
+    /// `mergeDanglingHead`: as the legacy merge, at the separate reference and branch offsets
+    /// `best_prefix_match` finds, so an indel inside the alignment shifts one against the other.
     fn merge_dangling_head(
         &mut self,
         merge: &mut DanglingChainMergeHelper,
@@ -351,6 +385,9 @@ impl ReadThreadingGraph {
     ) -> Result<(i32, i32), GraphError> {
         let mut ref_index = reference_bases(elements) - 1;
         let mut read_index = path2.len() as i32 - 1;
+        // `'cigar:` labels the outer loop, and `break 'cigar` leaves both loops at once: Java's
+        // `cigarLoop:` and `break cigarLoop`. The indices step down only after a match, as the
+        // reference's `for` update clause does.
         'cigar: for element in elements.iter().rev() {
             if !(element.op.consumes_read_bases() && element.op.consumes_reference_bases()) {
                 break;
@@ -397,6 +434,18 @@ impl ReadThreadingGraph {
 
     /// `extendDanglingPathAgainstReference`: replace the head's source by `num_nodes` new
     /// vertices that prepend the reference's bases to it.
+    ///
+    /// Each new vertex's bases are `Arrays.copyOfRange(sequenceToExtend, i, i + kmerSize)` (line
+    /// 921), and then:
+    ///
+    /// ```java
+    /// final MultiSampleEdge newE = addEdge(newV, prevV);
+    /// newE.setMultiplicity(sourceEdge.getMultiplicity());
+    /// ```
+    ///
+    /// (`AbstractReadThreadingGraph.java:923-924`.) `addEdge(newV, prevV)` takes the edge factory's
+    /// default edge, so the queue behind the pruning multiplicity holds one; `setMultiplicity`
+    /// changes only the total. The old source keeps its other edges and its k-mer entry.
     fn extend_dangling_path_against_reference(
         &mut self,
         merge: &mut DanglingChainMergeHelper,
@@ -425,10 +474,13 @@ impl ReadThreadingGraph {
             return Ok(false);
         }
         let ref_vertex = at(&merge.reference_path, ref_node)?;
+        // `List.remove(int)`: the source leaves the path, the rest keep their order.
         let source = at(&merge.dangling_path, last)?;
         merge.dangling_path.remove(last as usize);
         let ref_sequence = &self.vertices[ref_vertex].sequence;
         let mut sequence = Vec::with_capacity(num_nodes as usize + self.kmer_size);
+        // `refSourceSequence[i]`: more nodes than the k-mer has bases is the reference's
+        // `ArrayIndexOutOfBoundsException`.
         for i in 0..num_nodes {
             sequence.push(at(ref_sequence, i)?);
         }
@@ -438,6 +490,7 @@ impl ReadThreadingGraph {
         let multiplicity = self.edges[source_edge].multiplicity;
         let mut previous = self.edges[source_edge].target;
         self.remove_edge(source_edge);
+        // `for (int i = numNodesToExtend; i > 0; i--)`: `(1..=n).rev()` counts n down to 1.
         for i in (1..=num_nodes as usize).rev() {
             // `Arrays.copyOfRange`, which pads with zeros past the end.
             let mut kmer = vec![0u8; self.kmer_size];
@@ -453,7 +506,9 @@ impl ReadThreadingGraph {
         Ok(true)
     }
 
-    /// `generateCigarAgainstDownwardsReferencePath`.
+    /// `generateCigarAgainstDownwardsReferencePath`: the branch from its lowest common ancestor
+    /// with the reference down to the tail, the reference from that ancestor down (avoiding the
+    /// branch's own heaviest edge in), both as last bases, aligned with `LEADING_INDEL`.
     fn generate_cigar_against_downwards_reference_path(
         &self,
         vertex: usize,
@@ -494,7 +549,9 @@ impl ReadThreadingGraph {
         }))
     }
 
-    /// `generateCigarAgainstUpwardsReferencePath`.
+    /// `generateCigarAgainstUpwardsReferencePath`: the branch from where it first meets the
+    /// reference back up to the head, the reference from there up, both read backwards with a
+    /// source expanded to its whole k-mer reversed.
     fn generate_cigar_against_upwards_reference_path(
         &self,
         vertex: usize,
@@ -535,7 +592,9 @@ impl ReadThreadingGraph {
         }))
     }
 
-    /// `findPathUpwardsToLowestCommonAncestor`.
+    /// `findPathUpwardsToLowestCommonAncestor`: `give_up_at_branch` (not `recoverAll`) follows
+    /// only single incoming edges and stops at any fork; otherwise the heaviest incoming edge, to
+    /// the first vertex with a reference edge in.
     fn find_path_upwards_to_lowest_common_ancestor(
         &self,
         vertex: usize,
@@ -563,7 +622,8 @@ impl ReadThreadingGraph {
         }
     }
 
-    /// `findPathDownwardsToHighestCommonDescendantOfReference`.
+    /// `findPathDownwardsToHighestCommonDescendantOfReference`: the same walk downwards, ending
+    /// on the first reference vertex.
     fn find_path_downwards_to_highest_common_descendant_of_reference(
         &self,
         vertex: usize,
@@ -659,6 +719,9 @@ impl ReadThreadingGraph {
         self.heaviest(&self.outgoing[vertex])
     }
 
+    /// The first edge of greatest multiplicity in list order. `is_none_or(f)` is true for no
+    /// best yet, else `f(best)`; strictly greater keeps the first of equals, as `Stream.max`
+    /// does. An empty list is `Optional.get()`'s `NoSuchElementException`.
     fn heaviest(&self, edges: &[usize]) -> Result<usize, GraphError> {
         let mut best: Option<usize> = None;
         for &edge in edges {
@@ -778,7 +841,8 @@ impl ReadThreadingGraph {
         bases
     }
 
-    /// `addVertex(new MultiDeBruijnVertex(bases))`: a vertex the k-mer map never hears of.
+    /// `addVertex(new MultiDeBruijnVertex(bases))`: a vertex the k-mer map never hears of, added
+    /// at the end of vertex order.
     fn add_vertex_outside_kmer_map(&mut self, sequence: Vec<u8>) -> usize {
         let vertex = self.vertices.len();
         self.vertices.push(Vertex {

@@ -1,9 +1,10 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading`
 //! (`AbstractReadThreadingGraph`, `ReadThreadingGraph`, `MultiDeBruijnVertex`) and
-//! `haplotypecaller.graphs` (`BaseGraph`, `BaseEdge`, `MultiSampleEdge`), GATK 4.6.2.0: the read
-//! threading graph as `buildGraphIfNecessary` leaves it, the chain pruners, and (in
-//! `dangling_ends`) the recovery of dangling tails and heads. The conversion to a sequence graph is
-//! `seq_graph`.
+//! `haplotypecaller.graphs` (`BaseGraph`, `BaseEdge`, `MultiSampleEdge`, `ChainPruner`,
+//! `LowWeightChainPruner`, `AdaptiveChainPruner`), GATK 4.7.0.0; every one of those `.java` files
+//! is unchanged since 4.6.2.0. It holds the read threading graph as `buildGraphIfNecessary` leaves
+//! it, the chain pruners, and (in `dangling_ends`) the recovery of dangling tails and heads. The
+//! conversion to a sequence graph is `seq_graph`.
 //!
 //! # What is built
 //!
@@ -30,6 +31,43 @@
 //! sequence's own `start`, so the bases of a read before its first usable run still decide which
 //! k-mers are non-unique. And `findStart` searches `start .. stop - k` exclusive, so the last
 //! k-mer of a sequence is never its threading start. Both are the reference's behaviour.
+//!
+//! # Where an order reaches the output
+//!
+//! Every golden that reads this graph compares it line for line, vertices, edges and k-mer map
+//! entries in their order (`tests/read_threading_graph.rs` against `read_threading_graph.txt.gz`,
+//! `tests/chain_pruner.rs` against `chain_pruner.txt.gz`, `tests/adaptive_chain_pruner.rs`
+//! against `adaptive_chain_pruner.txt.gz`). The orders that matter:
+//!
+//! * vertex order is creation order: `vertexSet()` of the reference's `LinkedHashMap`. It decides
+//!   which vertex `getReferenceSourceVertex` finds first and the order `toSequenceGraph` copies;
+//! * each vertex's edge lists are in creation order and keep it across removals, which is what
+//!   `extendChainByOne`'s "first matching edge" and `findAllChains`' order read;
+//! * `kmerToVertexMap` is a `LinkedHashMap`, and the goldens' `kmer` rows list it in that order.
+//!   Which vertices it holds also shows in their `vertex` rows and in the dot files, because
+//!   `buildGraphIfNecessary` appends `+` to exactly those vertices' debugging text.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - A vertex or an edge is a `usize` (an unsigned index type Java lacks) into `vertices` or
+//!   `edges`. Nothing is ever freed: a removal clears a flag in `vertex_alive` or `edge_alive`, so
+//!   an index stays a stable identity, the way a Java object reference does.
+//! - `Option<T>` is "a value or nothing", Java's nullable reference checked by the compiler;
+//!   `Some(x)` is the value and `None` the `null`. `Result<T, GraphError>` is "a value or one of
+//!   the refusals below": `Err(..)` is the throw, `Ok(..)` the return, and `?` after a call passes
+//!   an `Err` (or, in a function answering `Option`, a `None`) straight up to the caller, as an
+//!   uncaught exception would.
+//! - `let Some(x) = y else { ... };` unwraps `y` or takes the early exit in the braces.
+//! - `&T` is a read-only borrowed reference, `&mut T` a writable one, and while a `&mut` exists
+//!   nothing else may touch the value. That is why some loops first `.clone()` a list they read
+//!   while they change the graph: the copy is for the compiler, not for the algorithm.
+//! - `impl Iterator<Item = usize> + '_` is a lazy stream (Java's `Stream<Integer>`) that borrows
+//!   the graph; `.filter`, `.map`, `.find`, `.any`, `.all` and `.collect()` are the stream
+//!   operations of the same names.
+//! - `|a, b| ...` is a lambda. A function's last expression, written without `return`, is its
+//!   value.
+//! - `x as i8` reinterprets or truncates a number the way a Java cast does; `isize` and `i32` are
+//!   signed, `usize` is not, so a Java index that can be -1 becomes `isize` or `Option<usize>`.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -49,7 +87,8 @@ pub enum GraphError {
     /// `Utils.validate(!(isRef && uniqueMergeVertex != null), "Found a unique vertex to merge into
     /// the reference graph ...")`.
     UniqueVertexOnReference,
-    /// `IllegalStateException("Attempting to add sequence to a graph that has already been built")`.
+    /// `IllegalStateException("Attempting to add sequence to a graph that has already been
+    /// built")`.
     AlreadyBuilt,
     /// `SequenceForKmers`'s argument checks.
     InvalidSequence(String),
@@ -74,7 +113,8 @@ pub enum GraphError {
     Alignment(crate::alignment_utils::AlignmentError),
 }
 
-/// `MultiDeBruijnVertex`: a k-mer's bases and the debugging text `buildGraphIfNecessary` appends to.
+/// `MultiDeBruijnVertex`: a k-mer's bases and the debugging text `buildGraphIfNecessary` appends
+/// to.
 #[derive(Debug, Clone)]
 pub struct Vertex {
     pub sequence: Vec<u8>,
@@ -96,13 +136,27 @@ pub struct Edge {
     pub target: usize,
     pub is_ref: bool,
     pub multiplicity: i32,
+    /// `currentSingleSampleMultiplicity`: what the sample being threaded has added so far.
     current_single_sample: i32,
     /// `PriorityQueue<Integer>`, a min-heap: the smallest is what `poll` drops and `peek` reads.
+    /// Rust's `BinaryHeap` is a max-heap; wrapping each value in `Reverse` flips its ordering, so
+    /// the largest `Reverse` is the smallest count, as in Java's queue.
     single_sample: BinaryHeap<Reverse<i32>>,
+    /// `singleSampleCapacity`, the graph's `numPruningSamples`.
     capacity: usize,
 }
 
 impl Edge {
+    /// `new MultiSampleEdge(isRef, multiplicity, singleSampleCapacity)`. The queue starts with the
+    /// initial multiplicity already in it, so that entry competes with the per-sample counts:
+    ///
+    /// ```java
+    /// singleSampleMultiplicities = new PriorityQueue<>(singleSampleCapacity);
+    /// singleSampleMultiplicities.add(multiplicity);
+    /// ```
+    ///
+    /// (`MultiSampleEdge.java:48-49`.) The unit test
+    /// `the_pruning_multiplicity_keeps_the_largest_per_sample_counts` pins that.
     fn new(source: usize, target: usize, is_ref: bool, multiplicity: i32, capacity: usize) -> Edge {
         let mut single_sample = BinaryHeap::with_capacity(capacity + 1);
         single_sample.push(Reverse(multiplicity));
@@ -134,16 +188,22 @@ impl Edge {
     }
 
     /// `getPruningMultiplicity()`: `singleSampleMultiplicities.peek()`, the smallest kept.
+    ///
+    /// The queue always holds at least the constructor's entry, so the `unwrap_or(0)` (the value
+    /// taken when the `Option` from `peek` is `None`) is never reached.
     pub fn pruning_multiplicity(&self) -> i32 {
         self.single_sample.peek().map(|value| value.0).unwrap_or(0)
     }
 }
 
-/// `SequenceForKmers`.
+/// `SequenceForKmers`: the whole of a read's (or the reference's) bases, and the run of them to
+/// thread. The name the reference also keeps is only for debugging output, so it is not kept.
 #[derive(Debug, Clone)]
 struct SequenceForKmers {
     sequence: Vec<u8>,
+    /// First base to thread, inclusive.
     start: usize,
+    /// Last base to thread, exclusive.
     stop: usize,
     count: i32,
     is_ref: bool,
@@ -161,16 +221,25 @@ pub struct ReadThreadingGraph {
     /// removing from a `LinkedHashMap` or an array-backed set does.
     vertex_alive: Vec<bool>,
     edge_alive: Vec<bool>,
+    /// Per vertex, `outgoingEdgesOf(v)` in the reference's order: creation order, kept across
+    /// removals.
     outgoing: Vec<Vec<usize>>,
+    /// Per vertex, `incomingEdgesOf(v)`, likewise.
     incoming: Vec<Vec<usize>>,
-    /// `pending`, a `LinkedHashMap` from sample to its sequences.
+    /// `pending`, a `LinkedHashMap` from sample to its sequences. A `Vec` of pairs searched
+    /// linearly keeps the samples in the order first seen, which is the order they are threaded.
     pending: Vec<(String, Vec<SequenceForKmers>)>,
     /// `kmerToVertexMap`, a `LinkedHashMap`: the entries in insertion order (`None` once removed),
     /// and an index into them.
     kmer_entries: Vec<Option<(Vec<u8>, usize)>>,
+    /// The hash half of `kmerToVertexMap`: k-mer to its position in `kmer_entries`. Only looked
+    /// up, never iterated, so its own order is not observable.
     kmer_index: HashMap<Vec<u8>, usize>,
+    /// `nonUniqueKmers`. Only asked `contains`, and stays empty for the linked graph.
     non_unique: HashSet<Vec<u8>>,
+    /// `referencePath`: the reference's vertices in threading order, `None` until it is threaded.
     reference_path: Option<Vec<usize>>,
+    /// `refSource`: the reference's first k-mer, which `getKmerVertex(kmer, false)` refuses.
     ref_source: Option<Vec<u8>>,
     start_only_at_existing_vertex: bool,
     increase_counts_through_branches: bool,
@@ -227,6 +296,7 @@ impl ReadThreadingGraph {
     ) -> ReadThreadingGraph {
         ReadThreadingGraph {
             linked: true,
+            // `..x` takes every field not named above from `x`: a plain graph with the flag set.
             ..ReadThreadingGraph::new(kmer_size, min_base_quality, pruning_samples)
         }
     }
@@ -241,7 +311,8 @@ impl ReadThreadingGraph {
         self.start_only_at_existing_vertex = value;
     }
 
-    /// The constructor's `numDanglingMatchingPrefixBases`, or `setMinMatchingBasesToDanglingEndRecovery`.
+    /// The constructor's `numDanglingMatchingPrefixBases`, or
+    /// `setMinMatchingBasesToDanglingEndRecovery`.
     pub fn set_min_matching_bases_to_dangling_end_recovery(&mut self, value: i32) {
         self.min_matching_bases = value;
     }
@@ -304,7 +375,8 @@ impl ReadThreadingGraph {
         &self.non_unique
     }
 
-    /// `addSequence(seqName, sequence, isRef)`: the whole sequence, count one, the anonymous sample.
+    /// `addSequence(seqName, sequence, isRef)`: the whole sequence, count one, the anonymous
+    /// sample.
     pub fn add_sequence(&mut self, sequence: &[u8], is_ref: bool) -> Result<(), GraphError> {
         self.add_sequence_for_sample(ANONYMOUS_SAMPLE, sequence, 0, sequence.len(), 1, is_ref)
     }
@@ -337,6 +409,7 @@ impl ReadThreadingGraph {
             count,
             is_ref,
         };
+        // `pending.computeIfAbsent(sampleName, ...)`: a new sample goes to the end.
         match self.pending.iter_mut().find(|(name, _)| name == sample) {
             Some((_, list)) => list.push(entry),
             None => self.pending.push((sample.to_string(), vec![entry])),
@@ -352,6 +425,7 @@ impl ReadThreadingGraph {
         bases: &[u8],
         qualities: &[u8],
     ) -> Result<(), GraphError> {
+        // The reference's `int lastGood = -1`: `None` is the -1.
         let mut last_good: Option<usize> = None;
         for end in 0..=bases.len() {
             if end == bases.len() || !self.base_is_usable_for_assembly(bases[end], qualities[end]) {
@@ -391,6 +465,9 @@ impl ReadThreadingGraph {
         } else {
             std::mem::take(&mut self.pending)
         };
+        // Sample by sample, in the order first seen. Every edge closes the sample's count once
+        // the sample is done; the reference walks `edgeSet()`, the live edges, and nothing is
+        // removed while building, so walking every edge here is the same set.
         for (_, sequences) in &pending {
             for sequence in sequences {
                 self.thread_sequence(sequence)?;
@@ -400,6 +477,7 @@ impl ReadThreadingGraph {
             }
         }
         self.already_built = true;
+        // `.flatten()` over the `Option` entries skips the removed (`None`) ones.
         for (_, vertex) in self.kmer_entries.iter().flatten() {
             self.vertices[*vertex].additional_info.push('+');
         }
@@ -412,8 +490,14 @@ impl ReadThreadingGraph {
         let mut non_unique = HashSet::new();
         for (_, sequences) in &self.pending {
             for sequence in sequences {
-                // `determineNonUniqueKmers` starts at 0, not at `start`.
+                // `determineNonUniqueKmers` starts at 0, not at `start` (ReadThreadingGraph.java
+                // lines 161-162):
+                // `final int stopPosition = seqForKmers.stop - kmerSize;`
+                // `for (int i = 0; i <= stopPosition; i++) {`
+                // `seen.insert` answers false for a k-mer already in the set, like `Set.add`.
                 let mut seen = HashSet::new();
+                // A negative `stopPosition` runs no iteration in Java; `usize` cannot go below
+                // zero (the subtraction would panic), hence the guard.
                 if sequence.stop >= k {
                     for i in 0..=sequence.stop - k {
                         let kmer = &sequence.sequence[i..i + k];
@@ -428,21 +512,31 @@ impl ReadThreadingGraph {
     }
 
     /// `findStart`: 0 for the reference, else the first position in `start .. stop - k` whose
-    /// k-mer may start a thread.
+    /// k-mer may start a thread. `None` is the reference's -1.
+    ///
+    /// ```java
+    /// for (int i = seqForKmers.start; i < seqForKmers.stop - kmerSize; i++) {
+    /// ```
+    ///
+    /// (`AbstractReadThreadingGraph.java:205`.) The bound is exclusive, so the last k-mer never
+    /// starts a thread; and the reference starts at 0 even when its `start` is not 0.
     fn find_start(&self, sequence: &SequenceForKmers) -> Option<usize> {
         if sequence.is_ref {
             return Some(0);
         }
         let k = self.kmer_size;
+        // `checked_sub` is `None` where `stop - k` would be negative, where Java's loop runs no
+        // iteration and answers -1; the `?` returns that `None`.
         let end = sequence.stop.checked_sub(k)?;
         (sequence.start..end).find(|&i| self.is_threading_start(&sequence.sequence[i..i + k]))
     }
 
-    /// `isThreadingStart`.
+    /// `isThreadingStart`, in `ReadThreadingGraph` and in `JunctionTreeLinkedDeBruijnGraph`.
     fn is_threading_start(&self, kmer: &[u8]) -> bool {
         if self.linked {
-            // Its set of k-mers is never filled, so a thread that may start only at an existing
-            // vertex never starts.
+            // `return !startThreadingOnlyAtExistingVertex || kmers.contains(kmer);`
+            // (JunctionTreeLinkedDeBruijnGraph.java:101). Its set `kmers` is never filled, so a
+            // thread that may start only at an existing vertex never starts.
             return !self.start_only_at_existing_vertex;
         }
         if self.start_only_at_existing_vertex {
@@ -452,15 +546,21 @@ impl ReadThreadingGraph {
         }
     }
 
-    /// `threadSequence`.
+    /// `threadSequence`: find the start, then extend the chain one base at a time to the last
+    /// k-mer, adding the sequence's count to every edge walked or made.
     fn thread_sequence(&mut self, sequence: &SequenceForKmers) -> Result<(), GraphError> {
         let Some(start) = self.find_start(sequence) else {
             return Ok(());
         };
         let k = self.kmer_size;
+        // `&v[a..b]` is a borrowed view of elements `a` to `b - 1`: Java's `new Kmer(seq, a, k)`.
         let starting = self.get_or_create_kmer_vertex(&sequence.sequence[start..start + k]);
 
-        // `INCREASE_COUNTS_BACKWARDS`.
+        // `INCREASE_COUNTS_BACKWARDS`, always true:
+        // `increaseCountsInMatchedKmers(seqForKmers, startingVertex,
+        // startingVertex.getSequence(), kmerSize - 2);` (AbstractReadThreadingGraph.java:280).
+        // The k-mer is cloned only so the graph may be changed while it is read. For k = 1 the
+        // reference's offset is -1 and the walk returns at once; the guard skips the same case.
         let original = self.vertices[starting].sequence.clone();
         if k >= 2 {
             self.increase_counts_in_matched_kmers(
@@ -476,6 +576,9 @@ impl ReadThreadingGraph {
                 return Err(GraphError::TwoRefSources);
             }
             self.reference_path = Some(vec![starting]);
+            // The k-mer at `start`, not at the threading start:
+            // `refSource = new Kmer(seqForKmers.sequence, seqForKmers.start, kmerSize);`
+            // (AbstractReadThreadingGraph.java:294).
             self.ref_source = Some(sequence.sequence[sequence.start..sequence.start + k].to_vec());
         }
 
@@ -512,6 +615,8 @@ impl ReadThreadingGraph {
         if offset == -1 {
             return;
         }
+        // In the reference's order. Copied because the loop changes edges while reading the
+        // list; only multiplicities change, so the copy and the live list stay the same.
         let incoming = self.incoming[vertex].clone();
         for edge in incoming {
             let previous = self.edges[edge].source;
@@ -533,7 +638,8 @@ impl ReadThreadingGraph {
         }
     }
 
-    /// `getKmerVertex(kmer, allowRefSource)`.
+    /// `getKmerVertex(kmer, allowRefSource)`: the tracked vertex of the k-mer, unless it is the
+    /// reference's first k-mer and that is not allowed.
     fn kmer_vertex(&self, kmer: &[u8], allow_ref_source: bool) -> Option<usize> {
         if !allow_ref_source && self.ref_source.as_deref() == Some(kmer) {
             return None;
@@ -545,6 +651,11 @@ impl ReadThreadingGraph {
     }
 
     /// `createVertex`: a new vertex, tracked unless its k-mer is non-unique or already tracked.
+    ///
+    /// That is `ReadThreadingGraph.trackKmer`; the linked graph's is
+    /// `kmerToVertexMap.putIfAbsent(kmer, newVertex);` (JunctionTreeLinkedDeBruijnGraph.java:126),
+    /// the same test because its non-unique set is empty. A k-mer tracked again after its entry
+    /// was removed goes to the end of the map, as a `LinkedHashMap` re-insertion does.
     fn create_vertex(&mut self, kmer: &[u8]) -> usize {
         let vertex = self.vertices.len();
         self.vertices.push(Vertex {
@@ -562,7 +673,9 @@ impl ReadThreadingGraph {
         vertex
     }
 
-    /// `extendChainByOne`.
+    /// `extendChainByOne`: follow the FIRST outgoing edge, in creation order, whose target ends
+    /// in the next base, adding the count; else merge into a tracked vertex or make a new one,
+    /// and join it with a new edge carrying the count.
     fn extend_chain_by_one(
         &mut self,
         previous: usize,
@@ -572,6 +685,8 @@ impl ReadThreadingGraph {
         is_ref: bool,
     ) -> Result<usize, GraphError> {
         let next_base = sequence[kmer_start + self.kmer_size - 1];
+        // By position rather than by iterator: the body changes an edge, which the compiler
+        // would not allow while an iterator borrows the list.
         for position in 0..self.outgoing[previous].len() {
             let edge = self.outgoing[previous][position];
             let target = self.edges[edge].target;
@@ -592,6 +707,8 @@ impl ReadThreadingGraph {
             self.add_edge(previous, next, is_ref, count);
             return Ok(next);
         }
+        // `ReadThreadingGraph.getNextKmerVertexForChainExtension`: never the reference source,
+        // and the reference itself may never merge into a tracked vertex.
         let merge = self.kmer_vertex(kmer, false);
         if is_ref && merge.is_some() {
             return Err(GraphError::UniqueVertexOnReference);
@@ -604,6 +721,13 @@ impl ReadThreadingGraph {
         Ok(next)
     }
 
+    /// `addEdge(source, target, createEdge(isRef, multiplicity))`, appended to the edge set and to
+    /// both endpoints' lists.
+    ///
+    /// Unlike JGraphT it does not check for an existing `source -> target` edge, because no
+    /// caller can have one: `extend_chain_by_one` only gets here when no outgoing edge's target
+    /// ends in the next base (an existing edge to the target would), and the other callers join a
+    /// vertex just made. `dangling_ends` goes through `add_edge_unless_present` instead.
     fn add_edge(&mut self, source: usize, target: usize, is_ref: bool, multiplicity: i32) {
         let edge = self.edges.len();
         self.edges.push(Edge::new(
@@ -618,7 +742,9 @@ impl ReadThreadingGraph {
         self.incoming[target].push(edge);
     }
 
-    /// `isLowQualityGraph()`: more than a quarter as many non-unique k-mers as tracked ones.
+    /// `isLowQualityGraph()`: more than a quarter as many non-unique k-mers as tracked ones,
+    /// `return nonUniqueKmers.size() * 4 > kmerToVertexMap.size();` (ReadThreadingGraph.java:84).
+    /// The linked graph always answers false.
     pub fn is_low_quality_graph(&self) -> bool {
         !self.linked && self.non_unique.len() * 4 > self.kmer_to_vertex().count()
     }
@@ -646,6 +772,8 @@ impl ReadThreadingGraph {
     }
 
     /// `getReferenceSourceVertex()`: the first vertex, in vertex order, that is a reference source.
+    /// Vertex order decides between candidates. The linked graph overrides it with the first
+    /// vertex of the stored reference path.
     pub fn reference_source_vertex(&self) -> Option<usize> {
         if self.linked {
             return self
@@ -670,14 +798,18 @@ impl ReadThreadingGraph {
     /// `hasCycles()`: JGraphT's `CycleDetector.detectCycles()`, a self-loop included. Only the
     /// answer is observable, so any traversal will do.
     pub fn has_cycles(&self) -> bool {
-        // 0 unvisited, 1 on the current path, 2 finished.
+        // A depth-first search with an explicit stack: an edge back to a vertex still on the
+        // current path is a cycle. 0 unvisited, 1 on the current path, 2 finished.
         let mut state = vec![0u8; self.vertices.len()];
         for root in self.vertex_ids() {
             if state[root] != 0 {
                 continue;
             }
+            // Each frame is a vertex and the position of the next outgoing edge to try.
             let mut stack: Vec<(usize, usize)> = vec![(root, 0)];
             state[root] = 1;
+            // `while let` loops while the top frame exists; the pattern copies its vertex and
+            // binds `next` as a writable reference into the frame, so `*next += 1` advances it.
             while let Some(&mut (vertex, ref mut next)) = stack.last_mut() {
                 if *next < self.outgoing[vertex].len() {
                     let target = self.edges[self.outgoing[vertex][*next]].target;
@@ -729,7 +861,9 @@ impl ReadThreadingGraph {
             return;
         }
         self.edge_alive[edge] = false;
+        // Destructuring: copy out the two named fields, ignoring the rest (`..`).
         let Edge { source, target, .. } = self.edges[edge];
+        // `retain` is `removeIf` with the test inverted; the survivors keep their order.
         self.outgoing[source].retain(|&e| e != edge);
         self.incoming[target].retain(|&e| e != edge);
     }
@@ -749,13 +883,18 @@ impl ReadThreadingGraph {
             self.remove_edge(edge);
         }
         self.vertex_alive[vertex] = false;
+        // By k-mer, not by vertex: `kmerToVertexMap.remove(kmer);`
+        // (AbstractReadThreadingGraph.java:370), so removing an untracked copy of a k-mer drops
+        // the tracked vertex's entry too.
         if let Some(entry) = self.kmer_index.remove(&self.vertices[vertex].sequence) {
             self.kmer_entries[entry] = None;
         }
     }
 
     /// `AbstractReadThreadingGraph.removeSingletonOrphanVertices`: every vertex with no edge at
-    /// all. Unlike `BaseGraph`'s, it does not spare an isolated reference source.
+    /// all. Unlike `BaseGraph`'s, it does not spare an isolated reference source; its test is
+    /// `if (inDegreeOf(v) == 0 && outDegreeOf(v) == 0) {` (AbstractReadThreadingGraph.java:380).
+    /// The orphans are listed first, in vertex order, then removed.
     pub fn remove_singleton_orphan_vertices(&mut self) {
         let orphans: Vec<usize> = self
             .vertex_ids()
@@ -768,7 +907,9 @@ impl ReadThreadingGraph {
 
     /// `removePathsNotConnectedToRef`: keep only the vertices reachable forward from the reference
     /// source and backward from the reference sink. The reference removes them from a `HashSet`,
-    /// in hash order, but the result of removing a set does not depend on the order.
+    /// in hash order, but the result of removing a set does not depend on the order: the
+    /// survivors keep their relative order, and the k-mer entries dropped are those of every
+    /// removed vertex's sequence whichever goes first.
     pub fn remove_paths_not_connected_to_ref(&mut self) -> Result<(), GraphError> {
         let (Some(source), Some(sink)) =
             (self.reference_source_vertex(), self.reference_sink_vertex())
@@ -822,7 +963,9 @@ impl ReadThreadingGraph {
 }
 
 impl ReadThreadingGraph {
-    /// `getAdditionalSequence(v)`: the whole k-mer at a source, else its last base.
+    /// `getAdditionalSequence(v)`: the whole k-mer at a source, else its last base, which is
+    /// `return source ? super.getAdditionalSequence(source) : getSuffixAsArray();`
+    /// (MultiDeBruijnVertex.java:136) with `source` being `isSource(v)`, in-degree zero.
     pub fn additional_sequence(&self, vertex: usize) -> Vec<u8> {
         if self.in_degree(vertex) == 0 {
             self.vertices[vertex].sequence.clone()
@@ -832,9 +975,19 @@ impl ReadThreadingGraph {
     }
 
     /// `JunctionTreeLinkedDeBruijnGraph.getReferenceBytes(from, to, true, true)`: from the first
-    /// occurrence of `from` on the reference path to the last of `to`.
+    /// occurrence of `from` on the reference path to the last of `to`:
+    ///
+    /// ```java
+    /// int fromIndex = referencePath.indexOf(fromVertex);
+    /// int toIndex = referencePath.lastIndexOf(toVertex);
+    /// ```
+    ///
+    /// (`JunctionTreeLinkedDeBruijnGraph.java:370-371`.) The middle loop runs
+    /// `for (int i = fromIndex + 1; i < toIndex; i++) {` (line 376), so a `from` that is not on
+    /// the path (-1) starts it at the path's first vertex; the arithmetic is kept signed for that.
     pub fn linked_reference_bytes(&self, from: usize, to: usize) -> Vec<u8> {
         let path = self.reference_path.as_deref().unwrap_or(&[]);
+        // `position` is `indexOf` and `rposition` is `lastIndexOf`, `None` for the -1.
         let from_index = path.iter().position(|&v| v == from);
         let to_index = path.iter().rposition(|&v| v == to);
         let mut bytes = self.additional_sequence_as_source(from);
@@ -855,7 +1008,9 @@ impl ReadThreadingGraph {
     }
 
     /// `addVertex` and `addEdge(source, target)` for the symbolic end the junction trees need: the
-    /// edge factory's default edge, multiplicity one and not on the reference.
+    /// edge factory's default edge, multiplicity one and not on the reference. The `_` vertex is
+    /// added directly, so it never enters the k-mer map. Answers the new edge, which the junction
+    /// trees compare against to recognise a read that ended on the reference sink.
     fn add_symbolic_end(&mut self, sink: usize) -> usize {
         let vertex = self.vertices.len();
         self.vertices.push(Vertex {
@@ -890,8 +1045,15 @@ impl Chain {
 /// `ChainPruner.findAllChains`: from every source, and then from the end of every chain found,
 /// the maximal linear chain behind each outgoing edge. A chain stops at a vertex with other than
 /// one way out, more than one way in, or that is the chain's own start.
+///
+/// The chain order is the answer's order, and everything downstream reads it: the adaptive
+/// pruner's tie-breaks and its "chains left out, in chain order", and the `chain` rows of
+/// `chain_pruner.txt.gz`. It comes from the sources in vertex order, a FIFO of chain ends
+/// (`chainStarts.pop()` takes from the front of a `LinkedList`, `add` appends), and each vertex's
+/// outgoing edges in their order.
 pub fn find_all_chains(graph: &ReadThreadingGraph) -> Vec<Chain> {
     let mut starts: std::collections::VecDeque<usize> = graph.sources().into();
+    // `alreadySeen`, a `HashSet` only asked membership.
     let mut seen: HashSet<usize> = starts.iter().copied().collect();
     let mut chains = Vec::new();
     while let Some(start) = starts.pop_front() {
@@ -906,6 +1068,15 @@ pub fn find_all_chains(graph: &ReadThreadingGraph) -> Vec<Chain> {
     chains
 }
 
+/// `ChainPruner.findChain`: from the start edge, follow the only way out until (ChainPruner.java
+/// line 52)
+///
+/// ```java
+/// if (outEdges.size() != 1 || graph.inDegreeOf(lastVertex) > 1 || lastVertex.equals(firstVertex))
+/// ```
+///
+/// is true. The test is made before the step, so a chain always ends ON the
+/// vertex that stopped it.
 fn find_chain(graph: &ReadThreadingGraph, start: usize) -> Chain {
     let mut edges = vec![start];
     let first = graph.edge(start).source;
@@ -926,6 +1097,9 @@ fn find_chain(graph: &ReadThreadingGraph, start: usize) -> Chain {
 
 /// `LowWeightChainPruner.pruneLowWeightChains`: remove every chain whose edges are all
 /// non-reference with a pruning multiplicity under `prune_factor`, then the orphans.
+///
+/// Every chain is judged before any is removed, as `chainsToRemove(chains)` is computed whole
+/// before `removeAllEdges` runs, so one removal cannot change another chain's verdict.
 pub fn prune_low_weight_chains(graph: &mut ReadThreadingGraph, prune_factor: i32) {
     let chains = find_all_chains(graph);
     let doomed: Vec<Chain> = chains
@@ -958,8 +1132,13 @@ pub fn chain_bases(graph: &ReadThreadingGraph, chain: &Chain) -> Vec<u8> {
     bases
 }
 
-/// `BaseUtils.BASES_COMPARATOR`: signed bytes in order, then length.
+/// `BaseUtils.BASES_COMPARATOR`: signed bytes in order, then length. The bytes are compared as
+/// Java's signed `byte`, `final int cmp = Byte.compare(o1[i],o2[i]);` (BaseUtils.java:317),
+/// hence `as i8`; for bases, which are all below 128, signed and unsigned agree.
+///
+/// `pub(crate)` makes it visible to this crate only, Java's package-private.
 pub(crate) fn compare_bases(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+    // `zip` pairs the two arrays element by element and stops at the shorter: `minLength`.
     for (x, y) in a.iter().zip(b) {
         let order = (*x as i8).cmp(&(*y as i8));
         if order != std::cmp::Ordering::Equal {
@@ -978,6 +1157,8 @@ pub(crate) fn java_double_compare(a: f64, b: f64) -> std::cmp::Ordering {
     if a > b {
         return Ordering::Greater;
     }
+    // Equal, or a NaN involved: the bit patterns as signed 64-bit integers decide, which puts
+    // `-0.0` (sign bit set, so negative) below `0.0` and the canonical NaN above every number.
     let (a, b) = (java_double_bits(a), java_double_bits(b));
     a.cmp(&b)
 }
@@ -994,6 +1175,12 @@ fn java_double_bits(value: f64) -> i64 {
 /// `java.util.PriorityQueue` with a comparator: the same binary heap, `siftUp` on `offer` and
 /// `siftDown` on `poll`, so that elements the comparator calls equal come out in the reference's
 /// order and not merely in some order.
+///
+/// Its comparators can tie: two JT paths of exactly the same score, adaptive-pruner entries of
+/// equal log odds and equal bases, and `createMapOfPivotalEdgesInTopologicalOrder`, whose every
+/// entry compares equal. Rust's own `BinaryHeap` breaks ties its own way.
+///
+/// `F: Fn(&T, &T) -> Ordering` is the `Comparator<T>`: any function or lambda of that shape.
 pub(crate) struct JavaPriorityQueue<T, F: Fn(&T, &T) -> std::cmp::Ordering> {
     heap: Vec<T>,
     compare: F,
@@ -1031,8 +1218,11 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
         self.heap[k] = item;
     }
 
-    /// `poll` / `siftDownUsingComparator`.
+    /// `poll` / `siftDownUsingComparator`: answer the root, move the last element into its place
+    /// and sift it down, stopping as soon as it is not greater than the smaller child. With every
+    /// element equal nothing moves, so the order is root, then the last element, and so on.
     pub(crate) fn poll(&mut self) -> Option<T> {
+        // `?` on an empty heap answers `None`, Java's `null` from `poll()`.
         let last = self.heap.pop()?;
         if self.heap.is_empty() {
             return Some(last);
@@ -1064,9 +1254,13 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
 /// The parameters of `AdaptiveChainPruner`.
 #[derive(Debug, Clone, Copy)]
 pub struct AdaptivePruning {
+    /// `initialErrorProbability`: the error rate of the first pass.
     pub initial_error_probability: f64,
+    /// `logOddsThreshold`: the bar for a chain to extend the good subgraph.
     pub log_odds_threshold: f64,
+    /// `seedingLogOddsThreshold`: the stricter bar, on both sides, for a chain to seed it.
     pub seeding_log_odds_threshold: f64,
+    /// `maxUnprunedVariants`.
     pub max_unpruned_variants: i32,
 }
 
@@ -1081,6 +1275,7 @@ pub fn chain_log_odds(
 ) -> Option<(f64, f64)> {
     let first = graph.edge(chain.edges[0]).source;
     let last = chain.last_vertex;
+    // `MathUtils.sumIntFunction(edges, E::getMultiplicity)`.
     let multiplicity =
         |edges: &[usize]| -> i32 { edges.iter().map(|&e| graph.edge(e).multiplicity).sum() };
     let left_total = multiplicity(graph.outgoing_edges(first));
@@ -1089,6 +1284,7 @@ pub fn chain_log_odds(
     let right = graph
         .edge(*chain.edges.last().expect("a chain has an edge"))
         .multiplicity;
+    // `graph.isSource(first)` and, below, `graph.isSink(last)`: no evidence to weigh, zero.
     let left_odds = if graph.in_degree(first) == 0 {
         0.0
     } else {
@@ -1107,13 +1303,21 @@ pub fn chain_log_odds(
 }
 
 /// `AdaptiveChainPruner.likelyErrorChains`: grow a subgraph of good chains from seeds, along chains
-/// whose log odds pass the threshold, and answer every chain left out, in chain order.
+/// whose log odds pass the threshold, and answer every chain left out, in chain order:
+/// `return chains.stream().filter(c -> !goodChains.contains(c)).collect(Collectors.toList());`
+/// (AdaptiveChainPruner.java:132). A chain is its index in `chains`.
+///
+/// The queue orders by log odds, highest first, then by the first vertex's bases, then by the
+/// chain's bases, both with `BaseUtils.BASES_COMPARATOR` (lines 79-82). `None` where the error
+/// rate is refused.
 pub fn likely_error_chains(
     graph: &ReadThreadingGraph,
     chains: &[Chain],
     error_rate: f64,
     params: &AdaptivePruning,
 ) -> Option<Vec<usize>> {
+    // `chainLogOdds`. Collecting into `Option<Vec<_>>` gives `None` as soon as any chain's odds
+    // are `None`, and the `?` returns it: one refusal refuses the whole pass.
     let odds: Vec<(f64, f64)> = chains
         .iter()
         .map(|chain| chain_log_odds(graph, chain, error_rate))
@@ -1171,16 +1375,21 @@ pub fn likely_error_chains(
         }
     }
 
+    // `goodChains` and `verticesThatAlreadyHaveOutgoingGoodChains`, `LinkedHashSet`s whose order
+    // is never read: flags per chain and per vertex.
     let mut good = vec![false; chains.len()];
     let mut has_good_outgoing = vec![false; n];
     let mut variant_count = 0;
     while !queue.is_empty() && variant_count <= params.max_unpruned_variants {
         let (c, _) = queue.poll().expect("not empty");
+        // `if (!goodChains.add(chain)) continue;`: a chain queued from both sides counts once.
         if good[c] {
             continue;
         }
         good[c] = true;
         let first = first_vertex(c);
+        // `!verticesThatAlreadyHaveOutgoingGoodChains.add(first)`: a second good chain out of
+        // the same vertex is a variant.
         let new_variant = has_good_outgoing[first];
         has_good_outgoing[first] = true;
         if new_variant {
@@ -1226,7 +1435,8 @@ fn max_weight_chain(graph: &ReadThreadingGraph, chains: &[Chain]) -> usize {
                     .sequence,
             )
         });
-        // `BinaryOperator.maxBy`: `compare(a, b) >= 0 ? a : b`, a being the running best.
+        // `Stream.max` keeps the running best unless a later chain compares strictly greater,
+        // so the first of equal chains wins; hence `Greater` and not `!= Less`.
         if order == std::cmp::Ordering::Greater {
             best = c;
         }
@@ -1266,6 +1476,8 @@ pub fn adaptive_chains_to_remove(
                 .sum::<i32>()
         })
         .sum();
+    // `(double) errorCount / totalBases`: both widened to `double` before dividing, so a zero
+    // total gives NaN, which `errorProbToQual` refuses wherever the second pass uses the rate.
     let error_rate = f64::from(error_count) / f64::from(total_bases);
     let likely = likely_error_chains(graph, chains, error_rate, params).ok_or_else(refused)?;
     Ok(likely

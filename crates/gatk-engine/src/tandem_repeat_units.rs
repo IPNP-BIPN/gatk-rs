@@ -1,5 +1,6 @@
-//! The tandem-repeat arithmetic of `GATKVariantContextUtils` (GATK 4.6.2.0): the repeat unit of an
-//! indel and how many copies of it each allele carries in the reference context that follows.
+//! The tandem-repeat arithmetic of `GATKVariantContextUtils` (GATK 4.7.0.0;
+//! `GATKVariantContextUtils.java` is unchanged since 4.6.2.0): the repeat unit of an indel and
+//! how many copies of it each allele carries in the reference context that follows.
 //!
 //! `TandemRepeat` (the `STR`, `RU` and `RPA` annotation) and `AssemblyRegionTrimmer` (the padding
 //! of an indel in a short tandem repeat) both rest on it.
@@ -8,9 +9,14 @@
 //!
 //! ```java
 //! int repetitionsInRef = findNumberOfRepetitions(repeatUnit, refBases, true);
-//! repetitionCount[0] = findNumberOfRepetitions(repeatUnit, refBases + remainingRefContext, true) - repetitionsInRef;
-//! repetitionCount[1] = findNumberOfRepetitions(repeatUnit, altBases + remainingRefContext, true) - repetitionsInRef;
+//! repetitionCount[0] = findNumberOfRepetitions(repeatUnit,
+//!   ArrayUtils.addAll(refBases, remainingRefContext), true)-repetitionsInRef;
+//! repetitionCount[1] = findNumberOfRepetitions(repeatUnit,
+//!   ArrayUtils.addAll(altBases, remainingRefContext), true)-repetitionsInRef;
 //! ```
+//!
+//! (The two long lines are wrapped after `repeatUnit,` to fit this file's width; the tokens are
+//! the reference's.)
 //!
 //! Both counts subtract the repeats found in the **reference allele alone**, so `RPA` measures
 //! copies in the surrounding context rather than in the allele. A count of zero on either side
@@ -28,15 +34,32 @@
 //! comparison. `ACTACTAC` is therefore reported as a repeat of itself, length 8, not as `ACT`.
 //!
 //! And on an empty input the loop body never runs, so it returns 1 and the repeat unit is a single
-//! **zero byte**. That is reachable: a multiallelic site where one alternate has the reference's
-//! length leaves both base arrays empty after the padding base is stripped. The zero byte then
-//! matches nothing, the count comes out zero, and the annotation is dropped, which is the right
-//! answer arrived at by an accident of `Arrays.copyOf`.
+//! **zero byte**. That is reachable: at a multiallelic site whose reference is a single base (an
+//! insertion beside a SNP, say), the SNP alternate leaves both base arrays empty once
+//! `strip_padding_base` has removed the padding base. The zero byte then matches nothing, the
+//! count comes out zero, and the annotation is dropped, which is the right answer arrived at by
+//! an accident of `Arrays.copyOf`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[u8]` is a borrowed, read-only view of a `byte[]`; `&bases[..n]` is its first `n` bytes and
+//!   `&bases[a..b]` the bytes from `a` up to but not including `b`, with no copy made.
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`). The `?` after an expression that
+//!   gives an `Option` returns `None` from the whole function when it is `None`, which is how a
+//!   reference exception deep in the call is carried up here.
+//! - `bases.get(i).copied().unwrap_or(0)` reads `bases[i]`, or 0 past the end, where `bases[i]`
+//!   alone would stop the program: this is how `Arrays.copyOf`'s zero padding is written.
+//! - `x as i64` converts between integer types; `usize` (an unsigned index) cannot go below zero,
+//!   so a loop whose index the reference lets reach -1 is written over `i64`.
 
 use htsjdk_vcf::allele::Allele;
 
 /// `GATKVariantContextUtils.findRepeatedSubstring`: the length of the shortest unit the string is a
 /// whole number of copies of, or the string's own length when there is none.
+///
+/// The two `while` loops are the reference's two `for` loops, and the value after the outer one
+/// ends is its loop variable, `bases.len() + 1`, which only an empty input reaches (see the module
+/// note).
 pub fn find_repeated_substring(bases: &[u8]) -> usize {
     let mut rep_length = 1usize;
     while rep_length <= bases.len() {
@@ -68,6 +91,10 @@ pub fn find_repeated_substring(bases: &[u8]) -> usize {
 ///
 /// `None` is the reference's `IllegalArgumentException` on an empty repeat unit. An empty test
 /// string is zero repetitions and not an error.
+///
+/// The reference's `for (start = lengthDifference; start >= 0; start -= repeatUnitLength)` lets
+/// `start` go negative before it stops, so `start` is an `i64` here; the `as usize` casts below
+/// are taken only while it is at least zero.
 pub fn find_number_of_repetitions(
     repeat_unit: &[u8],
     test_string: &[u8],
@@ -85,6 +112,7 @@ pub fn find_number_of_repetitions(
     if leading_repeats {
         let mut start = 0i64;
         while start <= length_difference {
+            // `Utils.equalRange`: that slice of the test string against the unit, byte for byte.
             if test_string[start as usize..(start + unit) as usize] == *repeat_unit {
                 repeats += 1;
             } else {

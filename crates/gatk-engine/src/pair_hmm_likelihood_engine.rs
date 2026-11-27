@@ -1,8 +1,12 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller`
 //! (`PairHMMLikelihoodCalculationEngine`, `ReadLikelihoodCalculationEngine`'s statics and
-//! defaults, `StandardPairHMMInputScoreImputator`) and `utils.pairhmm.PairHMM.computeLog10Likelihoods`,
-//! GATK 4.6.2.0: every read against every haplotype, the way HaplotypeCaller and Mutect2 score
-//! their reads.
+//! defaults, `StandardPairHMMInputScoreImputator`) and
+//! `utils.pairhmm.PairHMM.computeLog10Likelihoods`, GATK 4.7.0.0 (the four Java files are
+//! unchanged since 4.6.2.0): every read against every haplotype, the way HaplotypeCaller and
+//! Mutect2 score their reads. The partially determined function below follows
+//! `PDPairHMMLikelihoodCalculationEngine`, whose 4.7.0.0 file differs from 4.6.2.0's (its
+//! constructor builds the HMM with `hmmType.makeNewHMM` and can choose the AVX
+//! `VectorLoglessPairPDHMM`); the Java recursion it reaches is [`crate::pd_pair_hmm`]'s.
 //!
 //! Each read is prepared, scored with the Java `LoglessPairHMM` ([`crate::pair_hmm`]), and the
 //! matrix is then normalized and filtered:
@@ -26,6 +30,43 @@
 //! * `findTandemRepeatUnits` counts the repeat that ENDS at the base backwards and the one that
 //!   starts after it forwards, adds them only when the units agree, and otherwise re-counts the
 //!   forward unit backwards over the whole prefix.
+//!
+//! On the second point, the reference's per-read loop sets the flag once and never changes it:
+//!
+//! ```java
+//! final boolean isFirstHaplotype = true;
+//! ```
+//!
+//! (`PairHMM.java:228`), and it is the argument passed as `recacheReadValues`.
+//!
+//! # Which kernel, and why
+//!
+//! The Java `LoglessPairHMM` is the kernel the goldens pin. HaplotypeCaller's `FASTEST_AVAILABLE`
+//! would pick the Intel GKL `VectorLoglessPairHMM`, but in the pinned oracle image both vectorised
+//! flavours raise `HardwareFeatureException` (no `libgomp.so.1`), so every golden taken there is
+//! the scalar Java kernel's answer; the `pair-hmm` suite also shows that `LoglessPairHMM` and
+//! `Log10PairHMM` disagree on all twelve of its pairs, so the choice is not free. The fgkl PairHMM
+//! was rejected for the port (`docs/fgkl-and-lorikeet.md`, issue 1391): its last step is the
+//! platform's log10 and not Java's.
+//!
+//! The `pair-hmm-likelihood-engine` suite (`pair_hmm_likelihood_engine.txt.gz`, 1191 rows) then
+//! pins this file's preparation, normalization and filtering: the `processed` rows the prepared
+//! qualities, the `lk` rows each likelihood's bits, the `pcr` rows (63) every entry of the PCR
+//! cache, and the `repeat` rows `findTandemRepeatUnits`.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `u8` is an unsigned byte, where Java's `byte` is signed; `value as i8` reinterprets the same
+//!   bits as signed, which is how the quality comparisons stay Java's. `0xff & b` in the reference
+//!   is the opposite move, and the port's `u8` already holds that value.
+//! - `Result<T, LikelihoodEngineError>` is "a value or the reference's exception"; `?` returns
+//!   the error from the enclosing function at once, and `.map_err(...)` wraps it first.
+//! - `Option<T>` is "a value or nothing": `Some(params)` where the reference's `dragstrParams` is
+//!   set, `None` where it is `null`.
+//! - `for (a, x) in v.iter().enumerate()` walks `v` with the index `a`; `zip` walks two lists in
+//!   step.
+//! - `&bases[a..b]` is a view of `bases` from `a` up to `b`, not a copy: the reference's
+//!   `(array, offset, length)` arguments.
 
 use htsjdk_bam::record::BamRecord;
 
@@ -85,7 +126,8 @@ pub enum LikelihoodEngineError {
     NegativeGapContinuationPenalty,
     /// `IllegalArgumentException("log10globalReadMismappingRate must be negative")`.
     PositiveMismappingRate,
-    /// `IllegalArgumentException("baseQualityScoreThreshold must be greater than or equal to 6 ...")`.
+    /// `IllegalArgumentException("baseQualityScoreThreshold must be greater than or equal to 6
+    /// ...")`.
     BaseQualityThresholdTooLow,
     /// `PairHMM.initialize`: `haplotypeMaxLength must be > 0`.
     NoHaplotypeBases,
@@ -157,6 +199,8 @@ pub struct PairHmmLikelihoodEngine {
 /// `getErrorModelAdjustedQual(repeatLength, rateFactor)`.
 pub fn error_model_adjusted_qual(repeat_length: i32, rate_factor: f64) -> u8 {
     // `Math.exp`; the answer is rounded to an integer, and the `pcr` rows measure every value.
+    // `MathUtils.fastRound`, `(int) (d + 0.5d)` for a positive `d`, which [`fast_round`]
+    // reproduces; the `(byte)` cast of a value from 10 to 40 is the value.
     let penalty =
         jmath::strict_exp::exp(f64::from(repeat_length) / (rate_factor * std::f64::consts::PI));
     MIN_ADJUSTED_QSCORE.max(fast_round(INITIAL_QSCORE - penalty + 1.0)) as u8
@@ -171,6 +215,15 @@ impl PairHmmLikelihoodEngine {
         if arguments.log10_global_read_mismapping_rate > 0.0 {
             return Err(LikelihoodEngineError::PositiveMismappingRate);
         }
+        // The reference first replaces the PCR model with `NONE` when DRAGstr parameters are set:
+        //
+        // ```java
+        // this.pcrErrorModel = this.dragstrParams == null ? pcrErrorModel : PCRErrorModel.NONE;
+        // ```
+        //
+        // (`PairHMMLikelihoodCalculationEngine.java:144`). The port keeps the model, but with
+        // DRAGstr the imputation discards the indel qualities it caps, so nothing printed or
+        // scored differs.
         let mut cache = Vec::new();
         if arguments.pcr_error_model.has_rate_factor() {
             let rate = arguments.pcr_error_model.rate_factor();
@@ -245,7 +298,13 @@ impl PairHmmLikelihoodEngine {
         }
     }
 
-    /// `capMinimumReadQualities`; `setToFixedValueIfTooLow` compares signed bytes.
+    /// `capMinimumReadQualities`; `setToFixedValueIfTooLow` compares signed bytes:
+    ///
+    /// ```java
+    /// return currentVal < minQual ? fixedQual : currentVal;
+    /// ```
+    ///
+    /// so a quality of 128 or more, negative as a Java `byte`, is squashed to Q6 like a low one.
     fn cap_minimum_read_qualities(
         &self,
         mapping_quality: u8,
@@ -262,6 +321,7 @@ impl PairHmmLikelihoodEngine {
         };
         for i in 0..qualities.len() {
             if !self.arguments.disable_cap_read_qualities_to_map_q {
+                // `(byte) Math.min(0xff & readQuals[i], read.getMappingQuality())`: unsigned.
                 qualities[i] = qualities[i].min(mapping_quality);
             }
             qualities[i] = fixed(qualities[i], self.arguments.base_quality_score_threshold);
@@ -369,7 +429,10 @@ impl PairHmmLikelihoodEngine {
                     if likelihood > 0.0 || likelihood.is_nan() {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
-                    // `writeToResultsFileIfApplicable`.
+                    // `writeToResultsFileIfApplicable`: space-separated, each line starting with
+                    // its newline, after the header the constructor wrote without one.
+                    // `String.format("%e", lk)` is [`java_scientific`], which does not always
+                    // print the same digits; see its documentation.
                     if let Some(path) = &self.arguments.results_file {
                         let fastq = |q: &[u8]| -> String {
                             q.iter().map(|&b| b.saturating_add(33) as char).collect()
@@ -484,8 +547,6 @@ impl PairHmmLikelihoodEngine {
     }
 }
 
-/// `log10MinTrueLikelihood(maximumErrorPerBase, capLikelihoods)` for a read whose prepared
-/// qualities are `length` long: Q40 for each tolerated error, at most two when capped.
 /// A read's insertion and deletion opening penalties and its continuation penalties.
 type Imputed = (Vec<u8>, Vec<u8>, Vec<u8>);
 
@@ -620,6 +681,13 @@ impl PairHmmLikelihoodEngine {
 }
 
 /// `String.format("%e", value)`: six decimals and an exponent of at least two digits.
+///
+/// The six decimals are Rust's `{:.6e}`, the exact binary value rounded half to even, where Java
+/// rounds the `Double.toString` digits half-up ([`crate::java_format`] explains the difference
+/// and does it Java's way for `%E`). The two disagree when the shortest digits end in a 5 right
+/// after the sixth decimal: `-3.6202785` is stored as `-3.62027849999...`, which Rust prints as
+/// `-3.620278e+00` and Java as `-3.620279e+00`. It reaches `--pair-hmm-results-file` and
+/// `--pdhmm-results-file`; no golden row prints through it.
 pub fn java_scientific(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_string();
@@ -634,6 +702,12 @@ pub fn java_scientific(value: f64) -> String {
     format!("{mantissa}e{sign}{:02}", exponent.abs())
 }
 
+/// `log10MinTrueLikelihood(maximumErrorPerBase, capLikelihoods)` for a read whose prepared
+/// qualities are `length` long: Q40 for each tolerated error, at most two when capped.
+///
+/// `length` is the `HMMQuals` length, the hard-clipped read's, which the reference reads from the
+/// transient attribute before falling back to `read.getLength()`. `-4.0` is
+/// `log10QualPerBase`, and the multiplication by it is the reference's last operation.
 pub fn log10_min_true_likelihood(length: usize, maximum_error_per_base: f64, cap: bool) -> f64 {
     let errors = (length as f64 * maximum_error_per_base).ceil();
     let errors = if cap { 2.0f64.min(errors) } else { errors };
@@ -656,8 +730,17 @@ pub fn log10_dynamic_read_qual_threshold(qualities: &[u8], scale: f64) -> f64 {
         sum_mean += DYNAMIC_READ_QUAL_THRESH_LOOKUP_TABLE[mean];
         sum_variance += DYNAMIC_READ_QUAL_THRESH_LOOKUP_TABLE[mean + 1];
     }
+    // `Math.sqrt` through `jmath`, the same correctly rounded square root, in the reference's
+    // order: the scale times the root, then added to the summed means.
     let threshold = sum_mean + scale * jmath::math::sqrt(sum_variance);
-    // `QualityUtils.qualToErrorProbLog10`.
+    // `QualityUtils.qualToErrorProbLog10`:
+    //
+    // ```java
+    // return QualityUtils.qualToErrorProbLog10(threshold); // = threshold * -.1;
+    // ```
+    //
+    // The reference also refuses a negative `threshold` (`qual must be >= 0.0`), which a negative
+    // scale can produce; the port returns the positive product.
     threshold * -0.1
 }
 
@@ -746,8 +829,12 @@ pub fn find_tandem_repeat_units(bases: &[u8], offset: usize) -> (Vec<u8>, i32) {
             max_rl = max_bw + max_fw;
         } else {
             // The backward unit may still be part of the forward one: `TTCTT(C) CCC` at (C) is
-            // `(TTC)2` backwards and `(C)3` forwards, and is `(C)4`.
+            // `(TTC)2` backwards and `(C)3` forwards, and is `(C)4`. This is the reference's own
+            // example (`ReadLikelihoodCalculationEngine.java:238`); the golden row
+            // `repeat TTCTTCCCCAGT 5 C 4` checks it.
             let backwards = find_number_of_repetitions(&best_fw_unit, &bases[..offset + 1], false);
+            // The reference stores this count back into `maxBW` before summing; nothing reads
+            // `maxBW` afterwards.
             max_rl = max_fw + backwards;
         }
         best_unit = best_fw_unit;

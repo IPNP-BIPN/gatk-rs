@@ -1,5 +1,6 @@
-//! Ported from `org.broadinstitute.hellbender.utils.haplotype.Event` and `EventMap` (GATK 4.6.2.0):
-//! the variants a haplotype carries, read off its CIGAR against the reference.
+//! Ported from `org.broadinstitute.hellbender.utils.haplotype.Event` and `EventMap` (GATK 4.7.0.0;
+//! `Event.java` and `EventMap.java` are unchanged since 4.6.2.0): the variants a haplotype
+//! carries, read off its CIGAR against the reference.
 //!
 //! What a reader would not guess:
 //!
@@ -17,6 +18,22 @@
 //!    alleles share unless either is a single base. Only a compound of an insertion and a deletion
 //!    can need it, and no canonical CIGAR makes one: the CIGAR builder puts a deletion before an
 //!    adjacent insertion, which moves the insertion's start.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, EventError>` is "a value or an error", how the reference's exceptions are
+//!   modelled; a trailing `?` returns the error to the caller at once, and `.ok_or(e)?` does the
+//!   same for an absent value (`None`), which is where Java would dereference a `null`;
+//! - `Option<&Event>` is "a borrowed `Event`, or nothing", Java's nullable return value;
+//! - `BTreeMap<i32, Event>` is Java's `TreeMap<Integer, Event>`: keys kept sorted, so iterating
+//!   it is in start order, as the reference's is;
+//! - `x as i32` and `x as usize` convert between integer widths, as a Java cast does (`usize`
+//!   is the unsigned type Rust indexes arrays with);
+//! - `|a, b| ...` is a lambda; one that captures nothing is just a local helper function;
+//! - `impl Iterator<Item = &Event>` is "some iterator over events" without naming its type, the
+//!   nearest thing to returning a Java `Collection` view such as `values()`.
+//!
+//! Java quotes in this file are broken at token boundaries to fit its width.
 
 use std::collections::BTreeMap;
 
@@ -81,17 +98,32 @@ impl From<AlleleError> for EventError {
 pub struct Event {
     contig: String,
     start: i32,
+    /// `start + refAllele.length() - 1`, from the allele after minimal representation.
     stop: i32,
     ref_allele: Allele,
     alt_allele: Allele,
     /// The `XC` variant attribute: a substitution found on a collapsed haplotype. Equality does
     /// not read it.
+    ///
+    /// The reference keeps a `Map<String, String> attributesForVariantContext`, `null` until
+    /// `setVariantAttribute` is first called; the only attribute this port sets is
+    /// `AssemblyBasedCallerUtils.EXT_COLLAPSED_TAG` (`"XC"`) to `"1"`, so a flag says all the map
+    /// would.
     collapsed: bool,
 }
 
 impl Event {
     /// `Event.toString()`: `[Event @ contig:start(-stop), REF*->ALT, attributes]`, the attributes
     /// being null unless the event was found on a collapsed haplotype.
+    ///
+    /// ```java
+    /// return "[Event @ " + contig + ":" + (start - stop == 0 ? start : start + "-" + stop)
+    ///         + ", " +
+    ///         refAllele + "->" + altAllele + ", " + attributesForVariantContext + "]";
+    /// ```
+    ///
+    /// An `Allele` prints as its display string with `*` after a reference allele, and the
+    /// attribute map, when there is one, prints as `{XC=1}`.
     pub fn java_string(&self) -> String {
         let location = if self.start == self.stop {
             self.start.to_string()
@@ -120,6 +152,13 @@ impl Event {
     }
 
     /// `new Event(contig, start, ref, alt)`.
+    ///
+    /// ```java
+    /// Utils.validateArg(ref.isReference(), "ref is not ref");
+    /// ```
+    ///
+    /// The alleles are reduced by `makeMinimalRepresentation` before `stop` is computed, so an
+    /// event's end is that of its reduced reference allele.
     pub fn new(
         contig: &str,
         start: i32,
@@ -129,6 +168,7 @@ impl Event {
         if !reference.is_reference() {
             return Err(EventError::IllegalArgument("ref is not ref"));
         }
+        // `let (a, b) = ...` unpacks the returned pair into two names.
         let (ref_allele, alt_allele) = make_minimal_representation(reference, alt)?;
         let stop = start + ref_allele.len() as i32 - 1;
         Ok(Event {
@@ -188,6 +228,13 @@ impl Event {
 }
 
 /// `Event.equals`: the start and the two alleles, not the contig.
+///
+/// ```java
+/// return this.start == other.start && this.refAllele.equals(other.refAllele)
+///         && this.altAllele.equals(other.altAllele);
+/// ```
+///
+/// `impl PartialEq` is how Rust defines `==` for a type, the counterpart of overriding `equals`.
 impl PartialEq for Event {
     fn eq(&self, other: &Self) -> bool {
         self.start == other.start
@@ -198,6 +245,17 @@ impl PartialEq for Event {
 
 /// `makeMinimalRepresentation`: the trailing bases the alleles share are dropped, unless either
 /// is one base long or their last bases differ.
+///
+/// ```java
+/// if(ref.length() == 1 || alt.length() == 1
+///         || differentLastBase(ref.getBases(), alt.getBases())) {
+///     return new Pair<>(ref, alt);
+/// }
+/// Utils.validateArg(!ref.basesMatch(alt), "ref and alt alleles are identical");
+/// ```
+///
+/// The bases are read through the display string, which for the plain base alleles an event is
+/// built from is the bases themselves.
 fn make_minimal_representation(
     reference: Allele,
     alt: Allele,
@@ -227,12 +285,17 @@ fn make_minimal_representation(
     ))
 }
 
-/// `BaseUtils.isRegularBase`.
+/// `BaseUtils.isRegularBase`: `simpleBaseToBaseIndex(base) != -1`, which is true for `*` as well
+/// as A, C, G and T, because the base index table says
+/// `baseIndexMap['*'] = Base.A.ordinal();    // the wildcard character counts as an A`.
 fn is_regular_base(base: u8) -> bool {
     simple_base_to_base_index(base) != -1
 }
 
 /// `EventMap`: the events of a haplotype by start, a `TreeMap<Integer, Event>`.
+///
+/// The reference class *is* the map (`extends TreeMap<Integer, Event>`); here it holds one, and
+/// exposes only the operations the reference's callers use.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EventMap {
     events: BTreeMap<i32, Event>,
@@ -259,6 +322,16 @@ impl EventMap {
     }
 
     /// `addEvent`: `computeIfPresent` with the compound, then `putIfAbsent`.
+    ///
+    /// ```java
+    /// computeIfPresent(newEvent.getStart(),
+    ///         (pos, oldEvent) -> makeCompoundEvents(oldEvent, newEvent));
+    /// putIfAbsent(newEvent.getStart(), newEvent);
+    /// ```
+    ///
+    /// After the first line the key is always present, so the second only adds an event to an
+    /// empty start. The compound keeps the start it was made at, so storing it under
+    /// `merged.start` is storing it under the new event's start.
     fn add_event(&mut self, event: Event) -> Result<(), EventError> {
         let merged = match self.events.get(&event.start) {
             Some(old) => make_compound_events(old, &event)?,
@@ -290,6 +363,13 @@ impl EventMap {
 
     /// `getOverlappingEvents(loc)`: the events starting at or before `loc` and ending at or after
     /// it, without a deletion that ends at `loc` when an insertion is among them.
+    ///
+    /// ```java
+    /// final List<Event> overlappingEvents = headMap(loc, true).values().stream()
+    ///         .filter(v -> v.getEnd() >= loc).collect(Collectors.toList());
+    /// ```
+    ///
+    /// `range(..=loc)` is `headMap(loc, true)`: the keys up to and including `loc`, in order.
     pub fn overlapping_events(&self, loc: i32) -> Vec<&Event> {
         let overlapping: Vec<&Event> = self
             .events
@@ -308,7 +388,12 @@ impl EventMap {
     }
 }
 
-/// `makeCompoundEvents`.
+/// `EventMap.makeCompoundEvents`: one event standing for two at the same start, a SNP with an
+/// insertion or a deletion, or an insertion with a deletion.
+///
+/// Each answer goes back through `new Event`, so it is reduced to minimal representation again;
+/// that is the only route by which a reduction can change an event this map holds (see the
+/// module note).
 pub fn make_compound_events(e1: &Event, e2: &Event) -> Result<Event, EventError> {
     if e1.start != e2.start {
         return Err(EventError::IllegalArgument(
@@ -323,7 +408,8 @@ pub fn make_compound_events(e1: &Event, e2: &Event) -> Result<Event, EventError>
         }
         let (snp, indel) = if e1.is_snp() { (e1, e2) } else { (e2, e1) };
         if snp.ref_allele == indel.ref_allele {
-            // SNP plus insertion: A to G and A to CT make A to GT.
+            // SNP plus insertion: A to G and A to CT make A to GT. `[1..]` drops the first
+            // character, the reference's `substring(1)`.
             let alt = format!(
                 "{}{}",
                 snp.alt_allele.display_string(),
@@ -367,7 +453,13 @@ pub fn make_compound_events(e1: &Event, e2: &Event) -> Result<Event, EventError>
     }
 }
 
-/// `getEvents`: the CIGAR walked from `alignmentStartHapwrtRef`.
+/// `EventMap.getEvents`: the CIGAR walked from `alignmentStartHapwrtRef`.
+///
+/// `ref_pos` is an offset into `reference` (the padded reference bases held in memory) and
+/// `alignment_pos` an offset into the haplotype's bases; an event's contig position is
+/// `ref_loc.start` plus the offset. Every array read is checked, so where the reference throws
+/// `ArrayIndexOutOfBoundsException` this returns [`EventError::IndexOutOfBounds`], and the reads
+/// are made in the reference's order so the same CIGAR fails at the same element.
 fn get_events(
     haplotype: &Haplotype,
     reference: &[u8],
@@ -385,6 +477,7 @@ fn get_events(
         // Protection against Smith-Waterman failures.
         return Ok(Vec::new());
     }
+    // Known non-negative by the test above, so the conversion to an index loses nothing.
     let mut ref_pos = haplotype.alignment_start_hap_wrt_ref() as usize;
     // `Arrays.copyOfRange`: past the end it pads with zeros, which are not regular bases.
     let slice = |bases: &[u8], from: usize, to: usize| -> Result<Vec<u8>, EventError> {
@@ -395,11 +488,14 @@ fn get_events(
         copy.resize(to - from, 0);
         Ok(copy)
     };
+    // `bases[i]` with Java's bounds check: `.get(i)` answers `None` past the end instead of
+    // stopping the program, and that `None` becomes the error.
     let at = |bases: &[u8], i: usize| bases.get(i).copied().ok_or(EventError::IndexOutOfBounds);
 
     let mut proposed = Vec::new();
     let mut alignment_pos = 0usize;
     let count = cigar.elements.len();
+    // `.enumerate()` pairs each element with its index, the reference's `cigarIndex`.
     for (index, element) in cigar.elements.iter().enumerate() {
         let length = element.length as usize;
         match element.op {
@@ -440,6 +536,8 @@ fn get_events(
                 ref_pos += length;
             }
             Op::M | Op::Eq | Op::X => {
+                // `final Queue<Integer> mismatchOffsets = new ArrayDeque<>();`, a FIFO of the
+                // offsets where both bases are regular and differ.
                 let mut mismatches = std::collections::VecDeque::new();
                 for offset in 0..length {
                     let ref_byte = at(reference, ref_pos + offset)?;
@@ -451,6 +549,9 @@ fn get_events(
                         mismatches.push_back(offset);
                     }
                 }
+                // Take the oldest offset, then keep absorbing the next while its gap from the
+                // current end is at most `maxMnpDistance`:
+                // `mismatchOffsets.peek() - end <= maxMnpDistance`.
                 while let Some(start) = mismatches.pop_front() {
                     let mut end = start;
                     while let Some(&next) = mismatches.front() {
@@ -481,13 +582,23 @@ fn get_events(
                 ref_pos += length;
                 alignment_pos += length;
             }
+            // N, H, P and anything else: `throw new GATKException(... + ce.getOperator())`, and
+            // htsjdk's `CigarOperator.toString()` is its one-character string.
             other => return Err(EventError::UnsupportedOperator(other.to_char() as char)),
         }
     }
     Ok(proposed)
 }
 
-/// `buildEventMapsForHaplotypes`: each haplotype's map, set on it.
+/// `EventMap.buildEventMapsForHaplotypes`: each haplotype's map, set on it.
+///
+/// ```java
+/// final EventMap events = h.isPartiallyDetermined()
+///         ? new EventMap(((PartiallyDeterminedHaplotype) h).getDeterminedEvents()) :
+///         fromHaplotype(h, ref, refLoc, maxMnpDistance);
+/// ```
+///
+/// The reference's `debug` argument only logs, and is not taken.
 pub fn build_event_maps_for_haplotypes(
     haplotypes: &mut [Haplotype],
     reference: &[u8],
@@ -510,7 +621,8 @@ pub fn build_event_maps_for_haplotypes(
     Ok(())
 }
 
-/// `getEventStartPositions`: every start of every haplotype's map, sorted and once each.
+/// `EventMap.getEventStartPositions`: every start of every haplotype's map, sorted and once each,
+/// the reference's `TreeSet<Integer>` returned as a sorted list.
 pub fn event_start_positions(haplotypes: &[Haplotype]) -> Result<Vec<i32>, EventError> {
     let mut starts = std::collections::BTreeSet::new();
     for haplotype in haplotypes {

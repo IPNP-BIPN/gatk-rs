@@ -1,6 +1,6 @@
 //! `FilteredHaplotypeFilter`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.FilteredHaplotypeFilter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `FilteredHaplotypeFilter.java` is unchanged since 4.6.2.0).
 //!
 //! "Did something else on this haplotype already look like an artifact?" The first filter here with
 //! state that outlives a record: it accumulates one artifact probability per phased haplotype
@@ -9,7 +9,8 @@
 //! # The first pass answers zero to everything
 //!
 //! ```java
-//! private Map<String, List<Pair<Integer, Double>>> accumulatingPhasedProbabilities = new HashMap<>();
+//! private Map<String, List<Pair<Integer, Double>>> accumulatingPhasedProbabilities =
+//!         new HashMap<>();
 //! private Map<String, List<Pair<Integer, Double>>> phasedProbabilities = new HashMap<>();
 //! ```
 //!
@@ -21,7 +22,8 @@
 //!
 //! ```java
 //! .filter(e -> e.getKey().filterName() == GATKVCFConstants.GERMLINE_RISK_FILTER_NAME)
-//! .filter(e -> !(ignoreNormalArtifact && e.getKey().filterName() == GATKVCFConstants.ARTIFACT_IN_NORMAL_FILTER_NAME))
+//! .filter(e -> !(ignoreNormalArtifact &&
+//!         e.getKey().filterName() == GATKVCFConstants.ARTIFACT_IN_NORMAL_FILTER_NAME))
 //! .filter(e -> !e.getKey().filterName().equals(filterName()))
 //! ```
 //!
@@ -47,17 +49,37 @@
 //!
 //! `vc.getGenotypes().stream().filter(isTumor).max(...).get()` has no guard: a record with no
 //! tumour sample is a `NoSuchElementException` out of a filter, not a skip.
+//!
+//! (The two quotes above are broken across lines at a token boundary to fit this file's width;
+//! the characters are the reference's.)
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference or
+//!   `Optional` checked by the compiler; `Result<T, E>` is "a value or an error", how this file
+//!   models the exception the reference throws, and a trailing `?` hands the error to the caller;
+//! - `let Some(x) = y else { return ...; };` unwraps `y` or takes the early exit;
+//! - `.iter().filter(..).flat_map(..).fold(..)` is Java's stream pipeline: `filter`, `flatMap`,
+//!   and a `reduce` that starts from the given seed. `.reduce(f)` with no seed answers `None` for
+//!   an empty stream, as Java's `Stream.reduce(BinaryOperator)` answers an empty `Optional`;
+//! - `|a, b| ...` is a lambda, Java's `(a, b) -> ...`;
+//! - `Vec<(String, Vec<(i32, f64)>)>` is a growable list of pairs, standing in for the reference's
+//!   `Map<String, List<Pair<Integer, Double>>>` (see [`FilteredHaplotypeFilter`] for why a list);
+//! - a function's last expression is its return value; `return` is only written for early exits.
 
 use crate::error_probabilities::ErrorType;
 use crate::mutect_engine::round_finite_precision_errors;
 
-/// `FilteredHaplotypeFilter`'s identity.
+/// `FilteredHaplotypeFilter.filterName()`, which returns
+/// `GATKVCFConstants.BAD_HAPLOTYPE_FILTER_NAME` (`"haplotype"`).
 pub const FILTER_NAME: &str = "haplotype";
 
-/// `GERMLINE_PROBABILITY_TO_IGNORE_NORMAL_ARTIFACT`.
+/// `FilteredHaplotypeFilter.GERMLINE_PROBABILITY_TO_IGNORE_NORMAL_ARTIFACT`: above this germline
+/// probability the normal-artifact filter's answer is left out of the accumulated maximum.
 pub const GERMLINE_PROBABILITY_TO_IGNORE_NORMAL_ARTIFACT: f64 = 0.25;
 
-/// `M2FiltersArgumentCollection.DEFAULT_MAX_INTRA_HAPLOTYPE_DISTANCE`.
+/// `M2FiltersArgumentCollection.DEFAULT_MAX_INTRA_HAPLOTYPE_DISTANCE`, the default of
+/// `--distance-on-haplotype`'s `int maxDistanceToFilteredCallOnSameHaplotype`.
 pub const DEFAULT_MAX_INTRA_HAPLOTYPE_DISTANCE: i32 = 100;
 
 /// `GATKVCFConstants.GERMLINE_RISK_FILTER_NAME`.
@@ -138,10 +160,12 @@ pub enum HaplotypeFilterError {
 }
 
 impl HaplotypeFilterError {
+    /// The Java class `Optional.get()` throws on an empty `Optional`.
     pub fn class(&self) -> &'static str {
         "java.util.NoSuchElementException"
     }
 
+    /// That exception's message.
     pub fn message(&self) -> &'static str {
         "No value present"
     }
@@ -160,6 +184,11 @@ pub struct FilteredHaplotypeFilter {
 }
 
 impl FilteredHaplotypeFilter {
+    /// `new FilteredHaplotypeFilter(maxIntraHaplotypeDistance)`.
+    ///
+    /// The reference stores the distance as a `double`, though the argument it is built from,
+    /// `maxDistanceToFilteredCallOnSameHaplotype`, is an `int`. It is kept as the `int` here and
+    /// widened to `f64` at the one comparison that reads it, which is the comparison Java makes.
     pub fn new(max_intra_haplotype_distance: i32) -> Self {
         Self {
             max_intra_haplotype_distance,
@@ -178,7 +207,18 @@ impl FilteredHaplotypeFilter {
         &self.learned
     }
 
-    /// `errorProbabilities`: one probability per alternate allele, all of them the same.
+    /// `Mutect2VariantFilter.errorProbabilities`: one probability per alternate allele, all of
+    /// them the same.
+    ///
+    /// ```java
+    /// final double result = Mutect2FilteringEngine.roundFinitePrecisionErrors(
+    ///         requiredInfoAnnotations().stream().allMatch(vc::hasAttribute) ?
+    ///         calculateErrorProbability(vc, filteringEngine, referenceContext) : 0.0);
+    /// return Collections.nCopies(numAltAlleles, result);
+    /// ```
+    ///
+    /// This filter's `requiredInfoAnnotations()` is `Collections.emptyList()`, so `allMatch` is
+    /// always true and the `0.0` branch is never taken; `alternate_count` is `numAltAlleles`.
     pub fn error_probabilities(
         &self,
         genotypes: &[PhasedGenotype],
@@ -192,14 +232,19 @@ impl FilteredHaplotypeFilter {
         ])
     }
 
-    /// `calculateErrorProbability`.
+    /// `FilteredHaplotypeFilter.calculateErrorProbability`: the largest probability the previous
+    /// pass learned for the phasing string of the tumour genotype with the greatest `AF`, among
+    /// loci within the maximum distance of `start`; zero when any of those is missing.
     fn calculate_error_probability(
         &self,
         genotypes: &[PhasedGenotype],
         start: i32,
     ) -> Result<f64, HaplotypeFilterError> {
-        // `Stream.max` reduces with `BinaryOperator.maxBy`, which returns the LEFT argument when the
-        // comparison is not negative: a tie keeps the first tumour genotype, not the last.
+        // `Stream.max` reduces with `BinaryOperator.maxBy`, which returns the LEFT argument when
+        // the comparison is not negative: a tie keeps the first tumour genotype, not the last.
+        // `total_cmp` stands in for the `Double.compare` that `Comparator.comparingDouble` uses;
+        // both order -0.0 below 0.0, and they part only on a NaN, which `AF` does not carry here.
+        // `.ok_or(e)?` turns the empty result into the error and returns it: the `.get()` throw.
         let tumour = genotypes
             .iter()
             .filter(|g| g.tumor)
@@ -218,6 +263,7 @@ impl FilteredHaplotypeFilter {
         let Some(phasing) = tumour.phasing_string() else {
             return Ok(0.0);
         };
+        // `phasedProbabilities.get(phasingString.get())`, a `null` for an unseen key.
         let Some(phased) = self
             .learned
             .iter()

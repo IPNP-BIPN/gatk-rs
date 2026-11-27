@@ -1,6 +1,6 @@
 //! `PolymeraseSlippageFilter`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.PolymeraseSlippageFilter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `PolymeraseSlippageFilter.java` is unchanged since 4.6.2.0).
 //!
 //! "Is this indel a PCR artifact of a short tandem repeat?" A somatic likelihood is weighed against
 //! the likelihood that a polymerase slipped, and the second of those is a regularized beta.
@@ -9,10 +9,15 @@
 //!
 //! ```java
 //! final int depth = (int) MathUtils.sum(ADs);
+//!
 //! final int altCount = (int) MathUtils.sum(ADs) - ADs[0];
-//! final double logSomaticLikelihood = ...logLikelihoodGivenSomatic(depth, altCount);
+//! final double logSomaticLikelihood = filteringEngine.getSomaticClusteringModel()
+//!         .logLikelihoodGivenSomatic(depth, altCount);
+//! ...
 //! likelihoodGivenSlippageArtifact = Beta.regularizedBeta(slippageRate, ADs[1] + 1, ADs[0] + 1);
 //! ```
+//!
+//! (The third statement is one line in the reference, wrapped here; `...` marks omitted lines.)
 //!
 //! `altCount` sums **every** alternate allele's depth; `ADs[1]` is the **first** alternate's alone.
 //! On a biallelic record they are the same number. On a triallelic one the two halves of the same
@@ -28,7 +33,7 @@
 //! # `RPA` is parsed, not read
 //!
 //! ```java
-//! vc.getAttributeAsList(REPEATS_PER_ALLELE_KEY).stream()
+//! final int[] rpa = vc.getAttributeAsList(GATKVCFConstants.REPEATS_PER_ALLELE_KEY).stream()
 //!         .mapToInt(o -> Integer.parseInt(String.valueOf(o))).toArray();
 //! ```
 //!
@@ -38,10 +43,18 @@
 //!
 //! # The fallback cannot be reached
 //!
-//! The `catch (MaxCountExceededException)` arm computes a binomial probability instead. Three-argument
-//! `regularizedBeta` passes `Integer.MAX_VALUE` iterations, so nothing short of a diverging continued
-//! fraction reaches it, and no golden can exercise it. It is [`SlippageError::FallbackUnmeasured`]
-//! here rather than a guess.
+//! The `catch (MaxCountExceededException)` arm computes a binomial probability instead.
+//! Three-argument `regularizedBeta` passes `Integer.MAX_VALUE` iterations, so nothing short of a
+//! diverging continued fraction reaches it, and no golden can exercise it. It is
+//! [`SlippageError::FallbackUnmeasured`] here rather than a guess.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<&[String]>` is a borrowed list of strings or nothing; `None` is the annotation absent.
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception, and `?` returns the
+//!   error to the caller at once. Each `impl From<X> for SlippageError` is what lets `?` convert
+//!   an error of type `X`.
+//! - `vec![x; n]` is `n` copies of `x`, Java's `Collections.nCopies(n, x)`.
 
 use crate::allele_filter::{sum_ads_over_samples, AlleleDepthTooShort, GenotypeData};
 use crate::mutect_engine::{posterior_probability_of_error, round_finite_precision_errors};
@@ -53,7 +66,7 @@ use jmath::continued_fraction::ContinuedFractionError;
 /// `PolymeraseSlippageFilter`'s identity.
 pub const FILTER_NAME: &str = "slippage";
 
-/// `phredScaledPosteriorAnnotationName`, `POLYMERASE_SLIPPAGE_QUAL_KEY`.
+/// `phredScaledPosteriorAnnotationName`, `GATKVCFConstants.POLYMERASE_SLIPPAGE_QUAL_KEY`.
 pub const ANNOTATION: &str = "STRQ";
 
 /// `M2FiltersArgumentCollection.DEFAULT_MIN_SLIPPAGE_LENGTH`.
@@ -110,6 +123,8 @@ impl From<NonFiniteSum> for SlippageError {
     }
 }
 
+/// Sorts the beta's refusals: a continued fraction that did not converge is the reference's
+/// `MaxCountExceededException` arm, whose fallback is unmeasured; anything else is passed on.
 impl From<BetaError> for SlippageError {
     fn from(error: BetaError) -> Self {
         match error {
@@ -138,6 +153,8 @@ pub fn slippage_error_probabilities<T>(
     slippage_rate: f64,
 ) -> Result<Vec<f64>, SlippageError> {
     let alternate_count = alternates.len();
+    // `requiredInfoAnnotations` is `RPA` and `RU`: both must be present, or the base class answers
+    // `0.0`, rounded and copied. Matching the pair at once is the `allMatch(vc::hasAttribute)`.
     let (Some(repeats_per_allele), Some(repeat_unit)) = (repeats_per_allele, repeat_unit) else {
         return Ok(vec![round_finite_precision_errors(0.0); alternate_count]);
     };
@@ -170,6 +187,8 @@ fn calculate_error_probability<T>(
     min_slippage_length: i32,
     slippage_rate: f64,
 ) -> Result<f64, SlippageError> {
+    // Every entry is parsed before the length is checked, as `toArray()` is formed before
+    // `rpa.length < 2`, so a bad entry is refused even on a record the check would pass over.
     let mut repeats = Vec::with_capacity(repeats_per_allele.len());
     for entry in repeats_per_allele {
         repeats.push(parse_int(entry)?);
@@ -179,12 +198,15 @@ fn calculate_error_probability<T>(
     }
 
     // `ru.length()` counts UTF-16 code units, which for a repeat unit of DNA is its bases.
+    // `vc.getAttributeAsString(REPEAT_UNIT_KEY, "")`, then `ru.length() * rpa[0]`.
     let reference_str_base_count = repeat_unit.encode_utf16().count() as i32 * repeats[0];
     let number_of_pcr_slips = repeats[0] - repeats[1];
+    // The reference's `if (...) { ... } else { return 0; }`, turned into an early return.
     if !(reference_str_base_count >= min_slippage_length && number_of_pcr_slips.abs() == 1) {
         return Ok(0.0);
     }
 
+    // `filteringEngine.sumADsOverSamples(vc, true, false)`, then `ADs == null || ADs.length < 2`.
     let allele_depths = sum_ads_over_samples(alternates.len() + 1, genotypes, true, false)?;
     if allele_depths.len() < 2 {
         return Ok(0.0);
@@ -203,6 +225,8 @@ fn calculate_error_probability<T>(
         f64::from(allele_depths[0]) + 1.0,
     )?;
 
+    // `Math.log` of the slippage likelihood, through `jmath` rather than the platform's logarithm
+    // (see `tools/audit/arithmetic.py`).
     let log_odds = log_somatic_likelihood - jmath::math::log(likelihood_given_slippage_artifact);
     // `posteriorProbabilityOfError(vc, logOdds, 0)`: alternate ZERO's indel length, always.
     let prior = model.log_prior_of_somatic_variant(indel_length(reference_length, alternates[0]));
@@ -210,6 +234,10 @@ fn calculate_error_probability<T>(
 }
 
 /// `Integer.parseInt(String.valueOf(o))`, refusing where the reference throws.
+///
+/// Rust's `parse::<i32>` and `Integer.parseInt` agree on an optional sign followed by ASCII
+/// digits, and both refuse surrounding whitespace and a decimal point; `parseInt` also accepts
+/// non-ASCII Unicode digits, which this does not.
 fn parse_int(text: &str) -> Result<i32, SlippageError> {
     text.parse::<i32>()
         .map_err(|_| SlippageError::NumberFormat {

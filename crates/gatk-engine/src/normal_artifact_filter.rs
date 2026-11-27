@@ -1,6 +1,6 @@
 //! `NormalArtifactFilter`, ported from
 //! `org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NormalArtifactFilter`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `NormalArtifactFilter.java` is unchanged since 4.6.2.0).
 //!
 //! "Does the matched normal carry this allele too?" Two answers are combined: the normal-artifact
 //! log odds Mutect2 already wrote into the record, and a p-value computed here from the normal's
@@ -11,9 +11,11 @@
 //! ```java
 //! final int indexOfMaxTumorLod = MathUtils.maxElementIndex(tumorLods);
 //! final int tumorAltDepth = tumorAlleleDepths[indexOfMaxTumorLod + 1];
-//! final double[] normalArtifactNegativeLogOdds = ...;
-//! ... normalArtifactNegativeLogOdds[indexOfMaxTumorLod] ...
+//! final double normalArtifactProbability = filteringEngine.posteriorProbabilityOfNormalArtifact(
+//!         normalArtifactNegativeLogOdds[indexOfMaxTumorLod]);
 //! ```
+//!
+//! (The last statement is one line in the reference, wrapped here.)
 //!
 //! `indexOfMaxTumorLod` is the **alternate** allele's index. The depth arrays are indexed by the
 //! record's alleles and so need the `+ 1`; `TLOD` and `NALOD` are per-alternate and do not. An
@@ -23,9 +25,15 @@
 //!
 //! ```java
 //! final double tumorAlleleFraction = (double) tumorAltDepth / tumorDepth;
-//! final double normalAlleleFraction = normalDepth == 0 ? 0 : (double) normalAltDepth / normalDepth;
-//! if (normalAlleleFraction < MIN_NORMAL_ARTIFACT_RATIO * tumorAlleleFraction) { return 0.0; }
+//! final double normalAlleleFraction = normalDepth == 0 ? 0
+//!         : (double) normalAltDepth / normalDepth;
+//! if (normalAlleleFraction < MIN_NORMAL_ARTIFACT_RATIO * tumorAlleleFraction)  {
+//!     return 0.0;
+//! }
 //! ```
+//!
+//! (`NormalArtifactFilter.java` lines 41 to 46, the blank line dropped and the second statement
+//! wrapped.)
 //!
 //! The tumour side is a bare division, so a record with no tumour depth makes the comparison
 //! `0 < NaN`, which is **false**: instead of returning zero, such a record falls through to the
@@ -34,8 +42,11 @@
 //! # The imputed base quality is unreachable from a record that lacks the annotation
 //!
 //! ```java
-//! final int medianRefBaseQuality = vc.getAttributeAsIntList(MEDIAN_BASE_QUALITY_KEY, IMPUTED_NORMAL_BASE_QUALITY).get(0);
+//! final int medianRefBaseQuality = vc.getAttributeAsIntList(
+//!         GATKVCFConstants.MEDIAN_BASE_QUALITY_KEY, IMPUTED_NORMAL_BASE_QUALITY).get(0);
 //! ```
+//!
+//! (One line in the reference, wrapped here.)
 //!
 //! `getAttributeAsIntList(key, default)` maps the default over the elements of a **present** list,
 //! replacing a null or `"."`. An absent key is `Collections.emptyList()`, and `.get(0)` on that is
@@ -51,6 +62,17 @@
 //! when a required annotation is absent that probability is `0.0`. The per-allele base class
 //! ([`crate::allele_filter`]) answers an empty list in the same situation, and `ErrorProbabilities`
 //! drops an empty list rather than counting it. The two base classes disagree.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Result<T, E>` is a value or an error, this codebase's Java exception. `?` after a call
+//!   returns its error to the caller at once; each `impl From<X> for NormalArtifactError` below is
+//!   what lets `?` turn an error of type `X` into this filter's error.
+//! - `fn f<T>(.., genotypes: &[GenotypeData<T>])` is generic over the per-genotype values, which
+//!   this filter never reads: only the depths and the tumour flag matter.
+//! - `i64::from(x)` widens an `int` to a `long`; `(...) as i32` narrows back, keeping the low 32
+//!   bits as Java's `(int)` cast does.
+//! - `vec![x; n]` is a list of `n` copies of `x`, Java's `Collections.nCopies(n, x)`.
 
 use crate::allele_filter::{sum_ads_over_samples, AlleleDepthTooShort, GenotypeData};
 use crate::allele_likelihoods::log10_to_log;
@@ -60,7 +82,7 @@ use crate::natural_log_utils::NonFiniteSum;
 use crate::somatic_clustering_model::SomaticClusteringModel;
 use jmath::binomial::{cumulative_probability, BinomialError};
 
-/// `NormalArtifactFilter`'s identity.
+/// `NormalArtifactFilter`'s identity: `GATKVCFConstants.ARTIFACT_IN_NORMAL_FILTER_NAME`.
 pub const FILTER_NAME: &str = "normal_artifact";
 
 /// `MIN_NORMAL_ARTIFACT_RATIO`: "don't call normal artifact if allele fraction in normal is much
@@ -71,7 +93,8 @@ pub const MIN_NORMAL_ARTIFACT_RATIO: f64 = 0.1;
 /// which, per the module note, is not the same thing as the annotation being absent.
 pub const IMPUTED_NORMAL_BASE_QUALITY: i32 = 30;
 
-/// `M2FiltersArgumentCollection.DEFAULT_NORMAL_P_VALUE_THRESHOLD`.
+/// `M2FiltersArgumentCollection.DEFAULT_NORMAL_P_VALUE_THRESHOLD`, the constructor's
+/// `normalPileupPValueThreshold` by default.
 pub const DEFAULT_NORMAL_P_VALUE_THRESHOLD: f64 = 0.001;
 
 /// What this filter refuses, each of them something the reference throws or has not been measured.
@@ -116,6 +139,10 @@ impl From<BinomialError> for NormalArtifactError {
 /// check looks at. `median_base_qualities` is the record's `MBQ`, empty when it is absent.
 ///
 /// The answer is one probability per alternate allele, all of them the same number.
+///
+/// `allele_count` is `vc.getNAlleles()`, the reference included: the length every genotype's `AD`
+/// must have. `requiredInfoAnnotations` names `NALOD` and `TLOD` only; `MBQ` is not one of them,
+/// which is why its absence is a refusal rather than a zero.
 pub fn normal_artifact_error_probabilities<T>(
     model: &SomaticClusteringModel,
     tumor_log_10_odds: Option<&[f64]>,
@@ -150,6 +177,10 @@ pub fn normal_artifact_error_probabilities<T>(
 }
 
 /// `calculateErrorProbability`, without the rounding and without the copy.
+///
+/// The steps are in the reference's order, including where each can fail: the depth lookups,
+/// then the ratio gate, then `NALOD`, the posterior, and only then `MBQ`. A record that the gate
+/// passes never reaches the missing-`MBQ` refusal.
 #[allow(clippy::too_many_arguments)]
 fn calculate_error_probability<T>(
     model: &SomaticClusteringModel,
@@ -169,6 +200,8 @@ fn calculate_error_probability<T>(
     let tumor_lods: Vec<f64> = tumor_log_10_odds.iter().map(|x| log10_to_log(*x)).collect();
     let index_of_max_tumor_lod = max_element_index(&tumor_lods, 0, tumor_lods.len());
 
+    // `filteringEngine.sumADsOverSamples(vc, true, false)`: the tumour genotypes' `AD`, summed
+    // allele by allele.
     let tumor_allele_depths = sum_ads_over_samples(allele_count, genotypes, true, false)?;
     // `(int) MathUtils.sum(int[])`, which sums into a `long` and is then truncated to an `int`.
     let tumor_depth = (tumor_allele_depths
@@ -210,6 +243,9 @@ fn calculate_error_probability<T>(
     let median_ref_base_quality = *median_base_qualities
         .first()
         .ok_or(NormalArtifactError::MedianBaseQualityMissing)?;
+    // `1 - new BinomialDistribution(null, normalDepth, QualityUtils.qualToErrorProb(q))
+    // .cumulativeProbability(normalAltDepth - 1)`: the probability of at least `normalAltDepth`
+    // error reads in `normalDepth` at the site's base quality.
     let normal_p_value = 1.0
         - cumulative_probability(
             normal_depth,
@@ -225,6 +261,9 @@ fn calculate_error_probability<T>(
 }
 
 /// One element of a depth array, refusing where the reference throws `ArrayIndexOutOfBounds`.
+///
+/// `.get(i)` on a slice answers `Option` rather than throwing; `.ok_or(e)` turns its `None` into
+/// the error `e`.
 fn at(values: &[i32], index: usize) -> Result<i32, NormalArtifactError> {
     values
         .get(index)

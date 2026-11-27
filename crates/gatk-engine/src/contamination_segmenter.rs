@@ -1,5 +1,7 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.contamination.ContaminationSegmenter`.
 //!
+//! GATK 4.7.0.0; `ContaminationSegmenter.java` is unchanged since 4.6.2.0.
+//!
 //! Seventy-four lines of Java that turn a list of pileup summaries into segments of constant minor
 //! allele fraction, by way of [`crate::kernel_segmenter`] and the decomposition under it.
 //!
@@ -16,6 +18,14 @@
 //! The intervals it produces are then used to look up **all** sites that overlap them, hom refs and
 //! hom alts included, which is how a hom alt ends up inside a segment whose boundaries no hom alt
 //! helped choose.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[PileupSummary]` is a borrowed, read-only view of the caller's list; `Vec<T>` is an owned,
+//!   growable list, Java's `ArrayList<T>`. `.cloned()` copies each element out of a borrowed view.
+//! - `x as i64` and `x as usize` convert between integer widths. `usize` is the unsigned index type
+//!   Java lacks; the changepoints are held as `i64` so the leading `-1` fits, and every one of them
+//!   plus one is a valid index before it is converted back.
 
 use crate::java_hash;
 use crate::kernel_segmenter::{
@@ -24,6 +34,7 @@ use crate::kernel_segmenter::{
 use crate::pileup_summary::PileupSummary;
 
 /// `ALT_FRACTIONS_FOR_SEGMENTATION`, a `Range.of(0.1, 0.9)` and therefore closed at both ends.
+/// (`Range` is commons-lang3's, whose `contains` is inclusive.)
 pub const ALT_FRACTION_LOWER: f64 = 0.1;
 /// The upper end of the same range.
 pub const ALT_FRACTION_UPPER: f64 = 0.9;
@@ -38,7 +49,9 @@ pub const POINTS_PER_SEGMENTATION_WINDOW: usize = 50;
 /// `MAX_CHANGEPOINTS_PER_CHROMOSOME`.
 pub const MAX_CHANGEPOINTS_PER_CHROMOSOME: usize = 10;
 
-/// One segment's span, which is `SimpleInterval` reduced to what the caller reads.
+/// One segment's span, which is `SimpleInterval` reduced to what the caller reads:
+/// `new SimpleInterval(firstSiteInSegment.getContig(), firstSiteInSegment.getStart(),
+/// lastSiteInSegment.getEnd())`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     /// The contig the segment is on.
@@ -56,6 +69,8 @@ pub struct Span {
 /// what [`crate::java_hash::hash_set_order`] reproduces, and getting it wrong reorders the whole
 /// answer even though each segment is unchanged.
 pub fn find_segments(sites: &[PileupSummary]) -> Vec<Vec<PileupSummary>> {
+    // The distinct contigs in first-seen order, which is the order the `HashMap` is filled in;
+    // `hash_set_order` then answers the order its values iterate in.
     let mut contigs: Vec<String> = Vec::new();
     for site in sites {
         if !contigs.contains(&site.contig) {
@@ -83,6 +98,9 @@ pub fn find_segments(sites: &[PileupSummary]) -> Vec<Vec<PileupSummary>> {
                 })
                 .cloned()
                 .collect();
+            // `sorted(Comparator.comparingInt(PileupSummary::getStart))`. Both sorts are stable,
+            // but they start from different orders (`getOverlaps` answers a set, this the table
+            // order), so two sites at one position on one contig could come out swapped.
             overlapping.sort_by_key(|site| site.position);
             segments.push(overlapping);
         }
@@ -94,6 +112,10 @@ pub fn find_segments(sites: &[PileupSummary]) -> Vec<Vec<PileupSummary>> {
 ///
 /// An empty het list is an empty answer rather than one segment: a contig with nothing between the
 /// two fractions contributes no segment at all, and its sites therefore appear in no segment.
+///
+/// `find_changepoints` is `new KernelSegmenter<>(hetSites).findChangepoints(...)` with the
+/// reference's constants, over the het sites' alt fractions; the kernel itself, which folds each
+/// fraction to a minor allele fraction, lives in [`crate::kernel_segmenter`].
 fn find_contig_segments(sites: &[PileupSummary]) -> Vec<Span> {
     let het_sites: Vec<&PileupSummary> = sites
         .iter()
@@ -130,6 +152,8 @@ fn find_contig_segments(sites: &[PileupSummary]) -> Vec<Span> {
     changepoints.extend(found.iter().map(|index| *index as i64));
     changepoints.push(het_sites.len() as i64 - 1);
 
+    // `IntStream.range(0, changepoints.size() - 1).mapToObj(n -> ...)`: one segment from each
+    // changepoint plus one to the next changepoint, inclusive.
     (0..changepoints.len() - 1)
         .map(|n| {
             let first = &het_sites[(changepoints[n] + 1) as usize];
@@ -144,5 +168,5 @@ fn find_contig_segments(sites: &[PileupSummary]) -> Vec<Span> {
 }
 
 /// The kernel variance the segmenter uses, re-exported so a caller does not reach into the
-/// segmenter module for it.
+/// segmenter module for it: `private static final double SEGMENTATION_KERNEL_VARIANCE = 0.025;`.
 pub const KERNEL_VARIANCE: f64 = SEGMENTATION_KERNEL_VARIANCE;

@@ -1,11 +1,12 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.genotyper.DRAGENGenotypesModel`,
 //! `GenotypeLikelihoodCalculatorDRAGEN` and `FRDBQDUtils`, and from
-//! `org.broadinstitute.hellbender.transformers.DRAGENMappingQualityReadTransformer` (GATK 4.6.2.0):
-//! the genotype models HaplotypeCaller switches on with `--apply-bqd` and `--apply-frd`.
+//! `org.broadinstitute.hellbender.transformers.DRAGENMappingQualityReadTransformer` (GATK 4.7.0.0;
+//! the four Java files are unchanged since 4.6.2.0): the genotype models HaplotypeCaller switches
+//! on with `--apply-bqd` and `--apply-frd`.
 //!
 //! Each sample's genotype likelihoods start as the standard model's
-//! ([`compute_log10_genotype_likelihoods`]). Each enabled model then computes a likelihood for every
-//! **homozygous** genotype and the sample keeps, genotype by genotype, the larger of the two:
+//! ([`compute_log10_genotype_likelihoods`]). Each enabled model then computes a likelihood for
+//! every **homozygous** genotype and the sample keeps, genotype by genotype, the larger of the two:
 //!
 //!  * base quality dropout (BQD) asks whether a homozygous call's dissent is an error that set in
 //!    along the reads, so it sorts each strand's reads by how far into the read the site falls and
@@ -34,6 +35,28 @@
 //!    standard model's likelihood for the het of the call and the foreign allele, read at the
 //!    **diploid** index of that pair whatever the ploidy, less `log10(2)`;
 //!  * FRD sees the likelihoods BQD has already raised.
+//!
+//! # The arithmetic is the reference's, operation for operation
+//!
+//! The `dragen-genotypes` suite (`dragen_genotypes.txt.gz`, 825 rows) prints each sample's log10
+//! genotype likelihoods as raw bits (`gl bqd-dropout BQD 0 ...`, `gl frd-foreign-depth-cap FRD 0
+//! ...`), so every sum below keeps the reference's grouping and order, every `Math.max` and
+//! `Math.min` is [`java_max`]/[`java_min`] (which keep Java's `NaN` and signed-zero answers where
+//! Rust's built-ins do not), every `Math.log10` is `jmath::math::log10` and the one `Math.pow(10,
+//! x)` is [`pow10`], the deferred function `math_utils` documents.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a value or nothing": a read's base quality is `None` where the reference
+//!   stores the offset -1, and its matrix column is `None` where the reference stores -1.
+//! - `Result<T, String>` is "a value or the reference's exception as its message"; `?` returns
+//!   that error from the enclosing function at once.
+//! - `v.sort_by(|a, b| ...)` sorts with a comparator lambda; like Java's `List.sort` it is stable,
+//!   so reads equal on both keys keep the order they were added in (the matrix's reads, then the
+//!   disqualified ones).
+//! - `a.cmp(&b).then(c.cmp(&d))` compares by the first key and, on a tie, by the second: the
+//!   reference's `diffVal`, then `if (diffVal == 0)`.
+//! - `impl Fn(&DragenRead) -> bool` is any lambda of that shape, Java's `Predicate`.
 
 use crate::genotyper_debug as debug;
 use crate::tsv_table::java_double_to_string;
@@ -60,12 +83,22 @@ const PHRED_SCALED_ADJUSTMENT_FOR_BQ_SCORE: f64 = 2.5;
 /// `DRAGENMappingQualityReadTransformer.EXTENDED_MAPPING_QUALITY_READ_TAG`.
 pub const EXTENDED_MAPPING_QUALITY_READ_TAG: [u8; 2] = *b"XQ";
 
+/// `mQTableX` and `mQTableY` of `DRAGENMappingQualityReadTransformer`: the knots of the map.
 const MQ_TABLE_X: [i32; 6] = [0, 30, 60, 100, 200, 256];
 const MQ_TABLE_Y: [i32; 6] = [0, 30, 40, 45, 50, 50];
 
 /// `mapMappingQualityToPhredLikelihoodScore`: DRAGEN's piecewise-linear map from a mapping quality
 /// to the phred score of a mismapping. Past 256 it is the reference's `GATKException`, whose
 /// message is returned.
+///
+/// ```java
+/// final double xfactor = 1.0*(val - mQTableX[i-1]) / (mQTableX[i] - mQTableX[i-1]) ;
+/// return  mQTableY[i-1] + (xfactor * (mQTableY[i] - mQTableY[i-1]));
+/// ```
+///
+/// Both differences are exact integers before they become doubles, so converting each with
+/// `f64::from` and dividing is the same single rounding. A negative value takes the first segment
+/// and comes out negative, as in the reference (the golden's `mq` rows run from -1 to 257).
 pub fn map_mapping_quality_to_phred_likelihood_score(value: i32) -> Result<f64, String> {
     for i in 1..MQ_TABLE_X.len() {
         if value <= MQ_TABLE_X[i] {
@@ -384,6 +417,8 @@ fn bqd_likelihoods(
     for gt in 0..alleles.len() {
         let index = homozygous_index(gt, ploidy);
         for error in 0..alleles.len() {
+            // The reference compares the two `Allele` objects with `==`, by identity; the
+            // genotyping alleles are distinct, so comparing their indices is the same test.
             if gt == error
                 || java_length(&alleles[gt]) != ref_length
                 || java_length(&alleles[error]) != ref_length
@@ -405,6 +440,7 @@ fn bqd_likelihoods(
                 bqd_for_strand(likelihoods, forward, forward_adjustment, true, gt, error);
             let reverse_score =
                 bqd_for_strand(likelihoods, reverse, reverse_adjustment, false, gt, error);
+            // `(minScoreFoundForwardsStrand + minScoreFoundReverseStrand) * -0.1`: sum, then scale.
             let score = (forward_score + reverse_score) * -0.1;
             output[index] = java_max(output[index], score);
         }
@@ -458,6 +494,8 @@ fn bqd_for_strand(
             total_quality += f64::from(quality);
             quality_denominator += 1;
         }
+        // `baseQualityDenominator == 0 ? 1 : baseQualityDenominator`: before the first read with a
+        // quality at the site the mean is `0 / 1`.
         let denominator = if quality_denominator == 0 {
             1
         } else {
@@ -483,6 +521,7 @@ fn bqd_for_strand(
                 fixed(remaining, 0, 2)
             ));
         }
+        // Strictly smaller, so the first split of equal score is kept.
         if min_score > score {
             min_score = score;
             n_used = n;
@@ -558,6 +597,7 @@ fn frd_likelihoods(
             debug::println(&format!(
                 "gtAlleleIndex : {gt} fAlleleIndex: {foreign} forwards: [D@0 reverse: [D@0 both: [D@0"
             ));
+            // Forward, then reverse, then both, each replacing the best only when strictly better.
             let mut best = forward;
             if best[0] < reverse[0] {
                 best = reverse;
@@ -569,6 +609,8 @@ fn frd_likelihoods(
                 let best_score = best[0] - best[1];
                 let closest = allele_counts_to_index(&[gt, 1, foreign, 1])
                     .expect("an even-length allele count array");
+                // The trailing `- -log10_one_half` is `- -MathUtils.LOG10_ONE_HALF`, kept as the
+                // reference writes it.
                 let ploidy_model =
                     ploidy_model_likelihoods
                         .get(closest)
@@ -580,6 +622,8 @@ fn frd_likelihoods(
                             )
                         })?
                         - -log10_one_half;
+                // `((Math.min(depthForGenotyping, maxEffectiveDepthForHetAdjustment) * 1.0) /
+                // depthForGenotyping)`: the integer minimum made a double, then divided.
                 let adjusted = ploidy_model
                     + ((best_score - ploidy_model)
                         * ((f64::from(depth.min(max_effective_depth)) * 1.0) / f64::from(depth)));
@@ -616,14 +660,16 @@ fn critical_values(
         container.phred_pf = value;
         thresholds.push(value);
     }
+    // `sorted(Double::compareTo)`. `total_cmp` agrees with it except on a NaN with its sign bit
+    // set; a threshold is a mapping-quality score times -0.1 plus the prior adjustment, never NaN.
     thresholds.sort_by(|a, b| a.total_cmp(b));
     // `Double.equals` compares `doubleToLongBits`, under which every NaN is one value.
     thresholds.dedup_by(|a, b| (a.is_nan() && b.is_nan()) || a.to_bits() == b.to_bits());
     Ok(thresholds)
 }
 
-/// `computeFRDModelForStrandData`: the best `log10 P(F) + log10 P(reads | foreign mixture)` over the
-/// thresholds, and the threshold that gave it.
+/// `computeFRDModelForStrandData`: the best `log10 P(F) + log10 P(reads | foreign mixture)` over
+/// the thresholds, and the threshold that gave it.
 fn frd_for_strand(
     likelihoods: &[Vec<f64>],
     homozygous: usize,
@@ -638,6 +684,9 @@ fn frd_for_strand(
     let mut max_lpspi = f64::NEG_INFINITY;
     let mut lpf_applied = 0.0;
     let mut counter = 0;
+    // `container.getPhredPFValue() + 0.0000001 <= logProbFAllele ? NEGATIVE_INFINITY : ...`: a
+    // read at or below the cutoff, within the reference's tolerance, cannot support the foreign
+    // allele.
     let foreign_given_cutoff = |container: &DragenRead, read: usize, log_prob_f: f64| {
         if container.phred_pf + 0.0000001 <= log_prob_f {
             f64::NEG_INFINITY
@@ -663,6 +712,8 @@ fn frd_for_strand(
                 denominator += 1.0;
             }
         }
+        // With no read selected this is `0.0 / 0.0`, `NaN`, and `Math.min` keeps the `NaN`, which
+        // is why it is `java_min` and not `f64::min`.
         let foreign_fraction = java_min(ratio / denominator, 0.5);
         let log10_foreign = jmath::math::log10(foreign_fraction);
         let log10_not_foreign = jmath::math::log10(1.0 - foreign_fraction);
@@ -694,6 +745,8 @@ fn frd_for_strand(
             ));
             counter += 1;
         }
+        // Strictly greater: of two thresholds with the same score, the lower one (seen first)
+        // stays as `lpfApplied`.
         if local_max > max_lpspi {
             max_lpspi = java_max(max_lpspi, local_max);
             lpf_applied = log_prob_f;
