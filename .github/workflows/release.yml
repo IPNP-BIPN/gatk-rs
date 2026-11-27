@@ -4,8 +4,8 @@ name: Release
 # sha256. Nothing is published until a person reviews the draft and presses Publish.
 #
 # The binary is built exactly as `speed.yml` measures it (`cargo build --release -p gatk-cli`, the
-# pinned toolchain, no RUSTFLAGS), so the speed a release claims is the speed of the bytes it ships.
-# There is no `target-cpu=native`: the x86-64 binary is run under QEMU's baseline `qemu64` CPU
+# pinned toolchain, no extra compiler flags), so the speed a release claims is the speed of the bytes it ships.
+# Nothing tunes the code for the build host: the x86-64 binary is run under QEMU's baseline `qemu64` CPU
 # before it is packaged, so an instruction the oldest x86-64 lacks fails here, not on a user's host.
 #
 # A pull request that touches this file or tools/release/ runs every step except the release
