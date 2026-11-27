@@ -5235,14 +5235,27 @@ pub fn gather_bqsr_reports(parser: &Parser) -> Outcome {
 
     let mut texts = Vec::new();
     for path in &inputs {
-        texts.push(std::fs::read_to_string(path).map_err(|error| Thrown {
+        let refused = |error: std::io::Error| Thrown {
             failure: Failure::User,
             exception: gatk_tools::read_walker_refusal::COULD_NOT_READ,
             message: Some(format!(
                 "Couldn't read file {}. Error was: {error}",
                 java_absolute_path(path)
             )),
-        })?);
+        };
+        let bytes = std::fs::read(path).map_err(refused)?;
+        // `GATKReport` reads through `makeZippedInputStream`, so a gzipped report is read too.
+        let text = if bytes.starts_with(&[0x1f, 0x8b]) {
+            gunzip(&bytes).map_err(refused)?
+        } else {
+            String::from_utf8(bytes).map_err(|_| {
+                refused(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stream did not contain valid UTF-8",
+                ))
+            })?
+        };
+        texts.push(text);
     }
     let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
     // `GATKException` is not a user error, which is what puts it at status three; the empty input
