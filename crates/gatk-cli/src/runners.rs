@@ -7364,9 +7364,16 @@ pub fn validate_variants(parser: &Parser) -> Outcome {
     if validate_gvcf {
         // The whole region is the interval argument when there is one and the dictionary when there
         // is not, and what is subtracted from it is the merged span of every record traversed.
-        let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
-            Some(header) => header,
-            None => vcf_dictionary(&text),
+        // `VariantWalkerBase.getBestAvailableSequenceDictionary`: the VCF's own contigs unless every
+        // length is 0, then the master, then the reference.
+        let driving = vcf_dictionary(&text);
+        let dictionary = if driving.sequences.iter().any(|sequence| sequence.length > 0) {
+            driving
+        } else {
+            match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+                Some(header) => header,
+                None => driving,
+            }
         };
         let wanted = match intervals.as_deref() {
             Some(given) if !given.is_empty() => given.to_vec(),
