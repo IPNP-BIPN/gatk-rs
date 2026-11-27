@@ -142,8 +142,9 @@ pub struct ReadThreadingAssembler {
     linked: bool,
     /// `recoverHaplotypesFromEdgesNotCoveredInJunctionTrees`.
     recover_uncovered_haplotypes: bool,
-    /// `setDebugHistogramOutput`: the two histograms, kept while the assembler runs.
-    histograms: Option<std::cell::RefCell<DebugHistograms>>,
+    /// `setDebugHistogramOutput`: the two histograms, kept while the assembler runs. Counts, so
+    /// the regions may add to them from any thread in any order.
+    histograms: Option<std::sync::Arc<std::sync::Mutex<DebugHistograms>>>,
     /// `setGraphWriter`: the file each assembled region's graphs replace.
     graph_output: Option<std::path::PathBuf>,
     /// `setDebugGraphTransformations`: every step's graph in its own file in the working
@@ -360,23 +361,30 @@ impl ReadThreadingAssembler {
     }
 
     pub fn keep_debug_histograms(&mut self) {
-        self.histograms = Some(std::cell::RefCell::new(DebugHistograms::default()));
+        self.histograms = Some(Default::default());
     }
 
     /// The histograms kept, if any.
     pub fn debug_histograms(&self) -> Option<DebugHistograms> {
-        self.histograms.as_ref().map(|h| h.borrow().clone())
+        self.histograms
+            .as_ref()
+            .map(|h| h.lock().expect("the histograms").clone())
     }
 
     fn count_kmer_size(&self, kmer_size: usize) {
         if let Some(h) = &self.histograms {
-            *h.borrow_mut().kmers.entry(kmer_size as i64).or_insert(0) += 1;
+            *h.lock()
+                .expect("the histograms")
+                .kmers
+                .entry(kmer_size as i64)
+                .or_insert(0) += 1;
         }
     }
 
     fn count_haplotypes(&self, set: &AssemblyResultSet) {
         if let Some(h) = &self.histograms {
-            *h.borrow_mut()
+            *h.lock()
+                .expect("the histograms")
                 .haplotypes
                 .entry(set.haplotype_count() as i64)
                 .or_insert(0) += 1;

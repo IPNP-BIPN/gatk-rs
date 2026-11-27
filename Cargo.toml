@@ -22,6 +22,13 @@ repository = "https://github.com/IPNP-BIPN/gatk-rs"
 # resolved it. A pin nothing resolves is a pin nothing checks, so the line arrives with its first
 # caller.
 [workspace.dependencies]
+# `gatk MarkDuplicates` runs Picard's MarkDuplicates, whose duplicate decisions are picard-rs's:
+# its own crate, without picard-analysis's allocator, JavaScript engine and goldens. It pins an
+# older htsjdk-rs than this workspace, so no htsjdk-rs type crosses between the two.
+picard-markduplicates = { git = "https://github.com/IPNP-BIPN/picard-rs", rev = "5dacc3792eb1a063e94af9b045aa7a82e472f45a" }
+# The `gatk` binary's allocator (#1452): the system malloc was a third of HaplotypeCaller's
+# GVCF time. An allocator changes no arithmetic, so no output byte.
+mimalloc = { version = "0.1.52", default-features = false }
 # BWA-MEM for `BwaSpark` and what is built on it (IPNP-BIPN/gatk-rs#1390): the same owner's MIT
 # reimplementation, because transcribing lh3/bwa is ruled out. Its default features are the
 # binary's allocator, htslib output and FASTQ decompressors, none of which a library call reads.
@@ -34,18 +41,18 @@ bwa-mem4-mem = { git = "https://github.com/IPNP-BIPN/bwa-mem4", rev = "41b461296
 # synthetic alignments, and 14x faster. Integer arithmetic, so no backend can move a bit.
 fgkl-smithwaterman = { git = "https://github.com/fulcrumgenomics/fgkl", rev = "b31732cf33220231f2cdf3eea6b99cb40258045c" }
 clap = { version = "4", default-features = false, features = ["std", "derive"] }
-htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
 # GATKConfig writes at compression level TWO, which GKL routes through ISA-L igzip rather than zlib.
 # htsjdk-rs ports igzip levels 1-2 in Rust (its decision 0050) instead of linking ISA-L, whose output
 # depends on where its stream struct lives: one hash bucket is derived from that address, so a linked
 # ISA-L wrote a different BAM from run to run (MarkDuplicatesSpark row 2). `gkl-igzip` is now a no-op.
-htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5", features = ["gkl-igzip"] }
+htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80", features = ["gkl-igzip"] }
 # `SplitCRAM` walks containers and copies them, which is the only CRAM a ported tool touches.
-htsjdk-cram = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
-htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
-htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
-htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
-jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "cb1f5804bd837914113608073a46ddc7451f5ef5" }
+htsjdk-cram = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
+htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
+htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
+htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
+jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "fd6d8adf101363b5b90539010677baec54168d80" }
 # GatherBamFiles writes a .md5 beside its output, which is the only digest a ported tool computes
 # for itself. htsjdk-bam already pulls this crate in for the same algorithm.
 md-5 = "0.11.0"

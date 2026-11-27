@@ -681,6 +681,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,9 +752,9 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "gatk-engine",
- "htsjdk-bam",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
@@ -756,7 +762,7 @@ name = "gatk-barclay"
 version = "0.1.0"
 dependencies = [
  "gatk-corpus",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
@@ -770,12 +776,15 @@ dependencies = [
  "gatk-engine",
  "gatk-readfilter",
  "gatk-tools",
- "htsjdk-bam",
- "htsjdk-bgzf",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-cram",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "md-5",
+ "mimalloc",
+ "picard-markduplicates",
  "rcgen",
  "rustls",
  "sha2",
@@ -788,8 +797,8 @@ name = "gatk-corpus"
 version = "0.1.0"
 dependencies = [
  "flate2",
- "htsjdk-bam",
- "htsjdk-bgzf",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-vcf",
  "noodles",
 ]
@@ -801,11 +810,11 @@ dependencies = [
  "fgkl-smithwaterman",
  "flate2",
  "gatk-corpus",
- "htsjdk-bam",
- "htsjdk-bgzf",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "metal",
 ]
 
@@ -819,7 +828,7 @@ version = "0.1.0"
 dependencies = [
  "gatk-corpus",
  "gatk-engine",
- "htsjdk-bam",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
@@ -837,12 +846,12 @@ dependencies = [
  "gatk-fermilite",
  "gatk-readfilter",
  "hdf5-pure",
- "htsjdk-bam",
- "htsjdk-bgzf",
- "htsjdk-metrics",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-metrics 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-tribble",
  "htsjdk-vcf",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "libz-sys",
  "md-5",
  "regex",
@@ -879,7 +888,12 @@ dependencies = [
 [[package]]
 name = "gkl-deflate"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64#2116a3326fc8f5b2000c0a54e5a818a30a02fd64"
+
+[[package]]
+name = "gkl-deflate"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
 
 [[package]]
 name = "hashbrown"
@@ -889,7 +903,7 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
  "serde",
 ]
 
@@ -954,20 +968,43 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "htsjdk-bam"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64#2116a3326fc8f5b2000c0a54e5a818a30a02fd64"
 dependencies = [
- "htsjdk-bgzf",
- "jmath",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+ "md-5",
+]
+
+[[package]]
+name = "htsjdk-bam"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
+dependencies = [
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "md-5",
 ]
 
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64#2116a3326fc8f5b2000c0a54e5a818a30a02fd64"
 dependencies = [
  "flate2",
- "gkl-deflate",
+ "gkl-deflate 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+ "libdeflate-sys",
+ "libz-sys",
+ "md-5",
+ "rayon",
+]
+
+[[package]]
+name = "htsjdk-bgzf"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
+dependencies = [
+ "flate2",
+ "gkl-deflate 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "libdeflate-sys",
  "libz-sys",
  "md-5",
@@ -977,12 +1014,12 @@ dependencies = [
 [[package]]
 name = "htsjdk-cram"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
 dependencies = [
  "bzip2 0.6.1",
  "flate2",
- "htsjdk-bam",
- "jmath",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "libdeflate-sys",
  "md-5",
 ]
@@ -990,30 +1027,38 @@ dependencies = [
 [[package]]
 name = "htsjdk-metrics"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64#2116a3326fc8f5b2000c0a54e5a818a30a02fd64"
 dependencies = [
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+]
+
+[[package]]
+name = "htsjdk-metrics"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
+dependencies = [
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
 name = "htsjdk-tribble"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
 dependencies = [
  "flate2",
- "htsjdk-bam",
- "htsjdk-bgzf",
- "jmath",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
 name = "htsjdk-vcf"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
 dependencies = [
- "htsjdk-bgzf",
+ "htsjdk-bgzf 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
  "htsjdk-tribble",
- "jmath",
+ "jmath 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80)",
 ]
 
 [[package]]
@@ -1154,7 +1199,12 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "jmath"
 version = "0.4.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=cb1f5804bd837914113608073a46ddc7451f5ef5#cb1f5804bd837914113608073a46ddc7451f5ef5"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64#2116a3326fc8f5b2000c0a54e5a818a30a02fd64"
+
+[[package]]
+name = "jmath"
+version = "0.4.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=fd6d8adf101363b5b90539010677baec54168d80#fd6d8adf101363b5b90539010677baec54168d80"
 
 [[package]]
 name = "jobserver"
@@ -1271,6 +1321,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libsais"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1368,6 +1427,15 @@ dependencies = [
  "log",
  "objc",
  "paste",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1627,6 +1695,18 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "picard-markduplicates"
+version = "0.2.0"
+source = "git+https://github.com/IPNP-BIPN/picard-rs?rev=5dacc3792eb1a063e94af9b045aa7a82e472f45a#5dacc3792eb1a063e94af9b045aa7a82e472f45a"
+dependencies = [
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
+ "htsjdk-bam 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+ "htsjdk-metrics 0.4.0 (git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=2116a3326fc8f5b2000c0a54e5a818a30a02fd64)",
+ "regex",
+]
 
 [[package]]
 name = "pin-project-lite"

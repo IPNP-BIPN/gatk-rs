@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The port's Spark tools at one thread and at N, which must be the same bytes (#72).
+"""The port's Spark tools, and the callers that call regions on every core, at one thread and at
+N, which must be the same bytes (#72, #1467).
 
 A parallel path that is only concordant is not a claim this programme makes. This takes rows of each
 Spark tool's covering array and runs the port twice on each, with `RAYON_NUM_THREADS=1` and
@@ -42,6 +43,10 @@ PARALLEL = {
 }
 
 
+# The tools that call assembly regions on `RAYON_NUM_THREADS` threads (#1467): every row, Spark or not.
+REGIONS = {"HaplotypeCaller", "HaplotypeCallerSpark", "RampedHaplotypeCaller", "Mutect2"}
+
+
 # The arrays' BWA fixtures hold a few reads, too few to fill a batch per thread: this holds thousands.
 LARGER = (
     "--input /work/fixtures/svbp_reads.bam --reference /work/fixtures/svbp_sv.fasta "
@@ -51,12 +56,13 @@ LARGER = (
 
 
 def spark_arrays():
-    """Every array of a tool whose arguments name a Spark master, which is what a Spark tool has."""
+    """Every array of a Spark tool (whose arguments name a Spark master) or of a region caller."""
     found = []
     for path in sorted(run_array.ARRAYS.glob("*.t2.json")):
         array = json.loads(path.read_text())
         rows = array.get("array", [])
-        if path.name.split(".")[0].endswith("Spark") and rows:
+        name = path.name.split(".")[0]
+        if (name.endswith("Spark") or name in REGIONS) and rows:
             found.append((array["tool"], array))
     return found
 
@@ -69,10 +75,15 @@ def sample(rows, count):
 
 
 def digest(path):
-    """A file's digest, the wall clock a metrics file opens with taken out."""
+    """A file's digest, with the wall clocks the arrays also mask taken out: a metrics file's
+    start time, a Tribble index's last-modified time, a tar.gz's entry times."""
     raw = path.read_bytes()
     if raw.startswith(b"## htsjdk.samtools.metrics"):
         raw = run_array.without_start_time(raw.decode("utf-8")).encode()
+    elif path.name.endswith(".idx"):
+        raw = run_array.tribble_index_masked(raw) or raw
+    elif path.name.endswith(".tar.gz"):
+        raw = run_array.tar_gz_members(raw).encode()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -149,7 +160,7 @@ def main(argv):
         for tool, array in spark_arrays():
             if options.tool and tool not in options.tool:
                 continue
-            rows = array["array"] if tool in PARALLEL else sample(array["array"], options.rows)
+            rows = array["array"] if tool in PARALLEL | REGIONS else sample(array["array"], options.rows)
             held = array.get("excluded", [])
             positional = run_array.positional_values(tool)
             tagged = run_array.tagged_arguments(tool)

@@ -34,6 +34,7 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 pub type Outcome = Result<Option<String>, Thrown>;
 
 mod haplotype_caller;
+mod vcf_stream;
 pub use haplotype_caller::{
     haplotype_caller, haplotype_caller_modes, haplotype_caller_spark, ramped_haplotype_caller,
     reads_pipeline_spark,
@@ -431,6 +432,87 @@ pub(crate) fn pedigree_arguments(
     }
     out.founder_ids = founder_ids;
     Ok(out)
+}
+
+/// An `AssemblyRegionWalker`'s transformers and filters over one read: the read they keep, if any.
+type PrepareRead<'a> = dyn Fn(BamRecord) -> Result<Option<BamRecord>, Thrown> + 'a;
+
+/// Every read of the file through `prepare`, as a walker that read the file whole and then
+/// transformed it refuses: a read the file cannot decode first, wherever it is, then the first read
+/// `prepare` refuses. These are the reads a walker holds when no index lets it query a shard.
+fn prepare_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+) -> Result<Vec<BamRecord>, Thrown> {
+    let reads_error = |error: gatk_engine::reads::ReadsError| Thrown::user(format!("{error:?}"));
+    let (mut kept, mut refused) = (Vec::new(), None);
+    for read in source.records_all().map_err(reads_error)? {
+        let read = read.map_err(reads_error)?;
+        if refused.is_some() {
+            continue;
+        }
+        match prepare(read) {
+            Err(thrown) => refused = Some(thrown),
+            Ok(None) => {}
+            Ok(Some(read)) => kept.push(read),
+        }
+    }
+    match refused {
+        Some(thrown) => Err(thrown),
+        None => Ok(kept),
+    }
+}
+
+/// The reads an `AssemblyRegionWalker` holds, and whether it holds none because each shard is
+/// queried instead, as `ReadsPathDataSource` does with an index: then only the reads a shard
+/// overlaps are read, and one that refuses refuses when the traversal reaches it.
+fn assembly_region_reads(
+    source: &ReadsDataSource,
+    prepare: &PrepareRead<'_>,
+) -> Result<(Vec<BamRecord>, bool), Thrown> {
+    if source.has_index() {
+        return Ok((Vec::new(), true));
+    }
+    Ok((prepare_reads(source, prepare)?, false))
+}
+
+/// [`assembly_region_reads`]' query: a shard's reads straight from the file, through `prepare`,
+/// walked `window` loci at a time. A read `prepare` refuses ends the shard's stream, and the
+/// refusal itself, with its class, is left in `refused` for the runner to report.
+fn queried_reads<'a>(
+    source: &'a ReadsDataSource,
+    header: &'a SamHeader,
+    prepare: &'a PrepareRead<'a>,
+    refused: &'a std::cell::RefCell<Option<Thrown>>,
+    window: Option<i32>,
+) -> gatk_engine::assembly_region_walker::WalkerReads<'a> {
+    use gatk_engine::assembly_region_walker::{overlaps_shard, ReadStream, WalkerReads};
+    WalkerReads {
+        query: Box::new(move |shard| -> ReadStream<'a> {
+            let records = match source.query_iter(&shard.padded_intervals) {
+                Ok(records) => records,
+                Err(error) => return Box::new(std::iter::once(Err(format!("{error:?}")))),
+            };
+            let shard = shard.clone();
+            Box::new(
+                records
+                    .map(move |read| {
+                        let read = read.map_err(|error| format!("{error:?}"))?;
+                        prepare(read).map_err(|thrown| {
+                            let message = thrown.message.clone().unwrap_or_default();
+                            refused.borrow_mut().get_or_insert(thrown);
+                            message
+                        })
+                    })
+                    .filter_map(Result::transpose)
+                    .filter(move |read| {
+                        read.as_ref()
+                            .map_or(true, |read| overlaps_shard(read, &shard, header))
+                    }),
+            )
+        }),
+        window,
+    }
 }
 
 /// The predicate the resolved list becomes, once a header exists to read a filter against.
@@ -937,8 +1019,9 @@ fn read_walker_startup_with(
     let reference = reference_dictionary(parser)?;
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
-    // Only the start of the stream decides a refusal, so only the start is kept: the file's own
-    // bytes, or for BGZF the inflated ones once the whole file is known to inflate.
+    // Only the start of the stream decides a refusal, so only the start is read: the file's own
+    // bytes, or for BGZF the inflated ones. A block further on is inflated, and refused, when the
+    // traversal reads it, as `SamReaderFactory.open` reads only the header.
     let bytes = gatk_engine::reads::file_start(path);
     // SAM text and CRAM are read as the BAM they transcode to, which needs the whole file; a BAM,
     // a block-compressed or an empty file goes on as before without it.
@@ -969,9 +1052,7 @@ fn read_walker_startup_with(
         (Some(bytes), true) if transcoded.is_some() => {
             htsjdk_bgzf::read::decompress_all(bytes).ok()
         }
-        (Some(_), true) => ReadsDataSource::check(path)
-            .and_then(|()| gatk_engine::reads::inflated_start(path))
-            .ok(),
+        (Some(_), true) => gatk_engine::reads::inflated_start(path).ok(),
     };
     let reader_refusal = gatk_tools::read_walker_refusal::refusal(
         &input,
@@ -1847,6 +1928,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         &filter,
         level,
         deflater,
+        flag(parser, "create-output-bam-md5"),
     )
     .map_err(|error| Thrown::user(format!("{error:?}")))?
     .map_err(|error| {
@@ -1862,11 +1944,11 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             )
         })?;
     }
-    if flag(parser, "create-output-bam-md5") {
+    if let Some(md5) = written.md5 {
         // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
         // and the file is the thirty-two hex characters and nothing else.
         let digest = format!("{output}.md5");
-        std::fs::write(&digest, written.md5).map_err(|error| {
+        std::fs::write(&digest, md5).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
         })?;
     }
@@ -1889,12 +1971,32 @@ fn on_the_fly_index(
     size: i64,
     timestamp: i64,
 ) -> Vec<u8> {
-    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
-    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
-
-    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
-    let mut at: i64 = 0;
+    let mut index = OnTheFlyIndex::new();
     for line in text.split_inclusive('\n') {
+        index.add_line(line);
+    }
+    index.finish(dictionary, path, size, timestamp)
+}
+
+/// [`on_the_fly_index`] a line at a time, as the writer's records go out.
+pub(crate) struct OnTheFlyIndex {
+    creator: htsjdk_tribble::index_write::DynamicIndexCreator,
+    /// The offset of the next line, which at the end is the text's length.
+    at: i64,
+}
+
+impl OnTheFlyIndex {
+    pub(crate) fn new() -> OnTheFlyIndex {
+        use htsjdk_tribble::index_write::{BalanceApproach, DynamicIndexCreator};
+        OnTheFlyIndex {
+            creator: DynamicIndexCreator::new(BalanceApproach::ForSeekTime),
+            at: 0,
+        }
+    }
+
+    /// One line of the file, its newline included.
+    pub(crate) fn add_line(&mut self, line: &str) {
+        use htsjdk_tribble::index_write::Feature;
         let body = line.trim_end_matches('\n');
         if !body.starts_with('#') {
             let columns: Vec<&str> = body.split('\t').collect();
@@ -1906,50 +2008,60 @@ fn on_the_fly_index(
                         .find(|(key, _)| *key == "END")
                         .and_then(|(_, value)| value.parse::<i32>().ok())
                         .unwrap_or(start + columns[3].len() as i32 - 1);
-                    creator.add_feature(
+                    self.creator.add_feature(
                         &Feature {
                             contig: columns[0].to_string(),
                             start,
                             end,
                         },
-                        at,
+                        self.at,
                     );
                 }
             }
         }
-        at += line.len() as i64;
+        self.at += line.len() as i64;
     }
 
-    let mut properties: Vec<(String, String)> = dictionary
-        .iter()
-        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
-        .collect();
-    properties.extend(creator.properties());
+    pub(crate) fn finish(
+        self,
+        dictionary: &[(String, i32)],
+        path: &str,
+        size: i64,
+        timestamp: i64,
+    ) -> Vec<u8> {
+        use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+        use htsjdk_tribble::index_write::BuiltIndex;
+        let mut properties: Vec<(String, String)> = dictionary
+            .iter()
+            .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+            .collect();
+        properties.extend(self.creator.properties());
 
-    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
-        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
-        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
-        Err(_) => (LINEAR, Vec::new(), Vec::new()),
-    };
+        let (index_type, contigs, interval_contigs) = match self.creator.finalize(self.at) {
+            Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+            Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+            Err(_) => (LINEAR, Vec::new(), Vec::new()),
+        };
 
-    TribbleIndex {
-        index_type,
-        version: VERSION,
-        indexed_path: format!("file://{path}"),
-        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
-        // just finished: the size and the timestamp are the written file's. The md5 is not
-        // computed and stays empty.
-        indexed_file_size: size,
-        indexed_file_timestamp: timestamp,
-        indexed_file_md5: String::new(),
-        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
-        flags: 0,
-        properties,
-        contigs,
-        interval_contigs,
+        TribbleIndex {
+            index_type,
+            version: VERSION,
+            indexed_path: format!("file://{path}"),
+            // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it
+            // has just finished: the size and the timestamp are the written file's. The md5 is
+            // not computed and stays empty.
+            indexed_file_size: size,
+            indexed_file_timestamp: timestamp,
+            indexed_file_md5: String::new(),
+            // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+            flags: 0,
+            properties,
+            contigs,
+            interval_contigs,
+        }
+        .write()
+        .unwrap_or_default()
     }
-    .write()
-    .unwrap_or_default()
 }
 
 /// One input VCF, read as far as the gather looks at it.
@@ -17207,8 +17319,34 @@ fn update_header_contig_lines(
     parser: &Parser,
     header: htsjdk_vcf::header::VcfHeader,
 ) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let name_only = flag(parser, "suppress-reference-path");
+    rebuild_contig_lines(parser, header, false, name_only)
+}
+
+/// The same rebuild over `getBestAvailableSequenceDictionary`, as `VariantRecalibrator` and the
+/// `LabeledVariantAnnotationsWalker`s call it, with `referenceNameOnly` true.
+///
+/// A variant walker's best dictionary is the DRIVING variants' own, and the reference's only where
+/// theirs is missing or was synthesized from an index (`IndexUtils.isSequenceDictionaryFromIndex`:
+/// every length unknown). The reference then only names the `assembly=`. Measured on chr20 30x,
+/// where a call set over the whole genome scored against `chr20.fasta` kept every contig.
+pub(crate) fn update_header_contig_lines_best_available(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    rebuild_contig_lines(parser, header, true, true)
+}
+
+fn rebuild_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+    prefer_own: bool,
+    name_only: bool,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
     let reference = argument(parser, "reference");
+    let own = sequence_dictionary_of(&header);
     let dictionary: Vec<(String, i32)> = match &reference {
+        _ if prefer_own && own.iter().any(|(_, length)| *length != 0) => own,
         Some(path) => {
             let source =
                 gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
@@ -17219,7 +17357,7 @@ fn update_header_contig_lines(
                 .map(|sequence| (sequence.name.clone(), sequence.length))
                 .collect()
         }
-        None => sequence_dictionary_of(&header),
+        None => own,
     };
     if dictionary.is_empty() {
         return Ok(header);
@@ -17251,7 +17389,7 @@ fn update_header_contig_lines(
     if let Some(path) = &reference {
         // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
         // command line wrote, so the path is resolved before it is rendered.
-        let value = if flag(parser, "suppress-reference-path") {
+        let value = if name_only {
             let name = std::path::Path::new(path)
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -22906,7 +23044,7 @@ pub(crate) fn write_vcf_strict_or_lenient(
     header: &htsjdk_vcf::header::VcfHeader,
     records: &[htsjdk_vcf::variant::VariantContext],
 ) -> Result<String, Thrown> {
-    use htsjdk_vcf::encoder::{EncodeError, MissingFields, VcfEncoder};
+    use htsjdk_vcf::encoder::{MissingFields, VcfEncoder};
     let missing = if lenient {
         MissingFields::Allow
     } else {
@@ -22917,25 +23055,30 @@ pub(crate) fn write_vcf_strict_or_lenient(
     for record in records {
         encoder
             .encode_into(record, &mut out)
-            .map_err(|error| match error {
-                EncodeError::MissingFromHeader {
-                    key,
-                    field,
-                    contig,
-                    start,
-                } => Thrown::non_user(
-                    "java.lang.IllegalStateException",
-                    format!(
-                    "Key {key} found in VariantContext field {field} at {contig}:{start} but this \
-                     key isn't defined in the VCFHeader.  We require all VCFs to have complete VCF \
-                     headers by default."
-                ),
-                ),
-                other => Thrown::user(format!("{other:?}")),
-            })?;
+            .map_err(encode_refusal)?;
         out.push('\n');
     }
     Ok(out)
+}
+
+/// What the strict VCF writer throws for a record it cannot encode.
+pub(crate) fn encode_refusal(error: htsjdk_vcf::encoder::EncodeError) -> Thrown {
+    match error {
+        htsjdk_vcf::encoder::EncodeError::MissingFromHeader {
+            key,
+            field,
+            contig,
+            start,
+        } => Thrown::non_user(
+            "java.lang.IllegalStateException",
+            format!(
+                "Key {key} found in VariantContext field {field} at {contig}:{start} but this \
+                 key isn't defined in the VCFHeader.  We require all VCFs to have complete VCF \
+                 headers by default."
+            ),
+        ),
+        other => Thrown::user(format!("{other:?}")),
+    }
 }
 
 /// [`java_variant_context_string`] once the genotypes have been decoded, which is
@@ -23523,7 +23666,7 @@ pub fn reference_block_concordance(parser: &Parser) -> Outcome {
 
 /// `Utils.getDateTimeForDisplay(ZonedDateTime.now())`, in UTC: the one value a metrics header
 /// carries that no comparison reads.
-fn java_display_now() -> String {
+pub(crate) fn java_display_now() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)

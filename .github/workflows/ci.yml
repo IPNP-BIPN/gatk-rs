@@ -647,7 +647,8 @@ jobs:
         # The pinned image has neither python nor Rscript, so the arrays of the variant-annotation
         # models and the plots stopped at the interpreter on every row. The Broad's image of the
         # same release, pinned by digest in the manifest's `oracle_with_r`, gets the reference past
-        # it (tools/coverage/run_array.py); measure.py builds the port's side for the plots,
+        # it (tools/coverage/run_array.py), and runs the port of a python tool there too, through the
+        # pinned image's glibc; measure.py builds the port's side for the plots,
         # tools/coverage/port-with-r, on top of the pinned image.
         # 8.5 GB unpacked; the Android SDK is not ours.
         run: |
@@ -818,7 +819,7 @@ jobs:
             --tool HaplotypeCaller --tool RampedHaplotypeCaller --tool Mutect2 \
             --tool AddCommentsToBam --tool BuildBamIndex --tool CheckTerminatorBlock \
             --tool FilterVcf --tool FixVcfHeader --tool GatherBamFiles --tool GatherVcfs \
-            --tool MakeSitesOnlyVcf --tool MergeVcfs --tool RenameSampleInVcf \
+            --tool MakeSitesOnlyVcf --tool MarkDuplicates --tool MergeVcfs --tool RenameSampleInVcf \
             --tool SetNmAndUqTags --tool SetNmMdAndUqTags --tool SortVcf --tool SplitVcfs \
             --tool UpdateVcfSequenceDictionary --tool VcfFormatConverter --tool VcfToIntervalList \
             --port target/release/gatk --corpus-dir /tmp/coverage-corpus
@@ -981,8 +982,9 @@ jobs:
       - name: Build the port binary
         run: cargo build --release -p gatk-cli
 
-      - name: Every Spark tool's rows, at RAYON_NUM_THREADS 1 and 4
+      - name: Every Spark tool's rows, and the region callers', at RAYON_NUM_THREADS 1 and 4
         # #72: a parallel path has to be proved byte-equal, not concordant. docs/spark-parallel.md.
+        # #1467: HaplotypeCaller and Mutect2 prepare assembly regions on that many threads.
         timeout-minutes: 60
         run: python3 tools/coverage/thread_independence.py --port target/release/gatk --threads 4
 
