@@ -19,6 +19,7 @@ published come from the `Speed` workflow on real x86-64.
 |---|---|
 | `bench.py` | picks the rows, runs the timer per tool, summarises, merges shards, compares runs |
 | `timer.py` | runs inside the container: alternates the two sides, reads CPU and peak RSS from `wait4` |
+| `fmc_scale.py` | FilterMutectCalls on 67,000 real calls (`data/fmc-chr20.vcf.gz` tiled by `tile_vcf.py`), both sides native; the `Speed` workflow runs it on x86-64 and arm64 |
 | `Steady.java` | the reference's steady state: one JVM, the same command line `n` times |
 
 ## What a number means
