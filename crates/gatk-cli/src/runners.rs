@@ -13352,6 +13352,34 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
     })?;
 
+    let minimum = fraction_or(parser, "minimum-population-allele-frequency", 0.01);
+    let maximum = fraction_or(parser, "maximum-population-allele-frequency", 0.2);
+    let answer = |text: Result<String, gatk_tools::get_pileup_summaries::SummariesError>| match text
+    {
+        Ok(text) => {
+            std::fs::write(&output, &text)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+            // `onTraversalSuccess` returns the word rather than a count, and the dispatcher prints
+            // whatever a tool returns.
+            Ok(Some("SUCCESS".to_string()))
+        }
+        // `message()` already carries the `Bad input: ` the exception adds, so the runner does not
+        // add a second one: the reference prints the prefix once.
+        Err(refusal) => Err(Thrown::user(refusal.message())),
+    };
+    let walk = PileupWalk {
+        source: &source,
+        header: &header,
+        intervals: &intervals,
+        filters: &filters,
+        max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        minimum,
+        maximum,
+    };
+    if let Some(text) = pileup_summaries_streamed(parser, &walk, &variants) {
+        return answer(text);
+    }
+
     // `read_vcf` takes the file's TEXT and not its path: the reader is the thing being compared,
     // so the filesystem stays out of it and the runner does the reading.
     // A `.vcf.gz` is read through the codec's inflating stream; any other file as it was.
@@ -13470,25 +13498,122 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
         sites.extend(applied.iter().filter_map(site_of));
     }
 
-    let text = gatk_tools::get_pileup_summaries::run(
+    answer(gatk_tools::get_pileup_summaries::run(
         &sites,
         declares_allele_frequency,
         &sample,
-        fraction_or(parser, "minimum-population-allele-frequency", 0.01),
-        fraction_or(parser, "maximum-population-allele-frequency", 0.2),
-    );
-    match text {
-        Ok(text) => {
-            std::fs::write(&output, &text)
-                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
-            // `onTraversalSuccess` returns the word rather than a count, and the dispatcher prints
-            // whatever a tool returns.
-            Ok(Some("SUCCESS".to_string()))
-        }
-        // `message()` already carries the `Bad input: ` the exception adds, so the runner does not
-        // add a second one: the reference prints the prefix once.
-        Err(refusal) => Err(Thrown::user(refusal.message())),
+        minimum,
+        maximum,
+    ))
+}
+
+/// What [`pileup_summaries_streamed`] walks, as [`get_pileup_summaries`] set it up.
+struct PileupWalk<'a> {
+    source: &'a ReadsDataSource,
+    header: &'a SamHeader,
+    intervals: &'a [gatk_engine::interval::SimpleInterval],
+    filters: &'a [gatk_tools::filter_resolution::ResolvedFilter],
+    max_depth_per_sample: i32,
+    minimum: f64,
+    maximum: f64,
+}
+
+/// [`get_pileup_summaries`] with `-V` read forward beside the loci instead of held whole, and no
+/// site kept but its row. `None` when it cannot answer exactly as the whole run would: a `-V` it
+/// does not read the same way, a reader's or a filter's refusal (the whole run reads `-V` first,
+/// so its refusals come first there), a side file or loci out of order, a traversal that stops.
+fn pileup_summaries_streamed(
+    parser: &Parser,
+    walk: &PileupWalk<'_>,
+    variants: &str,
+) -> Option<Result<String, gatk_tools::get_pileup_summaries::SummariesError>> {
+    let options = gatk_tools::locus_walker::Options {
+        max_depth_per_sample: walk.max_depth_per_sample,
+        ..gatk_tools::locus_walker::Options::default()
+    };
+    if !gatk_tools::locus_walker::streams(&options) {
+        return None;
     }
+    // The whole run's two readings: a gzip file through the codec as BGZF, anything else as text,
+    // both UTF-8 strictly. Only a gzip file that is BGZF on its face is streamed.
+    let mut file = std::io::BufReader::new(std::fs::File::open(variants).ok()?);
+    let first = std::io::BufRead::fill_buf(&mut file).ok()?;
+    let block = gatk_tools::read_walker_refusal::is_block_compressed(first);
+    let lines = if block {
+        let bgzf = first.len() >= 18 && first[3] & 4 != 0 && first[12..14] == *b"BC";
+        if !bgzf || gatk_tools::feature_codec::codec_for(variants).is_none() {
+            return None;
+        }
+        crate::vcf_stream::LineReader::new(
+            Box::new(std::io::BufReader::new(htsjdk_bgzf::read::BgzfReader::new(
+                file,
+            ))),
+            true,
+        )
+    } else {
+        crate::vcf_stream::LineReader::new(Box::new(file), true)
+    };
+    let mut lines = lines;
+    let (header_text, header_lines) = lines.read_header().ok()?;
+    crate::vcf_stream::header_end(&header_text)?;
+    let vcf = htsjdk_vcf::reader::read_vcf(&header_text).ok()?;
+    let declares_allele_frequency = vcf.header.lines.iter().any(|line| {
+        matches!(
+            line,
+            htsjdk_vcf::header::HeaderLine::Compound { key, id, .. } if key == "INFO" && id == "AF"
+        )
+    });
+    let sample = walk
+        .header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+    let filter = read_filter(parser, walk.filters, walk.header).ok()?;
+    let bounds = (!walk.intervals.is_empty()).then_some(walk.intervals);
+    let reads = gatk_tools::read_walker::traverse_iter(
+        walk.source,
+        walk.intervals,
+        false,
+        &|_: &BamRecord| true,
+    )
+    .ok()?;
+    let records =
+        crate::vcf_stream::Records::new(crate::vcf_stream::Body::Stream(lines), &vcf, header_lines)
+            .map(|record| record.map(|v| (v.contig.clone(), v.start, v.stop, v)));
+    let mut cursor = gatk_tools::forward_overlaps::ForwardOverlaps::new(
+        walk.header
+            .sequences
+            .iter()
+            .map(|sequence| sequence.name.as_str()),
+        records,
+    );
+    let mut summaries = gatk_tools::get_pileup_summaries::Summaries::default();
+    gatk_tools::locus_walker::for_each_streamed(
+        reads,
+        walk.header,
+        None,
+        bounds,
+        options,
+        &filter,
+        gatk_tools::locus_walker::SEGMENT_READS,
+        |one| match cursor.first(&one.context.contig, one.context.position as i64) {
+            Ok(Some(variant)) => {
+                summaries.add(
+                    variant,
+                    one.context.pileup.base_counts(),
+                    walk.minimum,
+                    walk.maximum,
+                );
+                true
+            }
+            Ok(None) => true,
+            Err(_) => false,
+        },
+    )
+    .ok()?;
+    cursor.finish().ok()?;
+    Some(summaries.finish(declares_allele_frequency, &sample))
 }
 
 /// A double-valued argument, or the default the declaration carries.

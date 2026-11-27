@@ -172,37 +172,60 @@ pub fn run(
     minimum: f64,
     maximum: f64,
 ) -> Result<String, SummariesError> {
-    if !header_declares_allele_frequency {
-        return Err(SummariesError::HeaderWithoutAlleleFrequency);
-    }
-
-    let mut summaries = Vec::new();
-    let mut saw_with = false;
-    let mut saw_without = false;
-
+    let mut summaries = Summaries::default();
     for (variants, base_counts) in sites {
         // `getValues(variants)` empty is a locus with no record, which returns before anything
         // else is looked at.
-        let Some(variant) = variants.first() else {
-            continue;
-        };
+        if let Some(variant) = variants.first() {
+            summaries.add(variant, *base_counts, minimum, maximum);
+        }
+    }
+    summaries.finish(header_declares_allele_frequency, sample)
+}
+
+/// [`run`] a locus at a time: what `apply` keeps of each, and the checks after the traversal.
+#[derive(Debug, Default)]
+pub struct Summaries {
+    rows: Vec<PileupSummary>,
+    saw_with: bool,
+    saw_without: bool,
+}
+
+impl Summaries {
+    /// `apply` at a locus whose first overlapping record is `variant`.
+    pub fn add(
+        &mut self,
+        variant: &VariantContext,
+        base_counts: [i32; 4],
+        minimum: f64,
+        maximum: f64,
+    ) {
         // The two flags are set by `alleleFrequencyInRange`, which is only reached for a biallelic
         // SNP: a triallelic record with no AF sets neither.
         if is_biallelic_snp(variant) {
             match allele_frequency(variant) {
-                Some(_) => saw_with = true,
-                None => saw_without = true,
+                Some(_) => self.saw_with = true,
+                None => self.saw_without = true,
             }
         }
-        if let Some(summary) = summarise(variant, *base_counts, minimum, maximum) {
-            summaries.push(summary);
+        if let Some(summary) = summarise(variant, base_counts, minimum, maximum) {
+            self.rows.push(summary);
         }
     }
 
-    // The second check, after the traversal rather than before it.
-    if saw_without && !saw_with {
-        return Err(SummariesError::NoRecordWithAlleleFrequency);
+    /// The table, or the refusal: the header's check first, then the records'.
+    pub fn finish(
+        self,
+        header_declares_allele_frequency: bool,
+        sample: &str,
+    ) -> Result<String, SummariesError> {
+        if !header_declares_allele_frequency {
+            return Err(SummariesError::HeaderWithoutAlleleFrequency);
+        }
+        // The second check, after the traversal rather than before it.
+        if self.saw_without && !self.saw_with {
+            return Err(SummariesError::NoRecordWithAlleleFrequency);
+        }
+        Ok(pileup_summary::write_to_file(sample, &self.rows))
     }
-
-    Ok(pileup_summary::write_to_file(sample, &summaries))
 }

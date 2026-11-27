@@ -139,6 +139,44 @@ The RSS left is the reader's (about 100 MB on this base, a third of that with #1
 `ASEReadCounter` and `GetPileupSummaries`, the whole variant file decoded. The CPU left is decoding and the pileup itself, the
 engine's (W12).
 
+## Scale X. `GetPileupSummaries` held its `-V` whole
+
+**Ratio.** With gnomAD chr20 sites as `-V` (5.6M records) on NA12878 chr20 30x, `-L chr20`
+(W12's case; the pinned scale step uses hapmap), macOS native: the port took 104.6 s CPU and
+8.25 GB. GATK 4.7.0.0, in the arm64 oracle container on the same host: 109.9 s CPU and 1.60 GB
+(peak RSS of the JVM), 106 s wall.
+
+**Where the memory goes.** The decompressed `-V` text, every decoded record, the records sorted
+by start for the overlap search, and a clone of each locus's record kept until the table is
+written.
+
+**The optimisation.** With no downsampling, `-V` is read forward beside the loci
+(`forward_overlaps::ForwardOverlaps`): records are taken up to the current locus, those ending
+before it are dropped, and the first left in file order is the locus's record, which is what
+`getValues(variants).get(0)` answers. Each locus's row is kept as it is found
+(`get_pileup_summaries::Summaries`), so no record outlives its loci. A `-V` the whole run reads
+otherwise (a gzip file that is not BGZF), any reader or filter refusal, a side file or a traversal
+out of the dictionary's order, and a stopped traversal all fall back to the whole run, which
+reads `-V` first and refuses in its own order.
+
+**Why it cannot move a byte.** On a file sorted in the reads' dictionary order, the first record
+in file order overlapping a locus is the first left in a window holding, in file order, every
+record starting at or before it and ending at or after it (`answers_what_the_whole_file_answers_when_sorted`,
+500 random files). The rows and the two refusals are `run`'s, one locus at a time.
+
+**The suites that prove it.** Natively, old against new: the 19 rows of the covering array,
+and 152 runs over a 2 Mb chr20 slice with 19 `-V` files (the region plain and BGZF, plain
+gzip, unsorted, a malformed record mid-file and at the end, truncated BGZF, no `AF` in the header
+or in the records, records on a contig before or after chr20 and on one the reads do not know,
+CRLF, invalid UTF-8, no records, a long deletion, a record whose `END` spans 300 kb, no header,
+a missing file) by 8 option sets (`-L chr20`, one and two small intervals, an interval elsewhere,
+`--max-depth-per-sample`, the frequency bounds wide open, a read filter that keeps nothing, no
+`-L`). All identical.
+
+**Result.** The same case: 8.25 GB to 108 MB, 104.6 s to 85.8 s CPU (a loaded machine, both
+sides), same table (151,059 lines).
+GATK takes 109.9 s CPU and 1.60 GB on it, so the port now uses 0.78 of its CPU and 0.07 of its memory.
+
 ## Not targets yet
 
 `HaplotypeBasedVariantRecaller` (1.30 steady) and `FlowPairHMMAlignReadsToHaplotypes` (1.05) are

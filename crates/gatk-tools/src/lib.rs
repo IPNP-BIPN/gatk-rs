@@ -90,6 +90,7 @@ pub mod flow_based_read;
 pub mod flow_feature_mapper;
 pub mod flow_likelihood_engine;
 pub mod flow_pairhmm_align_reads_to_haplotypes;
+pub mod forward_overlaps;
 pub mod funcotate_segments;
 pub mod funcotator;
 pub mod funcotator_data_source_downloader;
