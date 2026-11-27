@@ -26,7 +26,7 @@ needs, none of which is here:
 - an NVIDIA GPU of compute capability 8.0 or later on Linux. GitHub's hosted GPU runners are T4s
   (7.5), below that line, so the row would come from a self-hosted or rented A10, L4 or A100;
 - a second toolchain: `cuda-oxide` pins its own `rustc` (1.99.1 at the time of writing) with
-  `rustc-dev`, against this workspace's 1.97.1, so it would build as a separate crate;
+  `rustc-dev`, against this workspace's 1.98.0, so it would build as a separate crate;
 - an eligibility check on the emitted PTX, because the project says nothing yet about contraction
   or fast math: refuse `fma.` and any `add`, `sub` or `mul` on `f32` or `f64` without the `.rn`
   modifier, which is what stops `ptxas` from contracting. With that, CUDA's native binary64 would

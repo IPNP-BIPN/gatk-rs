@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to a PR cancels its older run. On main a running run finishes, and only the newest queued one waits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   guard:
     name: Repository invariants
@@ -60,7 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -149,7 +154,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -204,7 +209,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -649,7 +654,8 @@ jobs:
         # The pinned image has neither python nor Rscript, so the arrays of the variant-annotation
         # models and the plots stopped at the interpreter on every row. The Broad's image of the
         # same release, pinned by digest in the manifest's `oracle_with_r`, gets the reference past
-        # it (tools/coverage/run_array.py); measure.py builds the port's side for the plots,
+        # it (tools/coverage/run_array.py), and runs the port of a python tool there too, through the
+        # pinned image's glibc; measure.py builds the port's side for the plots,
         # tools/coverage/port-with-r, on top of the pinned image.
         # 8.5 GB unpacked; the Android SDK is not ours.
         run: |
@@ -858,6 +864,85 @@ jobs:
             /tmp/coverage-corpus/
           if-no-files-found: ignore
 
+  argument-coverage-t3:
+    name: "The t=3 covering arrays on the critical path (${{ matrix.tool }})"
+    # The ROADMAP's bar is t=2 everywhere and t=3 on the best-practices chain. One shard per tool,
+    # since HaplotypeCaller's array alone is 300 rows; each writes a fragment, and
+    # argument-coverage-t3-merge folds them into measured.json's `t3` section, frozen from that
+    # job's artefact like the t=2 number.
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [MarkDuplicatesSpark, BaseRecalibrator, ApplyBQSR, HaplotypeCaller, GenotypeGVCFs,
+               Mutect2, FilterMutectCalls, SelectVariants, VariantFiltration, VariantRecalibrator,
+               ApplyVQSR]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which gkl-igzip needs to build
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm python3-h5py
+          nasm -v
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release -p gatk-cli
+
+      - name: Run the t=3 array against both sides
+        run: |
+          python3 tools/coverage/measure.py --t 3 --tool ${{ matrix.tool }} \
+            --port target/release/gatk --corpus-dir /tmp/coverage-corpus \
+            --fragment /tmp/measured-t3-${{ matrix.tool }}.json
+
+      - name: Publish the fragment and its corpus
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-t3-${{ matrix.tool }}
+          path: |
+            /tmp/measured-t3-${{ matrix.tool }}.json
+            /tmp/coverage-corpus/
+          if-no-files-found: ignore
+
+  argument-coverage-t3-merge:
+    name: The t=3 measurement, merged
+    needs: argument-coverage-t3
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-t3-*
+          path: /tmp/t3
+
+      - name: Fold the fragments into measured.json
+        run: |
+          python3 tools/coverage/measure.py --merge $(find /tmp/t3 -name 'measured-t3-*.json' | sort)
+          git --no-pager diff --stat tools/coverage/measured.json
+
+      - name: Publish what the run measured
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-coverage-t3
+          path: tools/coverage/measured.json
+
   fuzz:
     name: "Differential fuzzing, seeded from the covering arrays (shard ${{ matrix.shard }}/8)"
     # V.6. The arrays cover pairs of argument values; this measures which of the reference's
@@ -890,7 +975,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -922,7 +1007,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - name: Weights, fixture, and the reference's dump and layers
         env:
@@ -1014,7 +1099,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
-          toolchain: "1.97.1"
+          toolchain: "1.98.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -1185,6 +1270,8 @@ jobs:
       - oracle-image
       - oracle
       - argument-coverage
+      - argument-coverage-t3
+      - argument-coverage-t3-merge
       - fuzz
       - nvscorevariants
       - spark-threads
