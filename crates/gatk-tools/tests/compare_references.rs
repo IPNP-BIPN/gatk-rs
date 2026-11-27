@@ -225,3 +225,19 @@ fn the_md5_modes_read_different_things() {
         value(&text, "stdout", "always-recalculate")
     );
 }
+
+/// `FindSNPsOnlyTableWriter`, measured on `testFindSNPs[1]`: 1-based positions, the bases as the
+/// files have them, and the header alone when nothing differs.
+#[test]
+fn find_snps_lists_each_differing_base() {
+    use gatk_tools::compare_references::find_snps_table;
+    let sequences = vec![("1".to_string(), b"ACGTA".to_vec(), b"ANGTa".to_vec())];
+    assert_eq!(
+        find_snps_table("a.fasta", "b.fasta", &sequences),
+        "Sequence Name\tPosition\ta.fasta\tb.fasta\n1\t2\tC\tN\n1\t5\tA\ta\n"
+    );
+    assert_eq!(
+        find_snps_table("a.fasta", "b.fasta", &[]),
+        "Sequence Name\tPosition\ta.fasta\tb.fasta\n"
+    );
+}

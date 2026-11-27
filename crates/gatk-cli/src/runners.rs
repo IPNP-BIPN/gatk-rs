@@ -10432,8 +10432,29 @@ pub fn compare_references(parser: &Parser) -> Outcome {
             "Index 0 out of bounds for length 0",
         ));
     }
-    // FULL_ALIGNMENT runs mummer, which no row of this tool's array reaches: the mode's two
-    // non-default constants are held out of the fixtures for that reason.
+    // `runFindSNPS` writes its table only when the pair differs in sequence. FULL_ALIGNMENT runs
+    // mummer, which the oracle image cannot run either (`nucmer` exits 127).
+    let pair = &pairs[0];
+    if base_comparison == "FIND_SNPS_ONLY"
+        && pair.analysis.contains(&compare::Status::DifferInSequence)
+    {
+        let directory = argument(parser, "base-comparison-output").unwrap_or_default();
+        let mut compared = Vec::new();
+        for (name, length) in compare::snp_candidates(&table, &references) {
+            let bases = |path: &str| {
+                htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(path))
+                    .and_then(|mut fasta| fasta.query(&name, 1, length))
+                    .map_err(|error| Thrown::user(error.message()))
+            };
+            let ours = bases(&paths[0])?;
+            let theirs = bases(&paths[1])?;
+            compared.push((name, ours, theirs));
+        }
+        let text = compare::find_snps_table(&pair.first, &pair.second, &compared);
+        let file = std::path::Path::new(&directory)
+            .join(format!("{}_{}_snps.tsv", pair.first, pair.second));
+        write_file(&file.to_string_lossy(), text.as_bytes())?;
+    }
     Ok(None)
 }
 

@@ -382,6 +382,52 @@ pub fn write_by_sequence_name(
     out
 }
 
+/// `runFindSNPS`'s selection: each name `queryBySequenceName` finds under exactly two MD5s, with
+/// its length. Two rows of different lengths are skipped (the reference logs and moves on).
+pub fn snp_candidates(table: &Table, references: &[Reference]) -> Vec<(String, i64)> {
+    let mut candidates = Vec::new();
+    for name in sequence_names(references) {
+        let rows: Vec<&Row> = table
+            .rows
+            .iter()
+            .filter(|row| {
+                row.cells
+                    .iter()
+                    .any(|cell| cell.as_deref() == Some(name.as_str()))
+            })
+            .collect();
+        if let [first, second] = rows.as_slice() {
+            if first.length == second.length {
+                candidates.push((name, first.length));
+            }
+        }
+    }
+    candidates
+}
+
+/// `FindSNPsOnlyTableWriter`: one row per base that differs, at its 1-based position, each base
+/// as the file has it (`ReferenceDataSource.of(path, true)` keeps case and IUPAC codes).
+pub fn find_snps_table(
+    first: &str,
+    second: &str,
+    sequences: &[(String, Vec<u8>, Vec<u8>)],
+) -> String {
+    let mut out = format!("Sequence Name\tPosition\t{first}\t{second}\n");
+    for (name, ours, theirs) in sequences {
+        for (index, (a, b)) in ours.iter().zip(theirs).enumerate() {
+            if a != b {
+                out.push_str(&format!(
+                    "{name}\t{}\t{}\t{}\n",
+                    index + 1,
+                    *a as char,
+                    *b as char
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// `getAllSequenceNames`, in `tableBySequenceName`'s insertion order.
 ///
 /// A name is met when its record is read, which is reference by reference and, inside one
