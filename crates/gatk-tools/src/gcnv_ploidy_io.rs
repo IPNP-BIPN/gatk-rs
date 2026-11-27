@@ -1,10 +1,31 @@
 //! What `cohort_determine_ploidy_and_depth.py` writes, byte for byte: Python's `repr` of a float,
 //! pandas' `to_csv` of a float column, gcnvkernel's `write_ndarray_to_tsv` and its JSON, and the
-//! per-sample tables of `io_ploidy.SamplePloidyWriter`.
+//! numbers in the per-sample tables of `io_ploidy.SamplePloidyWriter`. (Those tables are put
+//! together in `gcnv_ploidy.rs`, which formats their floats with [`python_repr`]; the
+//! gcnvkernel sources are under `src/main/python/org/broadinstitute/hellbender/gcnvkernel` in
+//! GATK 4.7.0.0.) CPython, numpy and pandas have no local source, so what is said about them
+//! here is held to the test rows at the end of this file.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&[f64]` is a borrowed, read-only view of a `double[]`; the caller keeps the list.
+//! - `format!(..)` is Java's `String.format`, with `{}` for each argument and `{name}` for a
+//!   variable in scope. `{:e}` is exponent form and `{:02}` zero-pads to two digits.
+//! - `.expect("..")` unwraps a value that cannot be missing, and stops the program with that
+//!   text if it is.
 
 /// Python's `repr(float)` (and numpy's `str` of a float64, which pandas' `to_csv` writes): the
 /// shortest digits that read back, in exponent form below 1e-4 or from 1e16 on.
+///
+/// **How**: take Rust's shortest round-trip digits in exponent form, then lay them out as
+/// CPython's `repr` does: exponent form when the decimal exponent is below -4 or at least 16
+/// (so `0.0001` stays `0.0001` and `0.00001` is `1e-05`), plain decimals otherwise, with `.0`
+/// added to a whole number.
+///
+/// **Why it is written out**: Rust's own `{}` for an `f64` never switches to exponent form and
+/// writes `2` for two, and its `{:e}` writes `1e-5`, not Python's two-digit `1e-05`.
 pub fn python_repr(value: f64) -> String {
+    // Python spells the special values `nan`, `inf`, `-inf` and keeps the sign of zero.
     if value.is_nan() {
         return "nan".to_string();
     }
@@ -21,11 +42,15 @@ pub fn python_repr(value: f64) -> String {
     }
     // Rust's `{:e}` is the same shortest round-trip digits, as `d.ddde<exp>`.
     let scientific = format!("{value:e}");
+    // `split_once` returns the text before and after the first `e`, as a pair.
     let (mantissa, exponent) = scientific.split_once('e').expect("an exponent");
     let exponent: i32 = exponent.parse().expect("an integer exponent");
     let negative = mantissa.starts_with('-');
+    // The significant digits alone: the sign and the decimal point are dropped.
     let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
     let sign = if negative { "-" } else { "" };
+    // `(-4..16)` is the half-open range -4 to 15, so this is "below -4 or 16 and up": Python's
+    // exponent form, `d.ddd` then `e`, a sign, and at least two exponent digits.
     if !(-4..16).contains(&exponent) {
         let mut out = format!("{sign}{}", &digits[..1]);
         if digits.len() > 1 {
@@ -39,6 +64,8 @@ pub fn python_repr(value: f64) -> String {
         ));
         return out;
     }
+    // Plain decimals. `point` is how many digits stand before the decimal point: none (pad with
+    // zeros after `0.`), all of them or more (pad with zeros and add `.0`), or some.
     let point = exponent + 1;
     if point <= 0 {
         format!("{sign}0.{}{digits}", "0".repeat((-point) as usize))
@@ -55,7 +82,27 @@ pub fn python_repr(value: f64) -> String {
 
 /// `io_commons.write_ndarray_to_tsv` of a float64 vector: the shape and dtype comments, the
 /// extra comment lines, `VALUE_0`, then one value per line.
+///
+/// The header it writes (`io_commons.py`, GATK 4.7.0.0):
+///
+/// ```text
+/// if write_shape_info:
+///     header += compose_sam_comment(io_consts.shape_key_value, repr(shape)) + '\n'
+///     header += compose_sam_comment(io_consts.type_key_value, str(dtype)) + '\n'
+/// if extra_comment_lines is not None:
+///     header += '\n'.join(comment + comment_line for comment_line in extra_comment_lines) + '\n'
+/// ```
+///
+/// `compose_sam_comment` is `@`, `CO`, a tab, the key, `:` and the value, so the first lines are
+/// `@CO\tshape:(5,)` and `@CO\tdtype:float64`. The column name of a vector is
+/// `output_column_prefix + "0"`, `VALUE_0`, and the values are pandas' `to_csv` with no index and
+/// no header.
+///
+/// An empty `extra_comments` stands for Python's `None` (the global model files pass none). An
+/// empty Python LIST would still write the `'\n'` above, an empty line, which no caller asks for.
 pub fn ndarray_tsv(values: &[f64], extra_comments: &[String]) -> String {
+    // `repr` of a one-element tuple keeps its trailing comma, `(1,)`, so both branches print the
+    // same form; a per-sample file is `np.atleast_1d` of one value and always `(1,)`.
     let shape = if values.len() == 1 {
         "(1,)".to_string()
     } else {
@@ -76,7 +123,21 @@ pub fn ndarray_tsv(values: &[f64], extra_comments: &[String]) -> String {
 }
 
 /// `json.dump(dict, indent=1)` of the sorted float settings, and the newline gcnvkernel adds.
+///
+/// `io_commons.write_dict_to_json_file`:
+///
+/// ```text
+/// filtered_dict = {k: v for k, v in sorted(dict_to_write.items()) if k not in ignored_keys}
+/// with open(output_file, 'w') as fp:
+///     json.dump(filtered_dict, fp, indent=1)
+///     fp.write('\n')  # json.dump does not add newline to end of file
+/// ```
+///
+/// So the keys come out in sorted order, one per line indented by one space, `"key": value`, the
+/// lines joined by `,` and a newline. The test below holds that shape.
 pub fn json_floats(entries: &[(&str, f64)]) -> String {
+    // `to_vec` copies the borrowed list so it can be sorted; `a.0` is a pair's first half, the
+    // key. Rust's `str` order is by code point, as Python's `sorted` of string keys is.
     let mut sorted = entries.to_vec();
     sorted.sort_by(|a, b| a.0.cmp(b.0));
     let body: Vec<String> = sorted

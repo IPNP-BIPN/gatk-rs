@@ -1,5 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.engine.FeatureIntervalIterator` and the traversal
-//! path of `org.broadinstitute.hellbender.engine.FeatureDataSource` (GATK 4.6.2.0).
+//! path of `org.broadinstitute.hellbender.engine.FeatureDataSource` (GATK 4.7.0.0; both files are
+//! unchanged since 4.6.2.0).
 //!
 //! Which variants a `VariantWalker` sees, and in what order. Two behaviours decide it and neither
 //! is what "restrict the traversal to `-L`" suggests.
@@ -38,16 +39,29 @@
 //!
 //! `setIntervalsForTraversal` maps both null and an empty list to null, which means *no*
 //! restriction: passing an empty list traverses the whole file rather than nothing.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<&[SimpleInterval]>` is "a borrowed, read-only list of intervals, or nothing": Java's
+//!   nullable `List<SimpleInterval>`;
+//! - `Vec<&'a T>` is a list of references into the caller's `features`, not copies. `'a` is a
+//!   lifetime: it ties the result to the slice it points into and changes nothing at run time;
+//! - `let Some(x) = y else { ... }` unwraps `y` or takes the early exit in the braces;
+//! - a `trait` is a Java interface.
 
 use crate::interval::SimpleInterval;
 
-/// The location of one feature, which is all the traversal looks at.
+/// The location of one feature, which is all the traversal looks at: Java's `Locatable`, with
+/// `stop` for `getEnd`. Coordinates are 1-based and inclusive, as Tribble returns them.
 pub trait Located {
     fn contig(&self) -> &str;
     fn start(&self) -> i32;
     fn stop(&self) -> i32;
 }
 
+// A reference to something located is located too, so a caller can traverse a list of
+// references without copying the records. `**self` follows the reference to the record; `?Sized`
+// admits types whose size is not known at compile time (a `dyn Located`, for instance).
 impl<T: Located + ?Sized> Located for &T {
     fn contig(&self) -> &str {
         (**self).contig()
@@ -62,7 +76,17 @@ impl<T: Located + ?Sized> Located for &T {
 
 /// `FeatureDataSource.setIntervalsForTraversal`: null and empty are the same thing, and that thing
 /// is "no restriction".
+///
+/// ```java
+/// // Treat null and empty interval lists the same
+/// intervalsForTraversal = (intervals != null && !intervals.isEmpty()) ? intervals : null;
+/// ```
+///
+/// The reference's next check, a `UserException` when the source does not support random
+/// access, has no counterpart: `traverse` can always filter the records it is handed.
 pub fn intervals_for_traversal(intervals: Option<&[SimpleInterval]>) -> Option<&[SimpleInterval]> {
+    // `Some(list) if ...` is a guarded match arm: it matches only when the guard holds, and `_`
+    // catches everything else (null, or an empty list).
     match intervals {
         Some(list) if !list.is_empty() => Some(list),
         _ => None,
@@ -75,6 +99,9 @@ pub fn intervals_for_traversal(intervals: Option<&[SimpleInterval]>) -> Option<&
 /// per-interval query is the subset overlapping that interval, in the same order. That is what a
 /// Tribble query returns for a sorted, indexed file, and the index itself is htsjdk's problem
 /// rather than the traversal's.
+///
+/// The reference is a lazy iterator; this collects the same sequence eagerly: interval by
+/// interval in the order given, and within one interval in the file's order.
 pub fn traverse<'a, T: Located>(
     features: &'a [T],
     intervals: Option<&[SimpleInterval]>,
@@ -88,7 +115,9 @@ pub fn traverse<'a, T: Located>(
 
     for (index, current) in intervals.iter().enumerate() {
         // `previousInterval = currentInterval` happens *before* the query, so the first interval
-        // has no previous and every later one has exactly the interval before it.
+        // has no previous and every later one has exactly the interval before it:
+        // `previousInterval = currentInterval;` then `currentInterval = intervalIterator.next();`
+        // in `queryNextInterval`. `.enumerate()` pairs each interval with its index.
         previous = if index == 0 {
             None
         } else {
@@ -110,7 +139,11 @@ pub fn traverse<'a, T: Located>(
             }
         }
     }
+    // Discards `previous` and has no effect on the result. The reference's end-of-list reset,
+    // `currentInterval = previousInterval = null;`, has no counterpart because this function
+    // returns rather than being restarted.
     let _ = previous;
 
+    // The final expression, with no `return`, is the function's value.
     emitted
 }

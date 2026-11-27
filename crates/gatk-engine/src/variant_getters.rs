@@ -1,5 +1,6 @@
 //! Ported from `org.broadinstitute.hellbender.utils.variant.VariantContextGetters`
-//! (GATK 4.6.2.0): how an INFO attribute becomes a `double[]`.
+//! (GATK 4.7.0.0; `VariantContextGetters.java` is unchanged since 4.6.2.0): how an INFO attribute
+//! becomes a `double[]`.
 //!
 //! Everything that reads a numeric annotation off a `VariantContext` goes through here, including
 //! `Mutect2FilteringEngine.getTumorLogOdds`, and the function is held together by an accident.
@@ -15,8 +16,12 @@
 //! which is false. Every list therefore falls through to the branch labelled "as a last resort":
 //!
 //! ```java
-//! return Stream.of(String.valueOf(value).trim().replaceAll("\\[|\\]", "").split(","))
+//! return Stream.of(String.valueOf(value).trim().replaceAll("\\[|\\]", "")
+//!         .split(VCFConstants.INFO_FIELD_ARRAY_SEPARATOR))
+//!         .mapToDouble(doubleConverter).toArray();
 //! ```
+//!
+//! `INFO_FIELD_ARRAY_SEPARATOR` is `","` in htsjdk 5.0.0's `VCFConstants`.
 //!
 //! `String.valueOf(List.of(1.0, 2.0))` is `"[1.0, 2.0]"`, so after the brackets are stripped and
 //! the string is split on the comma the second field is `" 2.0"`, **with a leading space**. That
@@ -29,12 +34,39 @@
 //! A field equal to `VCFConstants.MISSING_VALUE_v4` becomes the caller's `missingValue`, which for
 //! the `getAttributeAsDoubleArray(vc, key)` overload is `-1`. So a `TLOD` of `.` reaches
 //! `getTumorLogOdds` as `-1` and then, after the log conversion, as `-2.302...`; nothing reports a
-//! missing value as missing.
+//! missing value as missing. That holds for a `.` that is the whole field; a `.` after the first
+//! element of a list IS a parse failure, as the next section's `list-with-missing` row shows.
 //!
 //! # Anything else is a `GATKException`, not a `NumberFormatException`
 //!
 //! The parse failure is caught and rethrown with the key in the message, so a caller sees a GATK
 //! exception naming the annotation rather than Java's.
+//!
+//! # What comes back, by input
+//!
+//! Rows of `tests/data/variant_getters.txt.gz`:
+//!
+//! - attribute absent (`absent`): `None`, the overload's null default;
+//! - a field exactly equal to `.` (`one-missing`, the string `1.5,.,2.5`): the caller's
+//!   `missingValue`, `-1`, silently;
+//! - a `.` inside a LIST attribute (`list-with-missing`, `["1.5", ".", "2.5"]`): `Err`. The list
+//!   renders as `[1.5, ., 2.5]`, the field is `" ."` with the space `toString` put there, and the
+//!   missing test is `s.equals(...)` on the untrimmed field, so it fails and the parse throws.
+//!   A multi-valued INFO field read from a VCF is such a list (htsjdk's `parseInfo` splits it),
+//!   so `TLOD=3.2,.` throws where `TLOD=.` gives `-1`;
+//! - a field `Double.parseDouble` refuses (`not-a-double`, `empty-string`): `Err`, the
+//!   `GATKException`;
+//! - a trailing empty field (`trailing-comma`, `1.5,2.5,`): dropped by `String.split` before it is
+//!   parsed, so two values.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Option<T>` is "a `T` or nothing", Java's nullable reference; `Result<T, E>` is "a `T` or an
+//!   error `E`", how the `GATKException` is modelled; `?` returns the error to the caller at once;
+//! - `let Some(x) = y else { ... }` unwraps `y` or takes the early exit in the braces;
+//! - `.iter().map(..).collect()` is Java's `stream().map(..).collect(..)`, and `|c| ...` is a
+//!   lambda;
+//! - `matches!(item, Value::Double(_))` is an `instanceof` test on one case of an enum.
 
 use htsjdk_vcf::genotype_likelihoods::parse_java_double;
 use htsjdk_vcf::variant::{Value, VariantContext};
@@ -63,6 +95,16 @@ impl NonDoubleValue {
 }
 
 /// The `ToDoubleFunction` inside `attributeValueToDoubleArray`.
+///
+/// ```java
+/// final String s = String.valueOf(o);
+/// if (s.equals(VCFConstants.MISSING_VALUE_v4)) {
+///     return missingValue;
+/// ```
+///
+/// The comparison is exact and on the field as it stands, leading space included; only the
+/// parse after it trims. The reference's first branch, `o == null` giving `missingValue`, has no
+/// counterpart because every field reaching here is a substring of a rendered string.
 fn to_double(text: &str, key: &str, missing_value: f64) -> Result<f64, NonDoubleValue> {
     if text == MISSING_VALUE {
         return Ok(missing_value);
@@ -82,8 +124,9 @@ fn to_double(text: &str, key: &str, missing_value: f64) -> Result<f64, NonDouble
 /// separator it splits on leaves a space at the front of every field but the first.
 fn java_string_of(value: &Value) -> String {
     match value {
-        // `String.valueOf(null)` is the string "null", which then fails to parse; the reference
-        // reaches that through an attribute explicitly set to a null element.
+        // `Value::Missing` is htsjdk's `VCFConstants.MISSING_VALUE_v4` object, the String ".",
+        // not a Java null: htsjdk-rs's `record_parse.rs` assigns it to a bare non-Flag key and to
+        // `key=`. So it renders as `.`, and the converter then maps it to the missing value.
         Value::Missing => MISSING_VALUE.to_string(),
         Value::Bool(flag) => flag.to_string(),
         Value::Int(number) => number.to_string(),
@@ -107,6 +150,18 @@ fn java_string_of(value: &Value) -> String {
 ///
 /// `None` for an attribute that is not there, which is the `defaultResult.get()` of the
 /// `getAttributeAsDoubleArray(vc, key)` overload, whose supplier returns null.
+///
+/// ```java
+/// } else if (value.getClass().isArray()) {
+///     final double[] result = new double[Array.getLength(value)];
+///     for (int i = 0; i < result.length; i++) {
+///         result[i] = doubleConverter.applyAsDouble(String.valueOf(Array.get(value, i)));
+///     }
+/// ```
+///
+/// `Value` has no separate array case, so a non-empty list whose items are all doubles stands in
+/// for the `double[]`. An empty list is not taken as an array: it renders as `[]`, which becomes
+/// one empty field and an `Err`, where an empty Java `double[]` would give an empty array.
 pub fn attribute_value_to_double_array(
     value: Option<&Value>,
     key: &str,
@@ -124,6 +179,8 @@ pub fn attribute_value_to_double_array(
             return Ok(Some(
                 items
                     .iter()
+                    // `match` must cover every case of `Value`; the `_` arm is the one the `all`
+                    // test above has ruled out, and `unreachable!` panics if that ever breaks.
                     .map(|item| match item {
                         Value::Double(d) => *d,
                         _ => unreachable!("every item is a double"),
@@ -136,7 +193,10 @@ pub fn attribute_value_to_double_array(
     // The Iterable branch is unreachable, so a list takes the same path as a scalar: rendered with
     // String.valueOf, stripped of brackets, split on the comma.
     let rendered = java_string_of(value);
+    // Java's `String.trim()`, which cuts every char up to and including the space (control
+    // characters too); Rust's own `trim` cuts Unicode whitespace, a different set.
     let trimmed = rendered.trim_matches(|c: char| c <= ' ');
+    // `replaceAll("\\[|\\]", "")`: every bracket anywhere, not only the outer pair.
     let stripped: String = trimmed.chars().filter(|c| *c != '[' && *c != ']').collect();
 
     let mut out = Vec::new();
@@ -148,6 +208,10 @@ pub fn attribute_value_to_double_array(
 
 /// `String.split(",")`: trailing empty fields dropped, and a string the delimiter never matches
 /// returned whole as a single field.
+///
+/// Rust's `split` keeps trailing empty fields, hence the loop that pops them. The two edge cases
+/// differ: `""` is one empty field (no match, returned whole), which then fails to parse, while
+/// `","` is no fields at all, so a string attribute `,` gives an empty array.
 fn java_split_on_comma(text: &str) -> Vec<&str> {
     if !text.contains(',') {
         return vec![text];
@@ -161,6 +225,13 @@ fn java_split_on_comma(text: &str) -> Vec<&str> {
 
 /// `getAttributeAsDoubleArray(vc, key)`: the overload with a null default and a missing value of
 /// `-1`, which is the one every caller in the annotator package uses.
+///
+/// ```java
+/// return getAttributeAsDoubleArray(variantContext, attribute, () -> null, -1);
+/// ```
+///
+/// The attributes are a list of pairs here, and `.find` takes the first whose name matches,
+/// where the reference looks the key up in a map.
 pub fn get_attribute_as_double_array(
     vc: &VariantContext,
     key: &str,
@@ -175,8 +246,15 @@ pub fn get_attribute_as_double_array(
 
 /// `MathUtils.maxElementIndex(array)`: the index of the largest element, ties going to the first.
 ///
-/// A `NaN` loses every comparison, so an array whose first element is `NaN` reports index 0 unless
-/// something later beats it, and an array that is all `NaN` reports 0.
+/// A `NaN` loses every comparison, in both directions: `x > NaN` is false for every `x`, so a
+/// `NaN` at index 0 is never replaced and reports 0 whatever follows (golden row `with-nan`,
+/// `[NaN, 1.0]`, is `0`), and a `NaN` later is never chosen (`nan-last`, `[1.0, NaN]`, is `0`).
+///
+/// ```java
+/// Utils.validateArg(array.length > 0, "array may not be empty");
+/// ```
+///
+/// An empty array is that `IllegalArgumentException` in the reference and `None` here.
 pub fn max_element_index(values: &[f64]) -> Option<usize> {
     if values.is_empty() {
         return None;
@@ -196,6 +274,12 @@ pub fn max_element_index(values: &[f64]) -> Option<usize> {
 /// The conversion is applied to whatever the getter produced, including the `-1` a `.` field
 /// becomes, so a missing element arrives as `-2.302...` and not as anything a caller can
 /// recognise as missing.
+///
+/// The reference reads the attribute with
+/// `VariantContextGetters.getAttributeAsDoubleArray(vc, GATKVCFConstants.TUMOR_LOG_10_ODDS_KEY)`
+/// and returns `tumorLog10Odds == null ? null :` the array passed through
+/// `MathUtils.applyToArrayInPlace(tumorLog10Odds, MathUtils::log10ToLog)`, where `log10ToLog`
+/// is `log10 * LOG_10`. `Option::map` is the null test: it converts only a `Some`.
 pub fn get_tumor_log_odds(vc: &VariantContext) -> Result<Option<Vec<f64>>, NonDoubleValue> {
     Ok(
         get_attribute_as_double_array(vc, TUMOR_LOG_10_ODDS_KEY)?.map(|values| {

@@ -1,6 +1,7 @@
 //! Ported from `org.broadinstitute.hellbender.engine.FeatureCache`,
 //! `org.broadinstitute.hellbender.engine.FeatureDataSource` (its query path) and
-//! `org.broadinstitute.hellbender.engine.FeatureContext` (GATK 4.6.2.0).
+//! `org.broadinstitute.hellbender.engine.FeatureContext` (GATK 4.7.0.0; all three files are
+//! unchanged since 4.6.2.0).
 //!
 //! What a tool sees when it asks "which variants are here" is not what the file contains at that
 //! position: it is what a lookahead cache decided to keep. The cache is not an optimisation that a
@@ -10,8 +11,11 @@
 //!    the query end by `queryLookaheadBases` and caches everything it finds, so a later query
 //!    inside that window is answered from memory. Since `fill` keeps whatever the reader returned,
 //!    the answer to a narrow query is the *prefetched* set trimmed by start position, and
-//!    `getCachedFeaturesUpToStopPosition` filters only on `start > stopPosition`. A cached feature
-//!    that ends before the query start is therefore still returned;
+//!    `getCachedFeaturesUpToStopPosition` filters only on `start > stopPosition`. Neither step
+//!    re-tests overlap with the query: the answer equals a fresh overlap query only because the
+//!    trim drops every feature that starts before the new start and ends before it too, and the
+//!    cache is sorted by start. `tests/data/feature_cache.txt.gz` shows the two agree: its ten
+//!    queries return the same features at lookahead 0 and at lookahead 100;
 //!  * **the trim preserves the reader's order rather than sorting.** `trimToNewStartPosition` pops
 //!    features that start before the new start, keeps the ones that still overlap it, and pushes
 //!    them back **in reverse**, so the relative order the file had survives. A port that re-sorted
@@ -20,6 +24,23 @@
 //! The window arithmetic in `FeatureContext` is the third: the leading expansion is clamped at 1
 //! and the trailing one is not clamped to the contig at all, because a Feature query is allowed to
 //! run off the end.
+//!
+//! # Coordinates
+//!
+//! Every position here is 1-based and inclusive, Tribble's convention after the codec has
+//! converted (a BED line `chr1 9 20` arrives as `chr1:10-20`). Nothing in this file converts.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `VecDeque` is Java's `ArrayDeque`: `front`, `pop_front`, `push_front` are `getFirst`,
+//!   `removeFirst`, `addFirst`;
+//! - `Option<T>` is "a `T` or nothing", Java's nullable reference with the null check enforced;
+//!   `Result<T, String>` is "a `T` or an error message", how a reference exception is modelled;
+//! - `?` after a `Result` returns its error to the caller at once;
+//! - `let Some(x) = y else { ... }` unwraps `y` or takes the early exit in the braces;
+//! - `a.checked_add(b).expect(..)` is `Math.addExact(a, b)`: `None` on overflow, and `expect`
+//!   turns that into a panic, the Rust counterpart of the `ArithmeticException`;
+//! - a `trait` is a Java interface, and `<R: FeatureReader>` is a generic bounded by it.
 
 use crate::interval::SimpleInterval;
 use std::collections::VecDeque;
@@ -49,7 +70,10 @@ impl Feature {
     }
 }
 
-/// `FeatureCache`.
+/// `FeatureCache`: the features overlapping one interval, in reader order, plus that interval.
+///
+/// The hit and miss counters are the reference's `numCacheHits` / `numCacheMisses`, which it
+/// reports through `printCacheStatistics`; they never change an answer.
 #[derive(Debug, Default)]
 pub struct FeatureCache {
     cache: VecDeque<Feature>,
@@ -77,13 +101,23 @@ impl FeatureCache {
     /// Note what it does *not* do: it does not filter what the reader returned, so the cache holds
     /// whatever the query produced, including features that only overlap the lookahead tail.
     pub fn fill(&mut self, features: Vec<Feature>, interval: SimpleInterval) {
+        // `.into()` converts the `Vec` into the deque, keeping the order; Java's `cache.clear()`
+        // then `cache.add` per feature.
         self.cache = features.into();
         self.cached_interval = Some(interval);
     }
 
     /// `FeatureCache.cacheHit`: containment, not overlap. A query one base past the cached end is
     /// a miss even though almost everything it needs is already in memory.
+    ///
+    /// ```java
+    /// final boolean cacheHit = cachedInterval != null && cachedInterval.contains(interval);
+    /// ```
+    ///
+    /// `contains` also requires the same contig, which is the first test below. A query that
+    /// starts before the cached start is a miss too, so the cache never answers backwards.
     pub fn cache_hit(&mut self, interval: &SimpleInterval) -> bool {
+        // `match` on the `Option`: `Some(cached)` binds the interval, `None` is Java's null.
         let hit = match &self.cached_interval {
             Some(cached) => {
                 cached.contig == interval.contig
@@ -104,7 +138,17 @@ impl FeatureCache {
     ///
     /// Returns `Err` where the reference throws `GATKException`: trimming past the cached end is
     /// called a bug upstream rather than handled.
+    ///
+    /// ```java
+    /// if ( featureBeforeNewStart.getEnd() >= newStart ) {
+    /// ```
+    ///
+    /// is the keep test, and the survivors go back with `cache.addFirst` from the last to the
+    /// first, so their relative order is the reader's.
     pub fn trim_to_new_start_position(&mut self, new_start: i32) -> Result<(), String> {
+        // The reference dereferences `cachedInterval` without a null check, which would be a
+        // `NullPointerException`; it is unreachable there because the only caller trims after a
+        // hit. `ok_or_else(..)?` turns the `None` into an early `Err` instead.
         let cached = self
             .cached_interval
             .clone()
@@ -120,6 +164,8 @@ impl FeatureCache {
         // The loop stops at the first feature starting on or after the new start, because the
         // features are assumed sorted by start position: an unsorted file is not detected here.
         let mut kept: Vec<Feature> = Vec::new();
+        // `while let Some(front) = ...` loops while the deque has a first element, binding it;
+        // Java's `while ( ! cache.isEmpty() && ... )` with the `getFirst` folded in.
         while let Some(front) = self.cache.front() {
             if front.start >= new_start {
                 break;
@@ -146,8 +192,15 @@ impl FeatureCache {
     ///
     /// The only test is `start > stopPosition`, and the loop **breaks** rather than continuing, so
     /// one feature starting past the stop hides every feature behind it. Nothing here tests the
-    /// end, which is why a trimmed cache can still return a feature that ends before the query
-    /// started.
+    /// end: excluding a feature that ends before the query started is left to
+    /// [`FeatureCache::trim_to_new_start_position`], which drops each one it meets while the
+    /// cache is sorted by start.
+    ///
+    /// ```java
+    /// if ( candidateFeature.getStart() > stopPosition ) {
+    ///     break; // No more possible matches among the remaining cached Features, so stop looking
+    /// }
+    /// ```
     pub fn cached_features_up_to_stop_position(&self, stop_position: i32) -> Vec<Feature> {
         let mut matching = Vec::new();
         for feature in &self.cache {
@@ -181,9 +234,11 @@ pub trait FeatureReader {
 pub struct FeatureDataSource<R: FeatureReader> {
     reader: R,
     cache: FeatureCache,
-    /// `--<name>-lookahead` / the constructor's `queryLookaheadBases`. GATK's default is 1,000, and
-    /// `IntervalWalker.initializeFeatures` sets it to **0** on purpose, because its query intervals
-    /// are guaranteed not to overlap.
+    /// The constructor's `queryLookaheadBases`. GATK's default is
+    /// `DEFAULT_QUERY_LOOKAHEAD_BASES = 1000`, and `IntervalWalker.initializeFeatures` sets it to
+    /// **0** on purpose, because its query intervals are guaranteed not to overlap. There is no
+    /// engine-wide command-line argument for it; a tool that exposes one names its own
+    /// (`AnnotateIntervals`' `--feature-query-lookahead`, Funcotator's `--lookahead-cache-bp`).
     lookahead_bases: i32,
 }
 
@@ -204,7 +259,14 @@ impl<R: FeatureReader> FeatureDataSource<R> {
     ///
     /// Returns `Err` only where the reference throws: an improper trim. A query past the end of a
     /// contig is fine, because the reader is not aware of contig boundaries and the reference says
-    /// so in a comment.
+    /// so in a comment. The reference's first check, a `UserException` for a source that does not
+    /// support random access, has no counterpart: a [`FeatureReader`] can always be queried.
+    ///
+    /// ```java
+    /// if (queryCache.cacheHit(interval)) {
+    ///     queryCache.trimToNewStartPosition(interval.getStart());
+    /// }
+    /// ```
     pub fn query_and_prefetch(
         &mut self,
         interval: &SimpleInterval,
@@ -254,6 +316,19 @@ impl FeatureContext {
     /// Returns `Err` where the reference's `Utils.validateArg` throws: a negative expansion. The
     /// asymmetry is deliberate upstream: the leading edge is clamped at 1, and the trailing edge is
     /// **not** clamped to the contig, because a Feature query past the end of a contig is legal.
+    ///
+    /// ```java
+    /// return Math.max(locus.getStart() - windowLeadingBases, 1);
+    /// ```
+    ///
+    /// ```java
+    /// //Note: queries past the end of contig are handled but overflow
+    /// // blows up too late so we change it here to blow up early.
+    /// return Math.addExact(locus.getEnd(), windowTrailingBases);//blow up on overflow
+    /// ```
+    ///
+    /// The two argument checks come before the null-interval test, as in the reference, so a
+    /// negative window is refused even when there is no interval to widen.
     pub fn query_interval(
         &self,
         leading: i32,
@@ -283,6 +358,16 @@ impl FeatureContext {
 
     /// `FeatureContext.getValues`: an empty list when there is no interval or no source, which is
     /// how a walker running without the optional Feature input gets an answer rather than an error.
+    ///
+    /// ```java
+    /// if (featureManager == null || queryInterval == null || featureDescriptor == null) {
+    ///     return Collections.emptyList();
+    /// }
+    /// ```
+    ///
+    /// `source` is `None` for the first and third of those; a `None` window is the second. The
+    /// window is computed only once a source exists, so with no source a negative window is NOT
+    /// refused here, while the reference computes `getQueryInterval` first and would refuse it.
     pub fn values<R: FeatureReader>(
         &self,
         source: Option<&mut FeatureDataSource<R>>,
