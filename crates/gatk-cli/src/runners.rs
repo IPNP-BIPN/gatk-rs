@@ -758,16 +758,6 @@ fn interval_arguments(
         message: Some(error.message()),
     })?;
 
-    if parameters.traverse_unmapped {
-        // `-L unmapped` asks the traversal for the records with no position, which neither of
-        // these tools' ported traversals can produce. Refusing is the port's own answer and says
-        // so; counting the mapped ones and calling it the total would not.
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "-L unmapped asks for a traversal of unmapped records that this port does not carry \
-             yet. This message is the port's own and not GATK's.",
-        ));
-    }
     Ok(Some(parameters))
 }
 
@@ -1073,9 +1063,12 @@ fn read_walker_startup_with(
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = match interval_arguments(parser, &best)? {
-        Some(parameters) => transform(parameters.intervals, &best)?,
-        None => Vec::new(),
+    let (intervals, traverse_unmapped) = match interval_arguments(parser, &best)? {
+        Some(parameters) => (
+            transform(parameters.intervals, &best)?,
+            parameters.traverse_unmapped,
+        ),
+        None => (Vec::new(), false),
     };
 
     // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
@@ -1124,7 +1117,11 @@ fn read_walker_startup_with(
     if let Some(refusal) = deferred_parse_refusal {
         return Err(Thrown::non_user(refusal.exception(), refusal.message()));
     }
-    let source = source.expect("a source, since the parse refusal was not taken");
+    let mut source = source.expect("a source, since the parse refusal was not taken");
+    // Every traversal of the source that `read_walker::traverse` makes ends with the unplaced
+    // reads now, which is what a `ReadWalker` and a `LocusWalker` ask for. The tools here that are
+    // neither never traverse it that way, or drop unmapped reads before they look.
+    source.set_traverse_unmapped(traverse_unmapped);
     Ok(ReadWalkerStart {
         source,
         header,
@@ -1781,7 +1778,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
-    let (source, bad_index) = match &index {
+    let (mut source, bad_index) = match &index {
         // `open` is the unindexed open then the index: a refusal of either leaves the source
         // unindexed, and the index's is the one that waits.
         Some(index) => {
@@ -1810,8 +1807,8 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
+    let (intervals, traverse_unmapped) = interval_arguments(parser, &best)?
+        .map(|parameters| (parameters.intervals, parameters.traverse_unmapped))
         .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
@@ -1821,7 +1818,8 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             }
         }
     }
-    if !intervals.is_empty() && index.is_none() {
+    // `traversalIsBounded` is intervals OR unmapped reads, so `-L unmapped` alone needs the index.
+    if (!intervals.is_empty() || traverse_unmapped) && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
         ));
@@ -1832,6 +1830,7 @@ pub fn print_reads(parser: &Parser) -> Outcome {
             format!("Unknown BAM index file type: {name}"),
         ));
     }
+    source.set_traverse_unmapped(traverse_unmapped);
     let filter = read_filter(parser, &resolved_filters, &header)?;
 
     let command_line = crate::command_line::expanded("PrintReads", parser);
@@ -2284,7 +2283,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
     // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
     // refused before anything asks the index what it is.
-    let (source, bad_index) = match &index {
+    let (mut source, bad_index) = match &index {
         Some(index) => match ReadsDataSource::open(path, index) {
             Ok(source) => (source, None),
             Err(_) => (
@@ -2314,8 +2313,8 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
+    let (intervals, traverse_unmapped) = interval_arguments(parser, &best)?
+        .map(|parameters| (parameters.intervals, parameters.traverse_unmapped))
         .unwrap_or_default();
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
@@ -2325,7 +2324,8 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             }
         }
     }
-    if !intervals.is_empty() && index.is_none() {
+    // `traversalIsBounded` is intervals OR unmapped reads, so `-L unmapped` alone needs the index.
+    if (!intervals.is_empty() || traverse_unmapped) && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
         ));
@@ -2336,6 +2336,7 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
             format!("Unknown BAM index file type: {name}"),
         ));
     }
+    source.set_traverse_unmapped(traverse_unmapped);
     let filter = read_filter(parser, &resolved_filters, &header)?;
 
     let bqsr = apply_bqsr_arguments(parser);
@@ -2774,7 +2775,19 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
 /// not any more: the reservoir and leveling downsamplers are wired into the read-state managers, so
 /// the argument thins a pileup the way the reference thins it (#1102).
 fn locus_traversal_error(error: gatk_tools::locus_walker::LocusWalkerError) -> Thrown {
-    Thrown::user(format!("{error:?}"))
+    match error {
+        // `Utils.nonEmpty` in `IntervalOverlappingIterator`, which is not a `UserException`: the
+        // handler prints the class. Only `-L unmapped` alone gives a walker an empty list.
+        gatk_tools::locus_walker::LocusWalkerError::EmptyIntervalList => Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "The collection is empty: collection must not be null or empty.",
+        ),
+        gatk_tools::locus_walker::LocusWalkerError::NoLoci => Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "BUG: GenomeLoc in Alignment context is null",
+        ),
+        error => Thrown::user(format!("{error:?}")),
+    }
 }
 
 /// `Pileup.apply`, once per locus of the traversal.
@@ -2836,7 +2849,9 @@ pub fn pileup(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -2957,7 +2972,9 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
         &records,
         &header,
         Some(&mut reference),
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -4510,7 +4527,9 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -7457,7 +7476,9 @@ pub fn get_normal_artifact_data(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -7578,7 +7599,9 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -9012,16 +9035,18 @@ pub fn calibrate_dragstr_model(parser: &Parser) -> Outcome {
     }
 
     // `getTraversalIntervals`: the ones given, else every contig of the best dictionary.
-    let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        dictionary
-            .iter()
-            .filter_map(|sequence| {
-                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
-            })
-            .collect()
-    } else {
-        intervals
-    };
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let traversal: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            dictionary
+                .iter()
+                .filter_map(|sequence| {
+                    gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                })
+                .collect()
+        } else {
+            intervals
+        };
     let mut all = cdm::Stratified::new(parameters.max_period, parameters.max_repeat_length);
     for interval in &traversal {
         let Some(contig_index) = table_dictionary
@@ -9670,14 +9695,16 @@ pub fn gene_expression_evaluation(parser: &Parser) -> Outcome {
             None => header.sequences.clone(),
         },
     };
-    let all_intervals: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        dictionary
-            .iter()
-            .filter_map(|s| gatk_engine::interval::SimpleInterval::new(&s.name, 1, s.length))
-            .collect()
-    } else {
-        intervals.clone()
-    };
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let all_intervals: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            dictionary
+                .iter()
+                .filter_map(|s| gatk_engine::interval::SimpleInterval::new(&s.name, 1, s.length))
+                .collect()
+        } else {
+            intervals.clone()
+        };
 
     let text = {
         let bytes = std::fs::read(&gff_path).map_err(|_| {
@@ -12747,7 +12774,9 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
     let text = gatk_tools::methylation_type_caller::methylation_type_caller(
         &source,
         &mut reference,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -13171,7 +13200,9 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)
@@ -13524,18 +13555,20 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
         bases.insert(name, contig);
     }
     // `getTraversalIntervals()`: the user's intervals, or every interval of the reference.
-    let requested: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        known
-            .sequences
-            .iter()
-            .map(|sequence| {
-                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
-                    .expect("a contig length is at least one")
-            })
-            .collect()
-    } else {
-        intervals.clone()
-    };
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let requested: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            known
+                .sequences
+                .iter()
+                .map(|sequence| {
+                    gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                        .expect("a contig length is at least one")
+                })
+                .collect()
+        } else {
+            intervals.clone()
+        };
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
@@ -20389,7 +20422,9 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
         &records,
         &header,
         None,
-        if intervals.is_empty() {
+        // `hasUserSuppliedIntervals`: `-L unmapped` alone is an EMPTY list of intervals, which
+        // the locus iterator refuses, rather than none.
+        if intervals.is_empty() && !source.traverses_unmapped() {
             None
         } else {
             Some(&intervals)

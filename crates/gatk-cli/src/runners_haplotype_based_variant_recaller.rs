@@ -87,7 +87,8 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::user(format!("{error:?}")))?
     };
     let filter = read_filter(parser, &filters, &header)?;
-    let intervals: Vec<SimpleInterval> = if intervals.is_empty() {
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let intervals: Vec<SimpleInterval> = if intervals.is_empty() && !source.traverses_unmapped() {
         header
             .sequences
             .iter()

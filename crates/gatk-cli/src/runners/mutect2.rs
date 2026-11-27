@@ -402,17 +402,19 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         }
     }
 
-    let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        header
-            .sequences
-            .iter()
-            .filter_map(|sequence| {
-                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
-            })
-            .collect()
-    } else {
-        intervals
-    };
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let traversal: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            header
+                .sequences
+                .iter()
+                .filter_map(|sequence| {
+                    gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                })
+                .collect()
+        } else {
+            intervals
+        };
 
     let mut bases_of: std::collections::HashMap<String, Vec<u8>> = Default::default();
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {

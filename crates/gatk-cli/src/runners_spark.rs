@@ -253,9 +253,9 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
     // `initializeIntervals`, against `getBestAvailableSequenceDictionary`: the reference's, then
     // the reads'.
     let best = reference.clone().unwrap_or_else(|| header.clone());
-    let intervals = match interval_arguments(parser, &best)? {
-        Some(parameters) => parameters.intervals,
-        None => Vec::new(),
+    let (intervals, traverse_unmapped) = match interval_arguments(parser, &best)? {
+        Some(parameters) => (parameters.intervals, parameters.traverse_unmapped),
+        None => (Vec::new(), false),
     };
 
     // The aligners' `validateSequenceDictionaries`: unaligned reads need no dictionary.
@@ -267,11 +267,14 @@ pub(super) fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, T
         }
     }
 
-    let source = if splits_by_itself {
+    let mut source = if splits_by_itself {
         spark_split_source(parser, &input, source)?
     } else {
         spark_traversal_source(parser, &input, source)?
     };
+    // `getUnfilteredReads` hands Disq the traversal parameters, unmapped bit included, whatever
+    // kind of Spark tool asks.
+    source.set_traverse_unmapped(traverse_unmapped);
 
     Ok(SparkStart {
         source,
@@ -681,18 +684,20 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
-    let whole: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        dictionary
-            .iter()
-            .map(|(name, length)| gatk_engine::interval::SimpleInterval {
-                contig: name.clone(),
-                start: 1,
-                end: *length as i32,
-            })
-            .collect()
-    } else {
-        intervals.clone()
-    };
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let whole: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            dictionary
+                .iter()
+                .map(|(name, length)| gatk_engine::interval::SimpleInterval {
+                    contig: name.clone(),
+                    start: 1,
+                    end: *length as i32,
+                })
+                .collect()
+        } else {
+            intervals.clone()
+        };
     no_reads_refusal(parser, &records, &whole, shard_size)?;
     oversized_read_refusal(parser, &records, &header, shard_size)?;
     // `Shard.divideIntervalIntoShards` with no padding.
@@ -1245,12 +1250,27 @@ impl gatk_tools::read_metadata::ReadPartitions for DisqReads<'_> {
         let Some(chunk) = &self.chunks[partition] else {
             return Ok(Vec::new());
         };
-        if self.intervals.is_empty() {
-            self.source.read_chunk(chunk)
+        let unmapped = self.source.traverses_unmapped();
+        if self.intervals.is_empty() && !unmapped {
+            return self.source.read_chunk(chunk);
+        }
+        // With traversal parameters, `-L unmapped` alone queries no mapped reads at all.
+        let mut reads = if self.intervals.is_empty() {
+            Vec::new()
         } else {
             self.source
-                .query_within(self.intervals, chunk.start, chunk.end)
+                .query_within(self.intervals, chunk.start, chunk.end)?
+        };
+        // The unplaced reads, whole, go to the one partition whose span holds the index's last
+        // linear bin; a file with no such bin gives none to any partition.
+        if unmapped {
+            if let Some(last) = self.source.start_of_last_linear_bin() {
+                if chunk.start <= last && last < chunk.end {
+                    reads.extend(self.source.query_unmapped()?);
+                }
+            }
         }
+        Ok(reads)
     }
 }
 
@@ -1281,18 +1301,6 @@ fn disq_reads<'a>(
                 ),
             ),
         })?;
-    if chunks.len() > 1
-        && arguments(parser, "intervals")
-            .iter()
-            .any(|l| l == "unmapped")
-    {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "-L unmapped over a BAM Disq cuts into several partitions adds unplaced reads to the \
-             partitions the index's last offset falls in, and this port does not follow it. This \
-             message is the port's own and not GATK's.",
-        ));
-    }
     Ok(DisqReads {
         source,
         chunks,
@@ -3018,10 +3026,12 @@ pub fn collect_allelic_counts_spark(parser: &Parser) -> Outcome {
                 end: (start + shard_size - 1).min(interval.end),
             };
             // The shuffle groups reads by shard, so a shard no read reaches never exists.
+            // An unplaced read, which `-L unmapped` adds to every traversal, is in no shard.
             if flag(parser, "shuffle")
                 && gatk_tools::read_walker::traverse(&source, std::slice::from_ref(&shard), &filter)
                     .map_err(|error| Thrown::user(format!("{error:?}")))?
-                    .is_empty()
+                    .iter()
+                    .all(|read| read.reference_index < 0)
             {
                 continue;
             }

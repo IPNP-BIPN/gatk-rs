@@ -488,7 +488,9 @@
       ],
       "--intervals": [
         "chr1:1-6000",
-        "chr1:50000-60000"
+        "chr1:50000-60000",
+        "unmapped",
+        "/work/fixtures/unmapped.intervals"
       ]
     },
     "CreateHadoopBamSplittingIndex": {
@@ -12267,6 +12269,8 @@
       "--intervals": [
         "chr1:1-6000",
         "chr1:50000-60000",
+        "unmapped",
+        "/work/fixtures/unmapped.intervals",
         "<unset>"
       ],
       "--output": [
@@ -12306,7 +12310,9 @@
       "$why": [
         "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
         "that run without -L at all: Disq reads the whole file there, and the locus walker",
-        "shards the whole dictionary, which no row measured while every row set -L."
+        "shards the whole dictionary, which no row measured while every row set -L.",
+        "unmapped and an interval file ending in it are -L values too: reads2.bam ends in an",
+        "unplaced unmapped read, which only they bring into the output."
       ]
     },
     "PileupSpark": {

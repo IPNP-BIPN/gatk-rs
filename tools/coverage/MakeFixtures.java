@@ -3764,6 +3764,10 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("read_names2.txt"), "HWI:1:FC:1:1:2:2/2\nnobody\n");
         Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
                 StandardCharsets.UTF_8);
+        // `-L` from a GATK interval file whose last line is `unmapped`, the way
+        // `reads_data_source_test1_unmapped2.intervals` in GATK's own tests names it.
+        Files.writeString(dir.resolve("unmapped.intervals"), "chr1:1-6000\nunmapped\n",
+                StandardCharsets.UTF_8);
         // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,
         // zero-based on disk, and two sites VCFs over the same loci, the second with every ref and
         // alt swapped, so the same depths give each sample the other fraction. Each VCF also holds

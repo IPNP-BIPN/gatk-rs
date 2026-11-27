@@ -121,8 +121,31 @@ impl From<ParseError> for IntervalArgumentError {
 }
 
 /// The string `GenomeLocParser.isUnmappedGenomeLocString` accepts, case-insensitively after a trim.
-fn is_unmapped_string(text: &str) -> bool {
+pub(crate) fn is_unmapped_string(text: &str) -> bool {
     text.trim().eq_ignore_ascii_case("unmapped")
+}
+
+/// `GenomeLoc.UNMAPPED`, as `parseGenomeLoc` returns it for the string `unmapped`, in the form a
+/// list of intervals can carry: no contig and positions zero to zero, which is what the Java
+/// constant holds too.
+///
+/// It stays in the list rather than becoming a flag at once because upstream it does: it is an
+/// interval line like any other in a `.intervals` file, goes through the set rule and the merge,
+/// and is only taken out of the final set by `parseIntervals`. Every caller that sees one of
+/// these lists either takes it out ([`load_intervals_with_features`],
+/// [`crate::interval_arguments::traversal_parameters`]) or carries it to that point.
+pub fn unmapped_loc() -> SimpleInterval {
+    SimpleInterval {
+        contig: String::new(),
+        start: 0,
+        end: 0,
+    }
+}
+
+/// Whether an interval is [`unmapped_loc`]. No dictionary names a contig with no name, so the
+/// empty contig cannot be a real one.
+pub fn is_unmapped_loc(interval: &SimpleInterval) -> bool {
+    interval.contig.is_empty()
 }
 
 fn contig_index(header: &SamHeader, contig: &str) -> Option<usize> {
@@ -280,6 +303,10 @@ pub fn gatk_interval_file_to_list(
         if trimmed.is_empty() {
             continue;
         }
+        if is_unmapped_string(trimmed) {
+            intervals.push(unmapped_loc());
+            continue;
+        }
         let parsed = interval::parse_interval(trimmed, header)?;
         // The same validation the literal `-L` path gets: an interval file goes through
         // `GenomeLocParser` line by line upstream, so a line that runs off its contig is the same
@@ -364,6 +391,9 @@ pub fn parse_interval_arguments(
             query.to_string(),
         ));
     }
+    if is_unmapped_string(query) {
+        return Ok(vec![unmapped_loc()]);
+    }
     let parsed = interval::parse_interval(query, header)?;
     validate_on_reference(&parsed, header)?;
     Ok(vec![parsed])
@@ -416,6 +446,10 @@ pub fn load_intervals_with_features(
             continue;
         }
         let mut parsed = parse_interval_arguments(query, header, features)?;
+        // An interval file can name `unmapped` on a line of its own.
+        let before = parsed.len();
+        parsed.retain(|interval| !is_unmapped_loc(interval));
+        unmapped |= parsed.len() < before;
         if padding > 0 {
             parsed = with_flanks(parsed, padding, header);
         }

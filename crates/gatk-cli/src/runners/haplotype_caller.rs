@@ -1062,18 +1062,20 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     // `getAllIntervalsForReference` over the reads' dictionary when no `-L` was given.
-    let has_user_intervals = !intervals.is_empty();
-    let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
-        header
-            .sequences
-            .iter()
-            .filter_map(|sequence| {
-                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
-            })
-            .collect()
-    } else {
-        intervals
-    };
+    let has_user_intervals = !intervals.is_empty() || source.traverses_unmapped();
+    // `-L unmapped` alone leaves an EMPTY list of user intervals, not none.
+    let traversal: Vec<gatk_engine::interval::SimpleInterval> =
+        if intervals.is_empty() && !source.traverses_unmapped() {
+            header
+                .sequences
+                .iter()
+                .filter_map(|sequence| {
+                    gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                })
+                .collect()
+        } else {
+            intervals
+        };
 
     // `makePreReadFilterTransformer`, then the filters.
     let filter = read_filter(parser, &filters, &header)?;

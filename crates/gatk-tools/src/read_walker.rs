@@ -45,7 +45,9 @@ pub fn read_interval(record: &BamRecord, header: &SamHeader) -> Option<SimpleInt
 ///
 /// `intervals` empty is an unbounded traversal, which includes the unplaced unmapped reads at the
 /// tail; with intervals the data source is bounded and they are excluded, because
-/// `getTraversalParameters` only sets `traverseUnmappedReads` when the user names them.
+/// `getTraversalParameters` only sets `traverseUnmappedReads` when the user names them. When they
+/// did, the source carries it ([`ReadsDataSource::traverses_unmapped`]) and the traversal is the
+/// bounded one below.
 pub fn traverse(
     source: &ReadsDataSource,
     intervals: &[SimpleInterval],
@@ -106,6 +108,7 @@ pub fn traverse_iter<'a, F>(
 where
     F: FnMut(&BamRecord) -> bool + 'a,
 {
+    let traverse_unmapped = traverse_unmapped || source.traverses_unmapped();
     let bounded = !intervals.is_empty() || traverse_unmapped;
     let first = if !bounded {
         Some(source.records_all()?)
