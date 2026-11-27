@@ -8772,12 +8772,13 @@
       "harness": "tools/argument-conformance",
       "tools": [
         "SVCluster",
-        "JointGermlineCNVSegmentation"
+        "JointGermlineCNVSegmentation",
+        "DownsampleByDuplicateSet"
       ],
       "compare": {
         "mode": "keyed"
       },
-      "why": "Every site where the port answered PORT_LIMITATION is a combination of a tool and its arguments GATK answers in its own way: a refusal with its class and words, or files. Each case is one command line run from a directory of its own, and the golden carries the command line, so the port's test replays exactly what ran. SVCluster and JointGermlineCNVSegmentation require a reference, so Barclay declares -R required and refuses a run without it as MissingArgument before the tool opens anything.",
+      "why": "Every site where the port answered PORT_LIMITATION is a combination of a tool and its arguments GATK answers in its own way: a refusal with its class and words, or files. Each case is one command line run from a directory of its own, and the golden carries the command line, so the port's test replays exactly what ran. SVCluster and JointGermlineCNVSegmentation require a reference, so Barclay declares -R required and refuses a run without it as MissingArgument before the tool opens anything. DownsampleByDuplicateSet parses MI lazily: a read's number as it arrives, its strand when it starts a set or when rejectSet counts the strands of the set it joined, and never for a later read of the last set. A malformed tag is the JVM's own exception from that place (a helpful NullPointerException, NumberFormatException, ArrayIndexOutOfBoundsException, or Utils.validate's IllegalStateException for a set crossing contigs), and closeTool still closes the writer, so the BAM holds the sets applied before the failure.",
       "cases": [
         {
           "dump": "PortLimitationDump",

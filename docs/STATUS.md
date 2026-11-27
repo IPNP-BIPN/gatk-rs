@@ -220,7 +220,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
 | `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 32/32 rows (100%), **1 distinct output** | not measured |
 | `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
-| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
+| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set, port-limitations | 2 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.064 |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.057 |
