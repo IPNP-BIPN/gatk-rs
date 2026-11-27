@@ -666,7 +666,10 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
         queue.clear();
         Ok(())
     };
-    for (input, record) in order {
+    // `apply` keeps every `--sample-every-Nth-variant`-th record, counting from the first, but
+    // tests the locus change against the queue before deciding.
+    let sample_mod = i64::from(number_or(parser, "sample-every-Nth-variant", 1));
+    for (counter, (input, record)) in (0_i64..).zip(order) {
         let changed = queue
             .first()
             .is_some_and(|first| first.start != record.start || first.contig != record.contig);
@@ -674,7 +677,15 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
             consume(&mut queue, &mut data, &mut random)
                 .map_err(|_| driving.apply_failure(input, record))?;
         }
-        queue.push(record);
+        if sample_mod == 0 {
+            return Err(Thrown::non_user(
+                "java.lang.ArithmeticException",
+                "/ by zero",
+            ));
+        }
+        if counter % sample_mod == 0 {
+            queue.push(record);
+        }
     }
     if let Some(failure) = failure {
         return Err(failure);
