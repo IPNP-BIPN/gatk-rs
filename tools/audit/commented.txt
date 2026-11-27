@@ -7,8 +7,12 @@
 
 crates/gatk-annotation/src/haplotype_filtering.rs 1.508
 crates/gatk-barclay/src/lib.rs 0.466
+crates/gatk-engine/src/allele_likelihoods.rs 0.700
+crates/gatk-engine/src/allele_list.rs 0.797
 crates/gatk-engine/src/fisher_exact.rs 2.035
 crates/gatk-engine/src/fragment.rs 1.149
+crates/gatk-engine/src/genotype_index.rs 1.253
+crates/gatk-engine/src/genotype_likelihood_calculator.rs 1.303
 crates/gatk-engine/src/haplotype.rs 1.707
 crates/gatk-engine/src/histogram.rs 1.101
 crates/gatk-engine/src/java_hash.rs 0.739
