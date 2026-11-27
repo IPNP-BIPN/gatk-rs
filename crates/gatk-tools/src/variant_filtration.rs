@@ -209,6 +209,12 @@ fn filter_one(
         for expression in genotype_expressions {
             let mut context = record.info.clone();
             context.extend(genotype.fields.clone());
+            // `GenotypeJEXLContext` binds `GQ` to `Genotype.getGQ()`, which is -1 when the
+            // genotype has none: never a missing value, so `--missing-values-evaluate-as-failing`
+            // cannot reach it.
+            context
+                .entry("GQ".to_string())
+                .or_insert(gatk_engine::jexl::Value::Int(-1));
             if matches(
                 &context,
                 expression,
@@ -370,6 +376,27 @@ mod tests {
             },
         );
         assert_eq!(rendered_filters(&invalidated[0]), ".");
+    }
+
+    #[test]
+    fn a_genotype_without_gq_reads_it_as_minus_one_not_missing() {
+        let mut records = vec![record(100, true, &[], None)];
+        records[0].genotypes.push(GenotypeFields {
+            fields: Context::new(),
+            filters: Vec::new(),
+        });
+        let expressions = vec![MatchExp::new("LowGQ", "GQ>10.0").expect("parses")];
+        let kept = filter_records(
+            &records,
+            &[],
+            &expressions,
+            &[],
+            &Arguments {
+                missing_values_evaluate_as_failing: true,
+                ..Arguments::default()
+            },
+        );
+        assert!(kept[0].genotype_filters[0].is_empty());
     }
 
     #[test]

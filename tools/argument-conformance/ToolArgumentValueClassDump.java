@@ -208,6 +208,12 @@ public class ToolArgumentValueClassDump {
         run("a-fraction-with-a-trailing-space", "--fraction", "1.5 ");
         run("a-fraction-with-an-underscore", "--fraction", "1_000");
         run("a-fraction-with-a-leading-plus", "--fraction", "+1.5");
+        // The sign is read before the words, and the hexadecimal digits are read in full: more than
+        // one before the point, and a fraction after it.
+        run("an-infinity-with-a-leading-plus", "--fraction", "+Infinity");
+        run("a-fraction-in-hexadecimal-with-two-digits", "--fraction", "0x10p0");
+        run("a-fraction-in-hexadecimal-with-a-point", "--fraction", "0x1.8p1");
+        run("a-fraction-in-hexadecimal-with-two-fraction-digits", "--fraction", "0x1.08p4");
         run("a-fraction-that-rounds-to-a-float", "--fraction", "0.1000000000000000055511151231257827");
 
         // The `Long`, which one of the ported tools declares and no golden had measured: its
@@ -216,6 +222,10 @@ public class ToolArgumentValueClassDump {
         run("a-count-at-a-longs-limit", "--count", "9223372036854775807");
         run("a-count-past-an-ints-limit", "--count", "2147483648");
         run("a-count-past-a-longs-limit", "--count", "9223372036854775808");
+        run("a-count-below-zero", "--count", "-42");
+        run("a-count-at-a-longs-lower-limit", "--count", "-9223372036854775808");
+        run("a-count-past-a-longs-lower-limit", "--count", "-9223372036854775809");
+        run("a-count-of-forty-digits", "--count", "1234567890123456789012345678901234567890");
         run("a-count-that-is-not-a-number", "--count", "abc");
         run("a-count-with-a-plus", "--count", "+42");
         run("a-count-with-a-space", "--count", " 42");

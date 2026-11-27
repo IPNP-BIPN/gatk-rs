@@ -8,6 +8,7 @@ in the binary, so it puts no byte at risk.
 ```bash
 cargo install --locked cargo-mutants
 cargo mutants -p gatk-readfilter -j 4
+cargo mutants -p gatk-barclay -j 4
 ```
 
 `.cargo/mutants.toml` holds the exclusions, each with its reason. A surviving mutant has two
@@ -20,16 +21,18 @@ tell apart from the port gets an exclusion. Nothing else goes in that file.
 |---|---:|---:|---:|---:|---:|---:|
 | gatk-readfilter, before | 518 | 438 | **63** | 15 | 2 | 7 min |
 | gatk-readfilter, now | 484 | 469 | **0** | 13 | 2 | 5 min |
+| gatk-barclay, before | 382 | 226 | **132** | 19 | 5 | 3 min |
+| gatk-barclay, now | 367 | 342 | **0** | 18 | 7 | 3 min |
 
 Measured on cargo-mutants 27.1.0, Homebrew cargo 1.99.1, `-j 4` on a shared 16-core Apple-silicon
 machine. A timeout is a mutant that turns a loop infinite (`offset += length` into `*=` from 0):
 the test hangs instead of passing, so it counts as caught.
 
-The other crates have not been run. Their sizes say how: `gatk-corpus` 53 mutants, `gatk-barclay`
-382, `gatk-annotation` 2,259, `gatk-fermilite` 3,236, `gatk-cli` 5,740, `gatk-engine` 15,001,
+The other crates have not been run. Their sizes say how: `gatk-corpus` 53 mutants,
+`gatk-annotation` 2,259, `gatk-fermilite` 3,236, `gatk-cli` 5,740, `gatk-engine` 15,001,
 `gatk-tools` 44,064.
 
-## How the 63 were sorted
+## How the 63 of gatk-readfilter were sorted
 
 **35 were real gaps**, and the oracle now closes each one. `ReadFilterDump` gained 18 records,
 three filter instances and, in `CountingFilterDump`, one composition:
@@ -69,6 +72,51 @@ Four of those are pinned by line, so moving the code brings them back as survivo
 `gatk-tools/tests/multi_pass.rs` fail. A run scoped to the crate does not build that test, so
 they are excluded with that reason.
 
+## How the 132 of gatk-barclay were sorted
+
+**51 were caught by a test in the wrong crate.** `value_classes.rs` exercises nothing but
+`gatk_barclay` (`Float.valueOf` and `Long.valueOf`'s grammars against the
+`tool-argument-value-classes` golden) and sat in `gatk-cli`, which a run scoped to the crate does
+not build. It moved to `gatk-barclay/tests`, unchanged.
+
+**54 were real gaps**, closed with oracle rows in four dumps. The port agreed with the oracle on
+every new row the first time, except where it says otherwise below.
+
+- The order values are set in (22, `propagation_order` and the `HashMap` it transcribes): no
+  case had two fields failing at once, so a port that set them in any order passed. Now every
+  pair of the value model's failing fields is a case, and two more targets sit on a resize
+  threshold: eleven names, which with `[arguments]` make twelve and size `toJavaUtilMap()`'s copy
+  at thirty-two buckets rather than sixteen, and twelve specs with `CallableLoci`'s
+  `{mlmq, max-low-mapq}` pair, which `arrangeOptions` sorts long name first.
+- Positional arguments (10): no tool in the crate declared any, and no case gave two positional
+  values to one that did not (`,a{b}`). A lone `-` as a positional value or as a tagged value (2).
+- A bounded `Long` (1), which `--splitting-index-granularity` is on every Spark tool.
+- `Long.valueOf` below zero, at and past `Long.MIN_VALUE`, and forty digits (5); `Float.valueOf`
+  on `+Infinity` and on hexadecimal with several digits or a fraction (10).
+- Plugin selection (4): the `allowed` rows of `plugin-argument-ownership` are replayed through
+  `plugin_is_selected`, and three annotation rows were added, a tool-default group and a group
+  named on the command line.
+
+**1 was a divergence.** `is_number` left out `Byte`, so barclay never range-checked
+`DepthOfCoverage`'s `--min-base-quality`, and the runner did it itself after parsing, which
+reports a missing required argument before an out-of-range quality where the reference reports
+the quality. A bounded `byte` is now in the value model, and barclay refuses `-1` with
+`allowed range [0.0, 127.0].` as the reference does (bounds as doubles: a `Byte` is not an
+`Integer`). Once `Byte` was in, the "only numeric types" guard decided nothing, since only numeric
+types can have bounds, and it went too.
+
+**14 are port-side and got unit tests**: `Math.rint`'s half-to-even (7), `hasRecommendedRange`
+on one bound (4), `Filesystem::read` (2), `override_value` (1).
+
+**11 were dead code**, removed: `ValueClass::simple_name` and `long_names` had no caller, every
+caller dropped the list `set_mode_values` returned, GATK never sets `APPEND_TO_COLLECTIONS`, a
+float suffix guard tested for `infinity` on a string that ends in a suffix letter, and the flag's
+"does not look like an option" test can never decide, since no boolean spelling starts with a
+dash.
+
+**1 is equivalent** and excluded: `java_long` stopping its digit loop at `u64::MAX` rather than
+past it refuses the same strings. Pinned by line.
+
 ## What it costs, and where it runs
 
 Scoped to its own crate, a mutant of `gatk-readfilter` costs about a second of build and a
@@ -77,6 +125,7 @@ debug profile) costs about ten minutes a mutant, so a whole crate cannot be run 
 named survivors are checked downstream, by hand.
 
 Decision for now: not in CI on every push. It runs by hand for a crate whose code or corpus
-changes, and for a validation report (#87). The next candidates are the small crates
-(`gatk-corpus`, `gatk-barclay`), then `gatk-engine` split with `--shard k/n` across a scheduled
+changes, and for a validation report (#87). `gatk-barclay` costs three minutes scoped to itself,
+and only `gatk-cli` depends on it, so a named survivor can be checked downstream in seconds
+(`cargo test -p gatk-cli --test plugin_ownership ...`). The next candidate is `gatk-corpus`, then `gatk-engine` split with `--shard k/n` across a scheduled
 job, once a first shard says what its tests cost.

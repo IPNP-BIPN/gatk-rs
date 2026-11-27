@@ -3,16 +3,15 @@
 //!
 //! * **the intervals VCF** (`GermlineCNVIntervalVariantComposer`) and **the denoised table**
 //!   (`concatenateDenoisedCopyRatioFiles`) are Java over the call shards;
-//! * **the segments VCF** is `segment_gcnv_calls.py`, ported in [`gatk_tools::gcnv_segments`] as
-//!   the frozen reference computes it, then `GermlineCNVSegmentVariantComposer` over the qualities
-//!   as the script prints them, two decimals, and Java reads them back.
+//! * **the segments VCF** is GATK's `segment_gcnv_calls.py`, run into a temporary directory as the
+//!   reference runs it, then its segments table read back and composed
+//!   (`GermlineCNVSegmentVariantComposer`).
 //!
-//! Not ported, each refused in the port's words: `--clustered-breakpoints` and
-//! `--input-intervals-vcf` (the script then reads the joint call set with PyVCF instead of running
-//! Viterbi), and a `--reference`, whose only use is the REF base of each segment.
+//! Not ported, each refused in the port's words once the script has run: the composer's
+//! `--clustered-breakpoints` (each segment matched against the joint call set and filtered), and a
+//! `--reference`, whose only use is the REF base of each segment.
 
 use super::*;
-use gatk_tools::gcnv_segments;
 use gatk_tools::model_segments_models::Span;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
@@ -31,13 +30,6 @@ fn validate_input(path: &str) -> Result<(), Thrown> {
         tables::can_read_file(path)?;
     }
     Ok(())
-}
-
-/// `CopyNumberArgumentValidationUtils.getCanonicalPath`, which is what the script is handed.
-fn canonical(path: &str) -> String {
-    std::fs::canonicalize(path)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| java_absolute_path(path))
 }
 
 /// `FastMath.round(double)`: half up, exactly.
@@ -374,22 +366,134 @@ fn intervals_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
             records.push(record);
         }
     }
+    // `--sites-only-vcf-output` is the writer's: `createVCFWriter` drops the genotypes.
+    apply_sites_only(parser, &mut header, &mut records);
     write_vcf_honouring_lenient(parser, &header, &records)
 }
 
-/// `generateSegmentsVCFFileFromAllShards`, segmentation included.
+const SEGMENT_CALLS: PythonResource = PythonResource {
+    name: "segment_gcnv_calls.py",
+    text: include_str!("python/segment_gcnv_calls.py"),
+};
+
+/// One row of an `IntegerCopyNumberSegmentCollection`.
+struct Segment {
+    contig: String,
+    start: i64,
+    end: i64,
+    num_points: i64,
+    call: i64,
+    baseline: i64,
+    qualities: [f64; 4],
+}
+
+/// `executeSegmentGermlineCNVCallsPythonScript` into a temporary directory, then the segments
+/// table it leaves for the sample, read as `IntegerCopyNumberSegmentCollection` reads it.
+fn segment(parser: &Parser, start: &Start) -> Result<Vec<Segment>, Thrown> {
+    let tmp_dir = java_tmp_dir(parser);
+    let output = ScriptDirectory::under(&tmp_dir, "gcnv-segmented-calls")?;
+    let mut args = vec![
+        "--ploidy_calls_path".to_string(),
+        canonical_path(&require(parser, "contig-ploidy-calls")),
+        "--model_shards".to_string(),
+    ];
+    args.extend(start.models.iter().map(|p| canonical_path(p)));
+    args.push("--calls_shards".to_string());
+    args.extend(start.calls.iter().map(|p| canonical_path(p)));
+    args.extend([
+        "--output_path".to_string(),
+        canonical_path(&output.0.display().to_string()),
+        "--sample_index".to_string(),
+        start.sample_index.to_string(),
+    ]);
+    for (name, python) in [
+        ("input-intervals-vcf", "--intervals_vcf"),
+        ("clustered-breakpoints", "--clustered_vcf"),
+    ] {
+        if let Some(path) = argument(parser, name) {
+            args.extend([python.to_string(), path]);
+        }
+    }
+    let script = python_resource(&tmp_dir, &SEGMENT_CALLS)?;
+    run_python_script(&script.0, &args)?;
+
+    let path = output
+        .0
+        .join(format!("SAMPLE_{}", start.sample_index))
+        .join("copy_number_segments.tsv")
+        .display()
+        .to_string();
+    let (sample, columns, rows) = tables::read_sample_rows(&path)?;
+    let at = |name: &str| columns.iter().position(|c| c == name);
+    let names = [
+        "CONTIG",
+        "START",
+        "END",
+        "NUM_POINTS",
+        "CALL_COPY_NUMBER",
+        "BASELINE_COPY_NUMBER",
+        "QUALITY_SOME_CALLED",
+        "QUALITY_ALL_CALLED",
+        "QUALITY_START",
+        "QUALITY_END",
+    ];
+    let Some(index) = names.iter().map(|n| at(n)).collect::<Option<Vec<usize>>>() else {
+        return Err(bad_input(format!(
+            "Bad header in file.  Not all mandatory columns are present.  Missing: {}",
+            names
+                .iter()
+                .filter(|n| at(n).is_none())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    };
+    let int = |text: &str| {
+        text.parse::<i64>()
+            .map_err(|_| bad_input(format!("Expected an int value but found {text}")))
+    };
+    let segments = rows
+        .iter()
+        .map(|row| {
+            Ok(Segment {
+                contig: row[index[0]].clone(),
+                start: int(&row[index[1]])?,
+                end: int(&row[index[2]])?,
+                num_points: int(&row[index[3]])?,
+                call: int(&row[index[4]])?,
+                baseline: int(&row[index[5]])?,
+                qualities: [
+                    java_double(&row[index[6]])?,
+                    java_double(&row[index[7]])?,
+                    java_double(&row[index[8]])?,
+                    java_double(&row[index[9]])?,
+                ],
+            })
+        })
+        .collect::<Result<Vec<_>, Thrown>>()?;
+    if sample != start.sample {
+        return Err(illegal_state(format!(
+            "Sample name found in the header of copy-number segments file is different from the \
+             expected sample name (found: {sample}, expected: {}).",
+            start.sample
+        )));
+    }
+    Ok(segments)
+}
+
+/// `generateSegmentsVCFFileFromAllShards`.
 fn segments_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
-    let models: Vec<String> = start.models.iter().map(|p| canonical(p)).collect();
-    let calls: Vec<String> = start.calls.iter().map(|p| canonical(p)).collect();
-    let segments = gcnv_segments::read_sample_inputs(
-        &models,
-        &calls,
-        &canonical(&require(parser, "contig-ploidy-calls")),
-        start.sample_index,
-    )
-    .and_then(|inputs| gcnv_segments::segments(&inputs))
-    // Whatever stops the script surfaces in Java as its exit status.
-    .map_err(|_| Thrown::user("Python return code was non-zero."))?;
+    let segments = segment(parser, start)?;
+    if argument(parser, "clustered-breakpoints").is_some() {
+        return Err(port_limit(
+            "Composing segments against --clustered-breakpoints",
+        ));
+    }
+    if argument(parser, "reference").is_some() {
+        return Err(port_limit(
+            "Reading each segment's REF base from --reference",
+        ));
+    }
 
     let mut header = VcfHeader::new();
     header.samples = vec![start.sample.clone()];
@@ -427,15 +531,10 @@ fn segments_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
 
     let mut records = Vec::new();
     for segment in segments {
-        // The script prints each quality with two decimals and Java parses that text.
-        let [qs, qa, qss, qse] = segment.qualities.map(|q| {
-            gcnv_segments::python_fixed2(q)
-                .parse::<f64>()
-                .unwrap_or(f64::NAN)
-        });
-        let call = segment.call as i64;
+        let [qs, qa, qss, qse] = segment.qualities;
+        let call = segment.call;
         let reference = if start.allosomal.contains(&segment.contig) {
-            segment.baseline as i64
+            segment.baseline
         } else {
             start.autosomal_ref
         };
@@ -454,7 +553,7 @@ fn segments_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
         let mut genotype = Genotype::new(&start.sample, genotype_alleles);
         genotype.extended = vec![
             ("CN".to_string(), Value::Int(call)),
-            ("NP".to_string(), Value::Int(segment.num_points as i64)),
+            ("NP".to_string(), Value::Int(segment.num_points)),
             ("QS".to_string(), Value::Int(fast_math_round(qs))),
             ("QA".to_string(), Value::Int(fast_math_round(qa))),
             ("QSS".to_string(), Value::Int(fast_math_round(qss))),
@@ -468,6 +567,8 @@ fn segments_vcf(parser: &Parser, start: &Start) -> Result<String, Thrown> {
         record.log10_p_error = qs / -10.0;
         records.push(record);
     }
+    // `--sites-only-vcf-output` is the writer's: `createVCFWriter` drops the genotypes.
+    apply_sites_only(parser, &mut header, &mut records);
     write_vcf_honouring_lenient(parser, &header, &records)
 }
 
@@ -510,18 +611,6 @@ fn denoised_table(start: &Start) -> Result<String, Thrown> {
 }
 
 pub(super) fn run(parser: &Parser, dictionary: &[SequenceRecord]) -> Outcome {
-    if argument(parser, "clustered-breakpoints").is_some()
-        || argument(parser, "input-intervals-vcf").is_some()
-    {
-        return Err(port_limit(
-            "Segmenting along --clustered-breakpoints and --input-intervals-vcf",
-        ));
-    }
-    if argument(parser, "reference").is_some() {
-        return Err(port_limit(
-            "Reading each segment's REF base from --reference",
-        ));
-    }
     let start = on_traversal_start(parser, dictionary)?;
     let intervals = intervals_vcf(parser, &start)?;
     write_variant_output(
