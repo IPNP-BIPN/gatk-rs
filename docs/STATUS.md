@@ -246,7 +246,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | t=2, 8/8 rows (100%), **1 distinct output** | not measured |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | t=2, 6/6 rows (100%) | 0.003 / 0.077 |
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.066 |
-| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.003 / 0.080 |
+| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers, port-limitations | 2 | t=2, 6/6 rows (100%) | 0.003 / 0.080 |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums | 3 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |

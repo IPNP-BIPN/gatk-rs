@@ -18990,15 +18990,24 @@ pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
     let output = argument(parser, "O")
         .ok_or_else(|| Thrown::command_line("Argument O was missing: Argument 'O' is required"))?;
     let inputs = arguments(parser, "I");
-    let text = std::fs::read_to_string(&dictionary_path).map_err(|_| {
+    // `loadFastaDictionary(File)` makes the path absolute and opens it through a GATKPath, whose
+    // `getInputStream` wraps any failure to open; a directory opens and fails on its first read.
+    let absolute = java_absolute_path(&dictionary_path);
+    if std::path::Path::new(&dictionary_path).is_dir() {
+        return Err(Thrown::non_user(
+            "htsjdk.samtools.util.RuntimeIOException",
+            "java.io.IOException: Is a directory",
+        ));
+    }
+    let bytes = std::fs::read(&dictionary_path).map_err(|_| {
         Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "{dictionary_path} could not be read, and the reference's refusal carries the \
-                 message of an IOException the port does not reproduce"
-            ),
+            "java.lang.RuntimeException",
+            // shortcut: the URI is not percent-encoded, which a path with a space or a non-ASCII
+            // character would need.
+            format!("Could not create open input stream for {absolute} (as URI file://{absolute})"),
         )
     })?;
+    let text = String::from_utf8_lossy(&bytes);
     let header = htsjdk_bam::reader::parse_header_text(&text);
     if header.sequences.is_empty() {
         return Err(Thrown {
@@ -19006,8 +19015,7 @@ pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
             exception: "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile",
             message: Some(format!(
                 "Unknown file is malformed: Could not read sequence dictionary from given fasta \
-                 file {}",
-                java_absolute_path(&dictionary_path)
+                 file {absolute}"
             )),
         });
     }
