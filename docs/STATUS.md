@@ -301,7 +301,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.064 |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.055 |
-| `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) | 0.003 / 0.044 |
+| `PrintReads` | record-transform | oracle-backed | cram-output, expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 5 | t=2, 21/21 rows (100%) | 0.003 / 0.044 |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.063 |
 | `PrintReadsSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `PrintSVEvidence` | sv-caller | oracle-backed | print-sv-evidence | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.051 |
