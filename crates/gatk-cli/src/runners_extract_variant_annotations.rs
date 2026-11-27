@@ -19,7 +19,7 @@
 use super::*;
 use gatk_tools::extract_variant_annotations as extract;
 use gatk_tools::hdf5_writer::Hdf5File;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 /// One extracted record: its alternates, type and labels, as `Triple`s per datum.
 pub(super) type Metadata = Vec<extract::Extracted>;
@@ -30,8 +30,12 @@ pub(super) struct Resource {
     /// The path as given, where no index stands beside it to answer a query.
     unindexed: Option<String>,
     labels: BTreeSet<String>,
-    records: Vec<(extract::Record, bool, bool)>,
+    /// By where they start, which is all a match compares first; in file order within a start.
+    records: HashMap<(String, i32), Vec<ResourceRecord>>,
 }
+
+/// A resource record, with `hasGenotypes` and `isPolymorphicInSamples`.
+type ResourceRecord = (extract::Record, bool, bool);
 
 /// The port's reduced record, from a decoded one.
 pub(super) fn reduced(record: &htsjdk_vcf::variant::VariantContext) -> extract::Record {
@@ -104,10 +108,8 @@ fn matching_labels(
                  file, please index it using the bundled tool IndexFeatureFile"
             )));
         }
-        for (candidate, has_genotypes, polymorphic) in &resource.records {
-            if candidate.contig != record.contig || candidate.start != record.start {
-                continue;
-            }
+        let at = resource.records.get(&(record.contig.clone(), record.start));
+        for (candidate, has_genotypes, polymorphic) in at.into_iter().flatten() {
             if extract::is_matching_variant(
                 record,
                 candidate,
@@ -380,11 +382,17 @@ pub(super) fn labelled_walker_start(
             records: resource_file
                 .records
                 .iter()
-                .map(|record| {
+                .fold(HashMap::new(), |mut by_start, record| {
                     let (has, polymorphic) = genotype_facts(record);
-                    (reduced(record), has, polymorphic)
-                })
-                .collect(),
+                    let mut reduced = reduced(record);
+                    // A resource is matched on its site, alleles and filters; its INFO is never read.
+                    reduced.attributes = Vec::new();
+                    by_start
+                        .entry((reduced.contig.clone(), reduced.start))
+                        .or_insert_with(Vec::new)
+                        .push((reduced, has, polymorphic));
+                    by_start
+                }),
         });
     }
     extract::check_resource_labels(&labels).map_err(|message| Thrown {

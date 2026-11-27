@@ -1147,10 +1147,7 @@ pub fn keeps_after_subset(
         }
     }
 
-    if !arguments.apply_jexl_filters_first && !passes_jexl_filters(filter_record, arguments)? {
-        return Ok(false);
-    }
-    Ok(true)
+    Ok(arguments.apply_jexl_filters_first || passes_jexl_filters(filter_record, arguments)?)
 }
 
 /// `passesJexlFilters`: the expressions are OR-ed, and `--invert-select` inverts EACH of them
