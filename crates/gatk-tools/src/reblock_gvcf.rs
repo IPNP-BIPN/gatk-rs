@@ -1047,35 +1047,6 @@ fn update_mq_annotations(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_reducible_list_is_remapped_with_the_reference_and_a_reduced_one_without() {
-        let values: Vec<String> = ["", "a", "b", "c"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(remap_list(&values, &[0, 2, 3], 0, ""), vec!["", "b", "c"]);
-        let alts: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(remap_list(&alts, &[0, 2, 3], 1, ""), vec!["b", "c"]);
-    }
-
-    #[test]
-    fn a_bracketed_list_loses_its_brackets_and_spaces() {
-        let value = Value::List(vec![Value::Str("1".into()), Value::Str("2".into())]);
-        assert_eq!(allele_list(&value, ','), vec!["1", "2"]);
-        assert_eq!(
-            allele_list(&Value::Str("|1|2".into()), '|'),
-            vec!["", "1", "2"]
-        );
-    }
-
-    #[test]
-    fn second_smallest_minus_smallest_is_the_gap_or_the_default() {
-        assert_eq!(second_smallest_minus_smallest(&[0, 25, 250], 0), 25);
-        assert_eq!(second_smallest_minus_smallest(&[7], 3), 3);
-    }
-}
-
 /// `copyInfoAnnotations` over the engine's INFO annotations, which `VCFComparator` shares.
 pub fn copy_info_annotations(
     annotations: &[&'static Entry],
@@ -1132,5 +1103,34 @@ pub fn copy_info_annotations(
                 put(destination, raw_key, value.clone());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reducible_list_is_remapped_with_the_reference_and_a_reduced_one_without() {
+        let values: Vec<String> = ["", "a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(remap_list(&values, &[0, 2, 3], 0, ""), vec!["", "b", "c"]);
+        let alts: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(remap_list(&alts, &[0, 2, 3], 1, ""), vec!["b", "c"]);
+    }
+
+    #[test]
+    fn a_bracketed_list_loses_its_brackets_and_spaces() {
+        let value = Value::List(vec![Value::Str("1".into()), Value::Str("2".into())]);
+        assert_eq!(allele_list(&value, ','), vec!["1", "2"]);
+        assert_eq!(
+            allele_list(&Value::Str("|1|2".into()), '|'),
+            vec!["", "1", "2"]
+        );
+    }
+
+    #[test]
+    fn second_smallest_minus_smallest_is_the_gap_or_the_default() {
+        assert_eq!(second_smallest_minus_smallest(&[0, 25, 250], 0), 25);
+        assert_eq!(second_smallest_minus_smallest(&[7], 3), 3);
     }
 }
