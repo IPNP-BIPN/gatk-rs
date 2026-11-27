@@ -29,7 +29,7 @@ The 3 tests take less than 0.01 s. hdf5-pure is built with `default-features = f
 features = ["std", "checksum"]`, which leaves out deflate. The writer never compresses, and leaving
 deflate out means the dev-dependency adds 5 packages to `Cargo.lock` (hdf5-pure and its four
 `-core`/`-filter`/`-format`/`-space` crates, all pinned with `=` to the same version) and no other
-third-party code. The licence is MIT OR Apache-2.0 and the rust-version is 1.89, below the pinned 1.97.1.
+third-party code. The licence is MIT OR Apache-2.0 and the rust-version is 1.89, below the pinned 1.98.0.
 
 ## What it caught
 

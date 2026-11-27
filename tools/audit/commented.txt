@@ -5,10 +5,16 @@
 #
 # Regenerate with: python3 tools/audit/comment_density.py --record
 
-crates/gatk-engine/src/fragment.rs 1.149
-crates/gatk-engine/src/histogram.rs 0.609
-crates/gatk-engine/src/math_utils.rs 1.930
 crates/gatk-annotation/src/haplotype_filtering.rs 1.508
-crates/gatk-engine/src/haplotype.rs 1.706
+crates/gatk-barclay/src/lib.rs 0.466
+crates/gatk-engine/src/fisher_exact.rs 2.035
+crates/gatk-engine/src/fragment.rs 1.149
+crates/gatk-engine/src/haplotype.rs 1.707
+crates/gatk-engine/src/histogram.rs 1.101
+crates/gatk-engine/src/java_hash.rs 0.739
+crates/gatk-engine/src/java_random.rs 1.811
+crates/gatk-engine/src/mann_whitney.rs 0.947
+crates/gatk-engine/src/math_utils.rs 2.077
+crates/gatk-engine/src/permutation.rs 1.114
+crates/gatk-engine/src/well19937c.rs 1.115
 crates/gatk-tools/src/multi_pass.rs 1.085
-crates/gatk-barclay/src/lib.rs 0.425

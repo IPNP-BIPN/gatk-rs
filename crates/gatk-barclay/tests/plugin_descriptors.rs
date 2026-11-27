@@ -259,3 +259,79 @@ fn an_unknown_filter_name_is_refused_by_the_descriptor() {
         "Unrecognized read filter name: NoSuchReadFilter"
     );
 }
+
+/// `isDependentArgumentAllowed`, asked directly, against the `allowed` rows of the
+/// `plugin-argument-ownership` golden (`PluginArgumentOwnershipDump`): a tool default counts as
+/// named, a filter nobody named does not, and the annotation descriptor also admits a plugin
+/// through a group, the tool's default groups or one the command line names.
+#[test]
+fn a_default_or_a_group_counts_as_selected() {
+    let text = corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../gatk-tools/tests/data/plugin_argument_ownership.txt.gz"),
+    );
+    let groups = Definition::new(
+        Annotation {
+            full_name: "annotation-group",
+            optional: true,
+            ..Annotation::default()
+        },
+        "annotationGroupsToUse",
+        ValueClass::Text,
+        true,
+        false,
+        Value::List(Vec::new()),
+    );
+    let mut rows = 0;
+    for line in text.lines().filter(|line| line.starts_with("allowed\t")) {
+        let row: Vec<&str> = line.split('\t').collect();
+        let (label, expected) = (row[1], row[3] == "true");
+        // A `PluginControl` names its class with a `'static` string.
+        let plugin = [
+            "WellformedReadFilter",
+            "MappedReadFilter",
+            "LibraryReadFilter",
+            "Coverage",
+            "ReferenceBases",
+        ]
+        .into_iter()
+        .find(|name| *name == row[2])
+        .expect("a plugin the dump asks about");
+        let mut parser = Parser::new(vec![groups.clone()]);
+        // The dump's defaults: two read filters, or one annotation group.
+        let defaults: &[&str] = match label {
+            "wellformed-and-mapped" => &["WellformedReadFilter", "MappedReadFilter"],
+            "annotation-standard-by-default" => &["StandardAnnotation"],
+            _ => &[],
+        };
+        parser = parser.with_default_plugins(defaults.iter().map(|d| d.to_string()).collect());
+        if label == "annotation-standard-named" {
+            parser
+                .parse_arguments(&["--annotation-group", "StandardAnnotation"])
+                .expect("a group name");
+        }
+        let control = if label.starts_with("annotation-") {
+            PluginControl {
+                predecessor: plugin,
+                selector: "annotation",
+                // `Coverage implements StandardAnnotation, StandardMutectAnnotation`.
+                groups: if plugin == "Coverage" {
+                    &["StandardAnnotation", "StandardMutectAnnotation"]
+                } else {
+                    &[]
+                },
+                group_selector: Some("annotation-group"),
+            }
+        } else {
+            PluginControl {
+                predecessor: plugin,
+                selector: SELECTOR,
+                groups: &[],
+                group_selector: None,
+            }
+        };
+        assert_eq!(parser.plugin_is_selected(&control), expected, "{line}");
+        rows += 1;
+    }
+    assert_eq!(rows, 12);
+}

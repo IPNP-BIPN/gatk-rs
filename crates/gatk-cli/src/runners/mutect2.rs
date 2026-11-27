@@ -1015,6 +1015,13 @@ fn permutect_datasets(
         engines,
         normal_samples: normal_samples.to_vec(),
         read_groups: header.read_groups.iter().map(|g| g.id.clone()).collect(),
-        contigs: header.sequences.iter().map(|s| s.name.clone()).collect(),
+        // `getBestAvailableSequenceDictionary()`: the master, then the reference, then the reads.
+        contigs: master_dictionary(parser)?
+            .or(reference_dictionary(parser)?)
+            .unwrap_or_else(|| header.clone())
+            .sequences
+            .into_iter()
+            .map(|s| s.name)
+            .collect(),
     }))
 }
