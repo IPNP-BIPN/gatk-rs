@@ -5602,8 +5602,46 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("vcfc_plain.vcf"), vcfHeader.replace("\ts2\n", "\n")
                 + "chr1\t100\t.\tT\tC\t500.30\tPASS\tAC=1;AF=0.500;AN=2;DP=30\t"
                 + "GT:AD:DP:GQ:PL\t" + het + "\n", StandardCharsets.UTF_8);
+        // A GVCF pair whose every variant calls one alternate of two, so the trim drops the other
+        // and the record's annotations go through the engine: actual differs in DP at 100 (claimed
+        // by Coverage), in ReadPosRankSum at 200, in the dropped allele's AS_RAW_MQ at 300 (subset
+        // away) and in a called allele's AS_SB_TABLE at 400 (claimed by AS_StrandOddsRatio).
+        final String trimHeader = gvcfHeader.replace("##INFO=<ID=BaseQRankSum",
+                "##INFO=<ID=AS_RAW_MQ,Number=1,Type=String,Description=\"AS_RAW_MQ\">\n"
+                + "##INFO=<ID=AS_SB_TABLE,Number=1,Type=String,Description=\"AS_SB_TABLE\">\n"
+                + "##INFO=<ID=BaseQRankSum");
+        final String trimGenotype = "\tGT:AD:DP:GQ:PL\t0/1:15,15,0,0:30:99:"
+                + "300,0,300,345,345,690,345,345,690,690\n";
+        final String[][] trim = {
+                {"chr1\t1\t.\tA\t<NON_REF>" + String.format(block, 99)},
+                {"chr1\t100\t.\tT\tC,G,<NON_REF>\t300.00\t.\tDP=30;MLEAC=1,0,0" + trimGenotype,
+                 "chr1\t100\t.\tT\tC,G,<NON_REF>\t300.00\t.\tDP=32;MLEAC=1,0,0" + trimGenotype},
+                {"chr1\t101\t.\tA\t<NON_REF>" + String.format(block, 199)},
+                {"chr1\t200\t.\tT\tA,G,<NON_REF>\t300.00\t.\tDP=30;ReadPosRankSum=1.200" + trimGenotype,
+                 "chr1\t200\t.\tT\tA,G,<NON_REF>\t300.00\t.\tDP=30;ReadPosRankSum=1.500" + trimGenotype},
+                {"chr1\t201\t.\tA\t<NON_REF>" + String.format(block, 299)},
+                {"chr1\t300\t.\tT\tC,A,<NON_REF>\t300.00\t.\tAS_RAW_MQ=54000.00|54000.00|100.00|0.00;DP=30"
+                        + trimGenotype,
+                 "chr1\t300\t.\tT\tC,A,<NON_REF>\t300.00\t.\tAS_RAW_MQ=54000.00|54000.00|900.00|0.00;DP=30"
+                        + trimGenotype},
+                {"chr1\t301\t.\tA\t<NON_REF>" + String.format(block, 399)},
+                {"chr1\t400\t.\tT\tG,C,<NON_REF>\t300.00\t.\tAS_SB_TABLE=8,7|8,7|0,0|0,0;DP=30" + trimGenotype,
+                 "chr1\t400\t.\tT\tG,C,<NON_REF>\t300.00\t.\tAS_SB_TABLE=8,7|5,10|0,0|0,0;DP=30" + trimGenotype},
+                {"chr1\t401\t.\tA\t<NON_REF>" + String.format(block, 2000)},
+        };
+        final StringBuilder trimExpected = new StringBuilder(trimHeader);
+        final StringBuilder trimActual = new StringBuilder(trimHeader);
+        for (final String[] site : trim) {
+            trimExpected.append(site[0]);
+            trimActual.append(site.length > 1 ? site[1] : site[0]);
+        }
+        Files.writeString(dir.resolve("vcfc_trim_expected.g.vcf"), trimExpected.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_trim_actual.g.vcf"), trimActual.toString(),
+                StandardCharsets.UTF_8);
         for (final String name : new String[] {"vcfc_expected.g.vcf", "vcfc_same.g.vcf",
-                "vcfc_actual.g.vcf", "vcfc_expected.vcf", "vcfc_actual.vcf", "vcfc_plain.vcf"}) {
+                "vcfc_actual.g.vcf", "vcfc_expected.vcf", "vcfc_actual.vcf", "vcfc_plain.vcf",
+                "vcfc_trim_expected.g.vcf", "vcfc_trim_actual.g.vcf"}) {
             htsjdk.tribble.index.IndexFactory.createDynamicIndex(
                             dir.resolve(name), new htsjdk.variant.vcf.VCFCodec(),
                             htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)

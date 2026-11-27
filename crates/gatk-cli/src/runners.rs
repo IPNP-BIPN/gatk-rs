@@ -6915,6 +6915,19 @@ pub fn vcf_comparator(parser: &Parser) -> Outcome {
     use gatk_tools::vcf_comparator as comparator;
 
     let _ = resolve_read_filters(parser, "VCFComparator")?;
+    // `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`, while the command line is parsed.
+    let resolved = gatk_annotation::catalogue::resolve(
+        &gatk_annotation::catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &comparator::DEFAULT_ANNOTATION_GROUPS,
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
     let inputs = multi_variant::feature_inputs(parser);
     if inputs.is_empty() {
         return Err(Thrown::command_line(
@@ -6941,13 +6954,7 @@ pub fn vcf_comparator(parser: &Parser) -> Outcome {
         .map(|input| input.input.name().to_string())
         .collect();
     comparator::check_inputs(&names).map_err(|error| Thrown::user(error.message()))?;
-    for configured in [
-        "annotation",
-        "annotation-group",
-        "annotations-to-exclude",
-        "pedigree",
-        "founder-id",
-    ] {
+    for configured in ["pedigree", "founder-id"] {
         if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
             return Err(limitation(&format!(
                 "--{configured} configures GATK's annotation engine, which this port does not \
@@ -7007,8 +7014,7 @@ pub fn vcf_comparator(parser: &Parser) -> Outcome {
         ignore_gq0: flag(parser, "ignore-gq0"),
         ignore_some_multi_allelics: flag(parser, "ignore-some-multi-allelics"),
         annotations_to_keep: arguments(parser, "annotations-to-keep"),
-        enable_all_annotations: flag(parser, "enable-all-annotations"),
-        disable_tool_default_annotations: flag(parser, "disable-tool-default-annotations"),
+        annotations: comparator::info_annotations(&resolved),
         reference_padding: number("ref-padding", 1),
         ignore_variants_starting_outside_interval: flag(
             parser,
