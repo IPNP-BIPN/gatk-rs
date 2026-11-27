@@ -866,9 +866,9 @@ impl Table {
             let line = lines.next().ok_or(ReportReadError::MissingRow)?;
             let fields = split_fixed_width(line, &starts)?;
             let mut row = Vec::with_capacity(columns);
-            for index in 0..columns {
+            for (index, column) in table.columns.iter().enumerate() {
                 let text = fields.get(index).map(String::as_str).unwrap_or("");
-                row.push(parse_value(table.columns[index].data_type, text)?);
+                row.push(parse_value(column.data_type, text)?);
             }
             // The widths of a parsed table are recomputed from its values, exactly as they are when
             // it is built by hand, which is why a second writing reproduces the first.
