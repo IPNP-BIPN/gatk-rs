@@ -16,9 +16,9 @@ AVX2 and FMA and no AVX-512, against 4.6.2.0. CI has since re-derived them on re
 | --- | --- | --- |
 | `TrainVariantAnnotationsModel` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` with a seed | h5py score files identical; scorer identical but for its random script name |
 | `ScoreVariantAnnotations` | **Byte-identical reachable, and landed**, for `PYTHON_IFOREST` | VCF identical; `.scores.hdf5` doubles identical (the reference's file holds the time) |
-| `DetermineGermlineContigPloidy` | **Ported against the frozen reference** ([gcnv-ploidy.md](gcnv-ploidy.md)), cohort mode with ADVI's convergence tracker out of reach: all 38 golden files byte-identical | The six compiled graphs reproduced op by op under `gcnv_frozen_env.sh`, checked call by call against a trace |
-| `GermlineCNVCaller` | **Keeps the interpreter** | Same |
-| `PostprocessGermlineCNVCalls` | **Ported against the frozen reference** ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical locally, CI golden pending | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
+| `DetermineGermlineContigPloidy` | **Runs GATK's scripts, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh`. A native port of cohort mode is kept as a library ([gcnv-ploidy.md](gcnv-ploidy.md)): all 38 golden files byte-identical | The six compiled graphs reproduced op by op under `gcnv_frozen_env.sh`, checked call by call against a trace |
+| `GermlineCNVCaller` | **Runs GATK's scripts, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh` | Same |
+| `PostprocessGermlineCNVCalls` | **Runs GATK's script, as GATK does**; its arguments measured past the interpreter under `gcnv_frozen_env.sh`. The segmenter's native port is kept as a library ([gcnv-postprocess.md](gcnv-postprocess.md)): all three outputs byte-identical | Stable on fixed shards; the segmenter's compiled C reproduced op by op under `gcnv_frozen_env.sh` |
 
 No tool is in the "only a stated numeric tolerance" class. A tolerance would need a reimplementation
 of the inference to measure against, and none exists.
@@ -147,11 +147,11 @@ scikit-learn's mixture would describe a model GATK does not run.
 
 ### `PostprocessGermlineCNVCalls`
 
-Ported against the frozen reference (`gcnv_frozen_env.sh`), not against GATK's own configuration,
-which has no CPU-independent target: the intervals VCF and the denoised table are Java, and
-`segment_gcnv_calls.py`'s compiled forward-backward, Viterbi and qualities are reproduced op by op
-in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
-`gatk_tools::glibc_libm`. `python` and `gcnvkernel` must still import, as for the reference.
+The CLI runs `segment_gcnv_calls.py` as GATK does; the intervals VCF, the denoised table and the
+segments VCF around it are Java. Against the frozen reference (`gcnv_frozen_env.sh`), not GATK's own
+configuration, which has no CPU-independent target, the script's compiled forward-backward, Viterbi
+and qualities are also reproduced op by op in the library `gatk_tools::gcnv_segments`, with glibc's
+SSE2 `exp`/`log`/`log1p`/`expm1` in `gatk_tools::glibc_libm`.
 [gcnv-postprocess.md](gcnv-postprocess.md) says what is proven and how.
 
 ## What #806 can and cannot claim
@@ -159,9 +159,10 @@ in `gatk_tools::gcnv_segments`, with glibc's SSE2 `exp`/`log`/`log1p`/`expm1` in
 Can claim, **once CI confirms**: `TrainVariantAnnotationsModel` and `ScoreVariantAnnotations` reproduce
 the reference for the default backend with a seeded forest, the scorer modulo its random script name.
 
-Cannot claim: anything for `GermlineCNVCaller` beyond the checks before the import,
-`DetermineGermlineContigPloidy` in case mode or where the convergence tracker could stop ADVI, `PostprocessGermlineCNVCalls` before the `gcnv-frozen` golden lands, and any byte target for
-a scorer's name or for the time inside a Java-written HDF5 file.
+Cannot claim: a byte target for the gCNV tools under GATK's own configuration (only under
+`gcnv_frozen_env.sh`), a native `GermlineCNVCaller`, the native `DetermineGermlineContigPloidy` in
+case mode or where the convergence tracker could stop ADVI, and any byte target for a scorer's name
+or for the time inside a Java-written HDF5 file.
 
 ## What needs CI
 

@@ -17246,19 +17246,24 @@
     },
     "PostprocessGermlineCNVCalls": {
       "$why": [
-        "GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over a shard",
-        "directory that holds none is refused ahead of the import that otherwise ends every row. --reference, --input and the rest",
-        "of the standard arguments are held out: past that import nothing reads them."
+        "Past the interpreter: both sides run in the Broad's image under gcnv_frozen_env.sh ($environment), the port through the",
+        "pinned image's glibc, and hand gcnvkernel GATK's segment_gcnv_calls.py; the call and model shards and the ploidy calls",
+        "are the reference's own, made before the rows (run_array.build_gcnv). GATKTool's startup comes first, and -L there reads",
+        "the shards' interval lists for its dictionary. --input-intervals-vcf and --clustered-breakpoints name a file that is",
+        "not there, which the script refuses: the composer's joint-calling path is not ported. --reference, --input and the rest",
+        "of the standard arguments are held out: past the import nothing reads them."
       ],
+      "$past_the_interpreter": "python",
+      "$environment": "tools/python-tools/gcnv_frozen_env.sh",
       "--calls-shard-path": [
-        "/work/fixtures/it/shard",
+        "/work/fixtures/gcnv/g-calls",
         "/work/fixtures/nothing"
       ],
       "--model-shard-path": [
-        "/work/fixtures/it/shard"
+        "/work/fixtures/gcnv/g-model"
       ],
       "--contig-ploidy-calls": [
-        "/work/fixtures/nothing"
+        "/work/fixtures/gcnv/p-calls"
       ],
       "--sample-index": [
         "0",
@@ -17270,7 +17275,7 @@
       ],
       "--allosomal-contig": [
         "null",
-        "chr2"
+        "chrX"
       ],
       "--input-intervals-vcf": [
         "null",
@@ -17470,70 +17475,331 @@
       "--variant-output-filtering": []
     },
     "DetermineGermlineContigPloidy": {
-      "--input": [
-        "/work/fixtures/nothing.tsv"
-      ],
-      "--output-prefix": [
-        "p",
-        "q"
-      ],
-      "--output": [
-        "/work/out/made"
+      "$past_the_interpreter": "python",
+      "$environment": "tools/python-tools/gcnv_frozen_env.sh",
+      "$lists": [
+        "--input"
       ],
       "$why": [
-        "The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and",
-        "no input is opened. What the array measures is the parser over the tool's arguments, in-range values only."
+        "Past the interpreter: both sides run in the Broad's image, the port through the pinned image's glibc, and hand",
+        "gcnvkernel GATK's own cohort or case script, under gcnv_frozen_env.sh with one pytensor compile directory between",
+        "them ($environment). Four samples of make_gcnv_fixture.py (three contigs, ten intervals each) and the case-mode",
+        "model under gcnv/ are made once by the reference before the rows (run_array.build_gcnv). Every numeric argument has",
+        "two in-range values, the iteration, epoch and sampling counts small ones so that a row takes seconds: the parser's",
+        "bounds are measured on every other tool, and a third, out-of-range value would refuse all but a row or two before",
+        "the script. --mapping-error-rate keeps 0.0 for the collection's own refusal. --convergence-snr-averaging-window",
+        "takes 20, not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10."
       ],
-      "--contig-ploidy-priors": [
-        "null",
-        "/work/fixtures/nothing.tsv"
-      ],
-      "--model": [
-        "null",
-        "/work/fixtures/nothing"
+      "--input": [
+        "/work/fixtures/gcnv/sample0.counts.tsv /work/fixtures/gcnv/sample1.counts.tsv /work/fixtures/gcnv/sample2.counts.tsv /work/fixtures/gcnv/sample3.counts.tsv",
+        "/work/fixtures/gcnv/sample3.counts.tsv"
       ],
       "--intervals": [
-        "null"
+        "null",
+        "/work/fixtures/gcnv/intervals.interval_list"
       ],
       "--exclude-intervals": [
         "null"
-      ]
-    },
-    "GermlineCNVCaller": {
-      "--input": [
-        "/work/fixtures/nothing.tsv"
       ],
       "--output-prefix": [
         "p",
         "q"
       ],
+      "--contig-ploidy-priors": [
+        "/work/fixtures/gcnv/priors.tsv",
+        "null"
+      ],
+      "--model": [
+        "null",
+        "/work/fixtures/gcnv/p-model"
+      ],
       "--output": [
-        "/work/out/made"
+        "/work/out/ploidy"
+      ],
+      "--mapping-error-rate": [
+        "0.3",
+        "0.1",
+        "0.0"
+      ],
+      "--mean-bias-standard-deviation": [
+        "1.0",
+        "0.5"
+      ],
+      "--global-psi-scale": [
+        "0.001",
+        "0.01"
+      ],
+      "--sample-psi-scale": [
+        "1.0E-4",
+        "0.001"
+      ],
+      "--learning-rate": [
+        "0.05",
+        "0.1"
+      ],
+      "--adamax-beta-1": [
+        "0.9",
+        "0.8"
+      ],
+      "--adamax-beta-2": [
+        "0.999",
+        "0.99"
+      ],
+      "--log-emission-samples-per-round": [
+        "20",
+        "50"
+      ],
+      "--log-emission-sampling-median-rel-error": [
+        "5.0E-4",
+        "0.01"
+      ],
+      "--log-emission-sampling-rounds": [
+        "1",
+        "2"
+      ],
+      "--max-advi-iter-first-epoch": [
+        "10",
+        "20"
+      ],
+      "--max-advi-iter-subsequent-epochs": [
+        "10",
+        "20"
+      ],
+      "--min-training-epochs": [
+        "1",
+        "2"
+      ],
+      "--max-training-epochs": [
+        "2",
+        "3"
+      ],
+      "--initial-temperature": [
+        "2.0",
+        "1.0"
+      ],
+      "--num-thermal-advi-iters": [
+        "10",
+        "20"
+      ],
+      "--convergence-snr-averaging-window": [
+        "5000",
+        "20"
+      ],
+      "--convergence-snr-trigger-threshold": [
+        "0.1",
+        "0.5"
+      ],
+      "--convergence-snr-countdown-window": [
+        "10",
+        "5"
+      ],
+      "--max-calling-iters": [
+        "1",
+        "2"
+      ],
+      "--caller-update-convergence-threshold": [
+        "0.001",
+        "0.01"
+      ],
+      "--caller-internal-admixing-rate": [
+        "0.75",
+        "0.5"
+      ],
+      "--caller-external-admixing-rate": [
+        "0.75",
+        "1.0"
+      ]
+    },
+    "GermlineCNVCaller": {
+      "$past_the_interpreter": "python",
+      "$environment": "tools/python-tools/gcnv_frozen_env.sh",
+      "$lists": [
+        "--input"
       ],
       "$why": [
-        "The import in onStartup fails for want of python before doWork, so every row the parser accepts ends on the same line and",
-        "no input is opened. What the array measures is the parser over the tool's arguments, in-range values only."
+        "Past the interpreter as DetermineGermlineContigPloidy is: the same image, environment and fixture, with the reference's",
+        "ploidy calls, and its cohort model for case mode and as an initial model, under gcnv/. Two in-range values per numeric",
+        "argument, the iteration, epoch and sampling counts small. The arguments a model fixes are refused in CASE mode once",
+        "SET, and a row carries every argument it varies, so each has <unset> as a value and a constraint keeps the other off",
+        "CASE rows; --num-gc-bins is left free so that the refusal is measured. --convergence-snr-averaging-window takes 20,",
+        "not 10: Java allows any window, but gcnvkernel's ELBO convergence tracker asserts one above 10."
+      ],
+      "--input": [
+        "/work/fixtures/gcnv/sample0.counts.tsv /work/fixtures/gcnv/sample1.counts.tsv /work/fixtures/gcnv/sample2.counts.tsv /work/fixtures/gcnv/sample3.counts.tsv",
+        "/work/fixtures/gcnv/sample3.counts.tsv"
+      ],
+      "--intervals": [
+        "null",
+        "/work/fixtures/gcnv/intervals.interval_list"
+      ],
+      "--exclude-intervals": [
+        "null"
+      ],
+      "--output-prefix": [
+        "p",
+        "q"
       ],
       "--run-mode": [
         "COHORT",
         "CASE"
       ],
       "--contig-ploidy-calls": [
-        "/work/fixtures/nothing"
+        "/work/fixtures/gcnv/p-calls"
       ],
       "--model": [
-        "null",
-        "/work/fixtures/nothing"
+        "/work/fixtures/gcnv/g-model",
+        "null"
       ],
       "--annotated-intervals": [
         "null",
-        "/work/fixtures/nothing.tsv"
+        "/work/fixtures/gcnv/annotated.tsv"
       ],
-      "--intervals": [
-        "null"
+      "--output": [
+        "/work/out/gcnv"
       ],
-      "--exclude-intervals": [
-        "null"
+      "--mapping-error-rate": [
+        "0.01",
+        "0.02"
+      ],
+      "--sample-psi-scale": [
+        "0.01",
+        "0.001"
+      ],
+      "--depth-correction-tau": [
+        "10000.0",
+        "1000.0"
+      ],
+      "--active-class-padding-hybrid-mode": [
+        "50000",
+        "1000"
+      ],
+      "--num-samples-copy-ratio-approx": [
+        "200",
+        "50"
+      ],
+      "--p-alt": [
+        "5.0E-4",
+        "0.001"
+      ],
+      "--cnv-coherence-length": [
+        "10000.0",
+        "5000.0"
+      ],
+      "--max-copy-number": [
+        "5",
+        "3"
+      ],
+      "--max-bias-factors": [
+        "<unset>",
+        "2"
+      ],
+      "--interval-psi-scale": [
+        "<unset>",
+        "0.001"
+      ],
+      "--log-mean-bias-standard-deviation": [
+        "<unset>",
+        "0.2"
+      ],
+      "--init-ard-rel-unexplained-variance": [
+        "<unset>",
+        "0.2"
+      ],
+      "--enable-bias-factors": [
+        "<unset>",
+        "false"
+      ],
+      "--num-gc-bins": [
+        "<unset>",
+        "10"
+      ],
+      "--gc-curve-standard-deviation": [
+        "<unset>",
+        "0.5"
+      ],
+      "--p-active": [
+        "<unset>",
+        "0.2"
+      ],
+      "--class-coherence-length": [
+        "<unset>",
+        "5000.0"
+      ],
+      "--learning-rate": [
+        "0.01",
+        "0.05"
+      ],
+      "--adamax-beta-1": [
+        "0.9",
+        "0.8"
+      ],
+      "--adamax-beta-2": [
+        "0.99",
+        "0.999"
+      ],
+      "--log-emission-samples-per-round": [
+        "20",
+        "50"
+      ],
+      "--log-emission-sampling-median-rel-error": [
+        "0.005",
+        "0.01"
+      ],
+      "--log-emission-sampling-rounds": [
+        "1",
+        "2"
+      ],
+      "--max-advi-iter-first-epoch": [
+        "10",
+        "20"
+      ],
+      "--max-advi-iter-subsequent-epochs": [
+        "10",
+        "20"
+      ],
+      "--min-training-epochs": [
+        "1",
+        "2"
+      ],
+      "--max-training-epochs": [
+        "2",
+        "3"
+      ],
+      "--initial-temperature": [
+        "1.5",
+        "1.0"
+      ],
+      "--num-thermal-advi-iters": [
+        "10",
+        "20"
+      ],
+      "--convergence-snr-averaging-window": [
+        "500",
+        "20"
+      ],
+      "--convergence-snr-trigger-threshold": [
+        "0.1",
+        "0.5"
+      ],
+      "--convergence-snr-countdown-window": [
+        "10",
+        "5"
+      ],
+      "--max-calling-iters": [
+        "1",
+        "2"
+      ],
+      "--caller-update-convergence-threshold": [
+        "0.001",
+        "0.01"
+      ],
+      "--caller-internal-admixing-rate": [
+        "0.75",
+        "0.5"
+      ],
+      "--caller-external-admixing-rate": [
+        "1.0",
+        "0.75"
       ]
     },
     "FindBreakpointEvidenceSpark": {
@@ -20237,6 +20503,186 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--model": "/work/fixtures/gcnv/g-model",
+        "--max-bias-factors": "2"
+      },
+      "why": "gcnvkernel loads the model's W_tu with the shape the model was built with (the default bias factors), and stops on any other: 'Loaded mean for \"W_tu\" has an unexpected shape'."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--model": "/work/fixtures/gcnv/g-model",
+        "--annotated-intervals": "/work/fixtures/gcnv/annotated.tsv"
+      },
+      "why": "With --model, COHORT mode models the model's own intervals, which carry no GC_CONTENT (it was built without --annotated-intervals), yet still enables explicit GC bias modeling, and gcnvkernel stops on the missing annotation. Scoped to COHORT, the clause would need three arguments, and covering.py drops the rows it cannot extend under one, losing pairs; so CASE's refusal of --annotated-intervals, checked only once a model is given, goes unmeasured here."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--max-bias-factors": "2"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--interval-psi-scale": "0.001"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--log-mean-bias-standard-deviation": "0.2"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--init-ard-rel-unexplained-variance": "0.2"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--enable-bias-factors": "false"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--gc-curve-standard-deviation": "0.5"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--p-active": "0.2"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--run-mode": "CASE",
+        "--class-coherence-length": "5000.0"
+      },
+      "why": "A model fixes it, and CASE mode refuses it once set; --num-gc-bins measures that refusal."
+    },
+    {
+      "tools": [
+        "DetermineGermlineContigPloidy"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-set-rule": "INTERSECTION"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "DetermineGermlineContigPloidy"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-padding": "100"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "DetermineGermlineContigPloidy"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-exclusion-padding": "50"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "DetermineGermlineContigPloidy"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-merging-rule": "ALL"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-set-rule": "INTERSECTION"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-padding": "100"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-exclusion-padding": "50"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
+    },
+    {
+      "tools": [
+        "GermlineCNVCaller"
+      ],
+      "forbid": {
+        "--intervals": "/work/fixtures/gcnv/intervals.interval_list",
+        "--interval-merging-rule": "ALL"
+      },
+      "why": "Copy-number tools refuse an -L that is padded, intersected or merged across abutting intervals; that refusal is CopyNumberArgumentValidationUtils' and measured on PreprocessIntervals and FilterIntervals, and here it would stop the rows with -L before the script."
     }
   ],
   "exclude": {
