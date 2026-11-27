@@ -150,7 +150,7 @@ fn log1mexp_with_host_exp(a: f64) -> f64 {
         return f64::NEG_INFINITY;
     }
     if a < jmath::math::log(0.5) {
-        (-std::hint::black_box(a).exp()).ln_1p()
+        (-crate::natural_log_utils::host_exp(std::hint::black_box(a))).ln_1p()
     } else {
         jmath::math::log(-(a.exp_m1()))
     }

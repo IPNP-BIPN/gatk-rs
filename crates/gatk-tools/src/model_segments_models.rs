@@ -558,7 +558,7 @@ fn log_sum_exp(values: &[f64]) -> f64 {
         if index == max_index || *value == f64::NEG_INFINITY {
             continue;
         }
-        sum += (value - max_value).exp();
+        sum += gatk_engine::natural_log_utils::host_exp(value - max_value);
     }
     if sum.is_nan() || sum == f64::INFINITY {
         return f64::NAN;

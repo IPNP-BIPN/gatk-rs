@@ -102,7 +102,8 @@ pub struct ActivityProfile {
 /// without redoing that measurement: `docs/numeric-functions-a-ported-call-site-reaches.md`.
 pub fn normal_distribution(mean: f64, sd: f64, x: f64) -> f64 {
     assert!(sd >= 0.0, "sd: Standard deviation of normal must be >= 0");
-    (-(x - mean) * (x - mean) / (2.0 * sd * sd)).exp() / (sd * root_two_pi())
+    crate::natural_log_utils::host_exp(-(x - mean) * (x - mean) / (2.0 * sd * sd))
+        / (sd * root_two_pi())
 }
 
 /// `BandPassActivityProfile.makeKernel`.

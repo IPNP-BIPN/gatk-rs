@@ -152,10 +152,26 @@ pub fn normalize_from_log_to_linear_space(array: &[f64]) -> Result<Vec<f64>, Non
 /// an ulp away from the oracle's; built on the host `exp`, all eight match. The same two rows
 /// match the fdlibm build exactly when the reference runs with `-XX:-UseLibmIntrinsic`, which is
 /// what pins the difference on the intrinsic and on nothing else in the EM.
+///
+/// The measurement is x86-64's, where the host is glibc. Elsewhere the host is another libm (Apple's
+/// on aarch64) that is no closer to the intrinsic, and `SomaticClusteringModel`'s `one-alt-learned`
+/// row drifts 136 ulps through it, past the 90 it stays within on fdlibm, so off x86-64 this is
+/// fdlibm's `exp`.
 pub fn normalize_from_log_to_linear_space_host_exp(
     array: &[f64],
 ) -> Result<Vec<f64>, NonFiniteSum> {
-    normalize_log_with(array, false, f64::exp)
+    normalize_log_with(array, false, host_exp)
+}
+
+/// The `exp` every "host `exp`" call site takes: glibc's on x86-64, where each was measured closer
+/// to `Math.exp` than fdlibm, and fdlibm's elsewhere, where the host libm (Apple's on aarch64) was
+/// never measured and drifts further.
+#[inline(always)]
+pub fn host_exp(x: f64) -> f64 {
+    #[cfg(target_arch = "x86_64")]
+    return x.exp();
+    #[cfg(not(target_arch = "x86_64"))]
+    return exp(x);
 }
 
 /// `posteriors(logPriors, logLikelihoods)`, which is what the Dirichlet fixed point calls per read.
