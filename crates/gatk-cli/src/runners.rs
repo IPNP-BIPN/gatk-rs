@@ -15776,6 +15776,10 @@ fn variant_eval_thrown(error: gatk_tools::variant_eval_engine::EvalError) -> Thr
 }
 
 impl gatk_tools::variant_eval_engine::ReferenceBases for ReferenceBases<'_> {
+    fn has_contig(&mut self, contig: &str) -> bool {
+        self.0.sequence_length(contig).is_some()
+    }
+
     fn bases(&mut self, contig: &str, start: i64, end: i64) -> Vec<u8> {
         let length = self.0.sequence_length(contig).unwrap_or(0) as i64;
         let end = end.min(length);
