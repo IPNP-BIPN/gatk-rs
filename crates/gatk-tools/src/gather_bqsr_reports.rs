@@ -20,13 +20,16 @@
 //! quality-score table, at the FIRST report's level count. And an EMPTY REPORT IS SKIPPED by the
 //! combine, so a gather of nothing but empty shards falls out of the `filter` and refuses.
 //!
-//! The arguments table written at the end is the first input's. What it holds is the recalibration
-//! ARGUMENT COLLECTION and not the command line, so every shard of one scattered run carries the
-//! same one and gathering two shards in either order gives the same bytes.
+//! The arguments table written at the end is the first input's, as read and not regenerated. What
+//! it holds is the recalibration ARGUMENT COLLECTION and not the command line, so every shard of
+//! one scattered run carries the same one and gathering two shards in either order gives the same
+//! bytes.
 
 use gatk_engine::qual_quantizer::{QualQuantizer, QuantizationInfo, MIN_USABLE_Q_SCORE};
-use gatk_engine::recal_utils::output_recalibration_report;
-use gatk_engine::recalibration_report::{RecalibrationReport, RecalibrationReportError};
+use gatk_engine::recal_utils::output_report_with_arguments;
+use gatk_engine::recalibration_report::{
+    RecalibrationReport, RecalibrationReportError, ARGUMENT_REPORT_TABLE_TITLE,
+};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK GatherBQSRReports";
@@ -131,9 +134,13 @@ pub fn gather(reports: &[&str]) -> Result<String, GatherError> {
         return Err(GatherError::NoUsableData);
     }
     let quantization = quantization_info(&result.tables, result.quantizing_levels);
-    Ok(output_recalibration_report(
-        &result.arguments,
-        result.quantizing_levels,
+    // The oracle writes the first input's argument table as read, rows the port does not know
+    // (`plot_pdf_file`) included and rows it would add (`maximum_cycle_value`) left out.
+    let arguments = gatk_engine::gatk_report::Report::parse(reports[0])
+        .and_then(|report| report.table_named(ARGUMENT_REPORT_TABLE_TITLE).cloned())
+        .map_err(|error| GatherError::Report(RecalibrationReportError::Report(error)))?;
+    Ok(output_report_with_arguments(
+        arguments,
         &quantization,
         &result.tables,
         &result.covariates,

@@ -282,12 +282,20 @@ pub fn output_recalibration_report(
     tables: &RecalibrationTables,
     covariates: &StandardCovariateList,
 ) -> String {
+    let argument_table =
+        generate_argument_table(arguments, quantizing_levels, &covariates.covariate_names());
+    output_report_with_arguments(argument_table, quantization_info, tables, covariates)
+}
+
+/// The report around an argument table already built: a gather writes its first input's as read.
+pub fn output_report_with_arguments(
+    argument_table: Table,
+    quantization_info: &QuantizationInfo,
+    tables: &RecalibrationTables,
+    covariates: &StandardCovariateList,
+) -> String {
     let mut report = Report::new();
-    report.add_table(generate_argument_table(
-        arguments,
-        quantizing_levels,
-        &covariates.covariate_names(),
-    ));
+    report.add_table(argument_table);
     report.add_table(generate_quantization_table(quantization_info));
     for table in generate_report_tables(tables, covariates) {
         report.add_table(table);
