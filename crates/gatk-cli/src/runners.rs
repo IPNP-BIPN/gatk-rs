@@ -15595,11 +15595,6 @@ fn variant_eval_report(
         }
         None => None,
     };
-    if argument(parser, "ancestral-alignments").is_some() {
-        return Err(limitation(
-            "--ancestral-alignments is not ported for VariantEval.",
-        ));
-    }
 
     let arguments_for_engine = ve::Arguments {
         eval_names: evals
@@ -15646,6 +15641,30 @@ fn variant_eval_report(
     }
     let mut engine =
         ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
+    // The engine's constructor opens the FASTA right after the stratification states, and every
+    // eval then carries the bases it spans as ANCESTRALALLELE.
+    if let Some(path) = argument(parser, "ancestral-alignments") {
+        let absolute = std::path::absolute(&path).unwrap_or_else(|_| path.clone().into());
+        let mut fasta = htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(&path))
+            .map_err(|_| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "The ancestral alignments file, '{}', could not be found",
+                        absolute.display()
+                    ),
+                )
+            })?;
+        engine.ancestral = Some(Box::new(move |contig: &str, start: i64, end: i64| {
+            fasta
+                .query(contig, start, end)
+                .map_err(|error| ve::EvalError {
+                    class: "htsjdk.samtools.SAMException".to_string(),
+                    message: error.message(),
+                    user: false,
+                })
+        }));
+    }
 
     // The records of every driving input inside the traversal, merged by position.
     let (order, failure) = opened.merged(intervals.as_deref())?;

@@ -19,7 +19,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | AddOATag | picard-rs | oracle-backed | not vendored | not vendored | 9/9 (100.0%) | 2 | not measured | 0 | 0 | none |
 | AddOrReplaceReadGroups | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
 | AddOriginalAlignmentTags | gatk-rs | oracle-backed | 16 suite | 0 suite | 18/18 (100.0%) | 2 | 2280 probes (+32), 0/10 diverge | 4 | 3 | none |
-| AlleleFrequencyQC | gatk-rs | oracle-backed | 408 suite | 0 suite | 26/26 (100.0%) | 2 | 3654 probes (+0), 0/14 diverge | 6 | 6 | none |
+| AlleleFrequencyQC | gatk-rs | oracle-backed | 408 suite | 0 suite | 26/26 (100.0%) | 2 | 3654 probes (+0), 0/14 diverge | 8 | 5 | none |
 | AnalyzeCovariates | gatk-rs | oracle-backed | 15 suite | 0 suite | 11/11 (100.0%) | 2 | 1760 probes (+1), 0/7 diverge | 2 | 1 | none |
 | AnalyzeSaturationMutagenesis | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 3013 probes (+10), 0/13 diverge | 6 | 1 | none |
 | AnnotateIntervals | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 2268 probes (+54), 0/11 diverge | 4 | 0 | none |
@@ -314,7 +314,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | ValidateSamFile | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | ValidateVariants | gatk-rs | oracle-backed | 25 suite | 0 suite | 40/40 (100.0%) | 2 | 2618 probes (+12), 0/15 diverge | 4 | 2 | none |
 | VariantAnnotator | gatk-rs | oracle-backed | 13 suite | 0 suite | 83/83 (100.0%) | 2 | 5219 probes (+4), 0/21 diverge | 8 | 13 | none |
-| VariantEval | gatk-rs | oracle-backed | 258 suite | 0 suite | 68/68 (100.0%) | 2 | 4051 probes (+2), 0/33 diverge | 7 | 6 | none |
+| VariantEval | gatk-rs | oracle-backed | 258 suite | 0 suite | 68/68 (100.0%) | 2 | 4051 probes (+2), 0/33 diverge | 9 | 5 | none |
 | VariantFiltration | gatk-rs | oracle-backed | 227 suite | 0 suite | 24/24 (100.0%) | 2 | 2470 probes (+0), 0/9 diverge | 3 | 2 | none |
 | VariantRecalibrator | gatk-rs | oracle-backed | 270 suite | 0 suite | 26/26 (100.0%) | 2 | 4076 probes (+2), 0/14 diverge | 5 | 3 | none |
 | VariantsToTable | gatk-rs | oracle-backed | 75 suite | 0 suite | 23/23 (100.0%) | 2 | 2355 probes (+5), 0/12 diverge | 2 | 2 | none |
@@ -379,11 +379,11 @@ Held out: `--dont-require-soft-clips-both-ends`, `--keep-reverse-strand-only`, `
 
 Suites: `multi-variant-walker`, `allele-frequency-qc`, `r-plots`.
 
-Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_strat.bed`.
+Inputs: `afqc_1kg.vcf`, `afqc_1kg2.vcf`, `cgv_ref.fasta`, `gg_dbsnp.vcf`, `no_such_ancestral.fasta`, `ve_ancestral.fasta`, `ve_cnv.bed`, `ve_strat.bed`.
 
-Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
 
-AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not. --pedigree, --ancestral-alignments and --list are held out as for VariantEval.
+AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval argument is still declared and still parsed, and --eval-module, --stratification-module and the two do-not-use flags are varied to show that the presets override them. -O is the metrics file; --debugFile is where the report goes, and null sends it to a temporary file nothing compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track, which is what puts two rows in each allele-frequency bin, in either order; the call set alone leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias line and is the NullPointerException the tool raises before VariantEval starts. --comparison null leaves the comp-AF stratifier without a comp. The reference runs in the Broad's image and the port in one with R ($past_the_interpreter), so a run that gets as far as the plot draws it: the PNGs are compared by pixel size and resolution, and the combined figure the port adds is not. --pedigree and --list are held out as for VariantEval. --ancestral-alignments is absent, ve_ancestral.fasta (cgv_ref's chr1 with every third base swapped for its transition partner, and chr2 in lower case) or a file that does not exist: every eval then carries the bases it spans as ANCESTRALALLELE, which CountVariants and TiTvVariantEvaluator read.
 
 ### AnalyzeCovariates
 
@@ -2279,11 +2279,11 @@ va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 
 
 Suites: `multi-variant-walker`, `variant-eval`.
 
-Inputs: `cgv_ref.fasta`, `gg_dbsnp.vcf`, `ve_cnv.bed`, `ve_eval.vcf`, `ve_eval2.vcf`, `ve_strat.bed`, `ve_strat_noidx.bed`.
+Inputs: `cgv_ref.fasta`, `gg_dbsnp.vcf`, `no_such_ancestral.fasta`, `ve_ancestral.fasta`, `ve_cnv.bed`, `ve_eval.vcf`, `ve_eval2.vcf`, `ve_strat.bed`, `ve_strat_noidx.bed`.
 
-Held out: `--ancestral-alignments`, `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
+Held out: `--input`, `--pedigree`, `--read-index`, `--sequence-dictionary`, `--variant-output-filtering`.
 
-ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows. --stratification-module and --eval-module each name one module per row beside the standard ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of thousands of states, and the reference ran out of heap on five of them together. Each was compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and --list is held at false: all three are port limitations. --selectExps and --selectNames carry two paired values and no null, because a row pairing one with the other's absence measures one IllegalArgumentException on every such row. ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp. --input, --read-index, --sequence-dictionary and --variant-output-filtering are held out, as for CombineGVCFs, and the writer holds are the ones every variant tool keeps.
+ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows. --stratification- module and --eval-module each name one module per row beside the standard ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of thousands of states, and the reference ran out of heap on five of them together. Each was compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a pedigree, which the port refuses, so --pedigree is held out and --list is held at false: both are port limitations. --selectExps and --selectNames carry two paired values and no null, because a row pairing one with the other's absence measures one IllegalArgumentException on every such row. ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp. --input, --read-index, --sequence- dictionary and --variant- output-filtering are held out, as for CombineGVCFs, and the writer holds are the ones every variant tool keeps. --ancestral-alignments is absent, ve_ancestral.fasta (cgv_ref's chr1 with every third base swapped for its transition partner, and chr2 in lower case) or a file that does not exist: every eval then carries the bases it spans as ANCESTRALALLELE, which CountVariants and TiTvVariantEvaluator read.
 
 ### VariantFiltration
 
