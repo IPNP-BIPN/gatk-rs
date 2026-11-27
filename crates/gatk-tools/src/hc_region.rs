@@ -998,7 +998,12 @@ pub fn call_region(
         &trimmed,
         ramp_flanks,
         &suspicious,
-        pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
+        // The ramped engine hands `assignGenotypeLikelihoods` its filtered `readLikelihoods` as the
+        // pre-filtering matrix too, so its annotations see the kept haplotypes and no filtered count.
+        pre_filtering
+            .as_ref()
+            .filter(|_| !ramped)
+            .map(|(l, h)| (l, h.as_slice())),
         &given,
     )
 }
