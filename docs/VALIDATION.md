@@ -253,9 +253,9 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | PrintDistantMates | gatk-rs | oracle-backed | 75 suite | 0 suite | 19/19 (100.0%) | 2 | 2221 probes (+0), 0/9 diverge | 4 | 0 | none |
 | PrintFileDiagnostics | gatk-rs | oracle-backed | 9 suite | 0 suite | 6/6 (100.0%) | 2 | 968 probes (+0), 0/4 diverge | 2 | 0 | none |
 | PrintReadCounts | gatk-rs | oracle-backed | 44 suite | 0 suite | 17/17 (100.0%) | 2 | 1940 probes (+0), 0/7 diverge | 2 | 4 | none |
-| PrintReads | gatk-rs | oracle-backed | 36292 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 5 | 0 | none |
+| PrintReads | gatk-rs | oracle-backed | 36292 suite | 0 suite | 21/21 (100.0%) | 2 | 2140 probes (+25), 0/12 diverge | 6 | 0 | none |
 | PrintReadsHeader | gatk-rs | oracle-backed | 19 suite | 0 suite | 19/19 (100.0%) | 2 | 1810 probes (+0), 0/6 diverge | 4 | 0 | none |
-| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 5 | 1 | none |
+| PrintReadsSpark | gatk-rs | oracle-backed | 19 | 11 | 23/23 (100.0%) | 2 | 2169 probes (+8), 0/14 diverge | 6 | 1 | none |
 | PrintSVEvidence | gatk-rs | oracle-backed | 27 suite | 0 suite | 17/17 (100.0%) | 2 | 2156 probes (+5), 0/9 diverge | 5 | 7 | none |
 | PrintVariantsSpark | gatk-rs | oracle-backed | 19 | 5 | 23/23 (100.0%) | 2 | 2097 probes (+1), 0/9 diverge | 7 | 2 | none |
 | QualityScoreDistribution | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -1837,7 +1837,7 @@ sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under th
 
 Suites: `printreads`, `expanded-command-line`, `tool-argument-declarations`, `tool-argument-enums`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`, `unmapped.intervals`.
 
 Held out: none.
 
@@ -1853,11 +1853,11 @@ Held out: none.
 
 Suites: `spark-walkers`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads.vcf`, `reads2.bai`, `reads2.bam`, `unmapped.intervals`.
 
 Held out: `--output-shard-tmp-dir`.
 
---intervals and --exclude-intervals take <unset> as a value so the array has rows that run without -L at all: Disq reads the whole file there, and the locus walker shards the whole dictionary, which no row measured while every row set -L.
+--intervals and --exclude-intervals take <unset> as a value so the array has rows that run without -L at all: Disq reads the whole file there, and the locus walker shards the whole dictionary, which no row measured while every row set -L. unmapped and an interval file ending in it are -L values too: reads2.bam ends in an unplaced unmapped read, which only they bring into the output.
 
 ### PrintSVEvidence
 
