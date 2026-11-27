@@ -579,6 +579,11 @@ impl Arguments {
 /// The site's reference, as the stratifiers read it.
 pub trait ReferenceBases {
     fn bases(&mut self, contig: &str, start: i64, end: i64) -> Vec<u8>;
+
+    /// Whether the reference's dictionary names the contig.
+    fn has_contig(&mut self, _contig: &str) -> bool {
+        true
+    }
 }
 
 /// What a stratifier or an evaluator reads beside the records: the site's grouped records and
@@ -2890,6 +2895,17 @@ impl Engine {
             .map(|driving| driving.record.stop)
             .max()
             .unwrap_or(start);
+        // `CpG` and `TandemRepeat` ask `ReferenceContext.getBases(interval)` for every eval
+        // record, and `trimToContigLength` refuses a contig the reference does not have.
+        let reads_reference = self
+            .strats
+            .iter()
+            .any(|strat| matches!(strat.kind, StratKind::CpG | StratKind::TandemRepeat));
+        if any_eval && reads_reference && !reference.has_contig(&contig) {
+            return Err(EvalError::user(format!(
+                "Given reference file does not have data at the requested contig({contig})!"
+            )));
+        }
         let reference_start_bases = reference.bases(&contig, start, start + 1);
         let site = SiteContext {
             comps_here: comp_inputs.clone(),
