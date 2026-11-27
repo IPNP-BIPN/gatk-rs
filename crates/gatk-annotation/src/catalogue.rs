@@ -2,7 +2,9 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.cmdline.GATKPlugin.GATKAnnotationPluginDescriptor`
 //! and `org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotatorEngine` (GATK
-//! 4.6.2.0), as far as a tool that never computes an annotation still reaches them. `CombineGVCFs` is such a tool:
+//! 4.7.0.0; `GATKAnnotationPluginDescriptor.java` and `VariantAnnotatorEngine.java` are unchanged
+//! since 4.6.2.0), as far as a tool that never computes an annotation still reaches them.
+//! `CombineGVCFs` is such a tool:
 //! it annotates nothing, and yet the annotations it was asked for decide two things in its output.
 //! Their **descriptions** become header lines, and their **raw keys** are the INFO fields its merge
 //! combines rather than takes the median of.
@@ -14,18 +16,36 @@
 //! interface, each instantiated with its no-argument constructor and asked for `getDescriptions()`,
 //! `getRawDescriptions()`, `getRawKeyNames()` and `getKeyNames()`. The lines are kept as the
 //! reference renders them and parsed on use, so a description is compared as the reference wrote it
-//! rather than as this port would have rebuilt it.
+//! rather than as this port would have rebuilt it. The filter is `includePluginClass`
+//! (`GATKAnnotationPluginDescriptor.java:163-165`):
+//!
+//! ```java
+//! return !c.getName().equals(this.getPluginBaseClass().getName()) &&
+//!             !Modifier.isAbstract(c.getModifiers()) &&
+//!             !c.getName().contains("UnitTest$");
+//! ```
 //!
 //! # A group is any interface that extends `Annotation`, found one class deep
+//!
+//! `populateAnnotationGroups` (`GATKAnnotationPluginDescriptor.java:238-249`) starts from the
+//! class's own interfaces and then walks each group's super-interfaces, breadth first:
 //!
 //! ```java
 //! Collections.addAll(interfaces, annot.getClass().getInterfaces());
 //! ```
+//! ```java
+//! if ((inter != PLUGIN_BASE_CLASS) && (PLUGIN_BASE_CLASS.isAssignableFrom(inter))) {
+//! ```
+//! ```java
+//!     Collections.addAll(interfaces, inter.getInterfaces());
+//! ```
 //!
-//! `getInterfaces()` is the class's **own** declaration, not its superclass's. So
+//! `getInterfaces()` is the class's **own** declaration, not its superclass's: the interface
+//! hierarchy is walked, the class hierarchy is not. So
 //! `BaseQualityRankSumTest`, which declares `StandardAnnotation` and inherits `InfoFieldAnnotation`
 //! from `RankSumTest`, belongs to one group, while `QualByDepth`, which declares both, belongs to
-//! four. `-G InfoFieldAnnotation` is therefore a valid group that selects some info annotations
+//! three: those two and `VariantAnnotation`, which `InfoFieldAnnotation` extends.
+//! `-G InfoFieldAnnotation` is therefore a valid group that selects some info annotations
 //! and not others, and `ClippingRankSumTest` belongs to no group at all.
 //!
 //! # The resolved list is sorted by simple name
@@ -34,6 +54,24 @@
 //! command line names annotations in is lost. It matters in one place: two reducible annotations
 //! that share a raw key (`AS_FisherStrand` and `AS_StrandOddsRatio` both read `AS_SB_TABLE`) are
 //! combined by whichever sorts first, and the second finds the key already consumed.
+//! `VariantAnnotatorEngine.combineAnnotations` (`VariantAnnotatorEngine.java:261`), after the
+//! first reducible annotation that finds its raw key:
+//!
+//! ```java
+//! annotationMap.keySet().removeAll(currentASannotation.getRawKeyNames());
+//! ```
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&'static str` and `&'static [T]` are a string and a read-only array compiled into the
+//!   program, alive for its whole run. The table is a constant, not a registry built at start-up;
+//! - `Option<T>` is "a value or nothing" (`Some(x)` or `None`), Java's nullable reference with the
+//!   null check enforced by the compiler. `Result<T, E>` is "a value or an error" (`Ok` or
+//!   `Err`), how this file models a thrown `CommandLineException`;
+//! - `|x| expr` is a lambda, and `.iter().filter(..).any(..)` / `.map(..).collect()` are Java's
+//!   stream operations, lazily evaluated the same way;
+//! - `.expect("...")` unwraps an `Option` or `Result` and aborts the program with that message if
+//!   there is nothing inside: an assertion, used only where the table guarantees a value.
 
 use htsjdk_vcf::header::HeaderLine;
 use htsjdk_vcf::header_lines::parse_meta_line;
@@ -41,6 +79,21 @@ use htsjdk_vcf::header_parse::VcfVersion;
 
 /// Which of the four annotation interfaces a class implements, which is the list the engine files
 /// it under.
+///
+/// The `VariantAnnotatorEngine` constructor files each annotation in the first list whose
+/// interface it implements, tested in this order (`VariantAnnotatorEngine.java:81-88`), so a class
+/// has exactly one kind even if it implemented two of the interfaces:
+///
+/// ```java
+/// if (annot instanceof InfoFieldAnnotation) {
+///     infoAnnotations.add((InfoFieldAnnotation) annot);
+/// } else if (annot instanceof GenotypeAnnotation) {
+///     genotypeAnnotations.add((GenotypeAnnotation) annot);
+/// } else if (annot instanceof JumboInfoAnnotation) {
+///     jumboInfoAnnotations.add((JumboInfoAnnotation) annot);
+/// } else if (annot instanceof JumboGenotypeAnnotation) {
+///     jumboGenotypeAnnotations.add((JumboGenotypeAnnotation) annot);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Info,
@@ -49,7 +102,11 @@ pub enum Kind {
     JumboGenotype,
 }
 
-/// One discovered annotation class.
+/// One discovered annotation class: what the reference's instance answers, recorded once.
+///
+/// Every field is a value read from a no-argument instance, never one this port derives. The
+/// reference's `getRawKeyNames()` only exists on `ReducibleAnnotation`, hence the `Option` on
+/// `raw_keys`; `raw_descriptions` is then empty for every non-reducible entry.
 #[derive(Debug)]
 pub struct Entry {
     /// `getClass().getSimpleName()`, which is what `--annotation` names it by.
@@ -84,22 +141,27 @@ impl Entry {
     }
 }
 
+/// Turns the table's rendered lines back into header lines, through the same meta-line parser a
+/// VCF header goes through. The table stores text rather than built `HeaderLine`s so that what is
+/// compared is the reference's rendering (see the module note).
 fn parse(lines: &[&str]) -> Vec<HeaderLine> {
     lines
         .iter()
         .map(|line| {
+            // `format!` is `String.format`; the table dropped the leading `##` the parser expects.
             parse_meta_line(&format!("##{line}"), VcfVersion::Vcf4_2, 0)
                 .expect("a catalogue line the reference rendered")
         })
         .collect()
 }
 
-/// The entry for a simple class name.
+/// The entry for a simple class name: `allDiscoveredAnnotations.get(name)`, by linear search.
 pub fn entry(name: &str) -> Option<&'static Entry> {
     CATALOGUE.iter().find(|entry| entry.name == name)
 }
 
-/// Whether any discovered annotation names this group.
+/// Whether any discovered annotation names this group: `discoveredGroups.containsKey(name)`. A
+/// group exists only because some class implements it, which is why this reads the entries.
 pub fn is_group(name: &str) -> bool {
     CATALOGUE.iter().any(|entry| entry.groups.contains(&name))
 }
@@ -108,6 +170,9 @@ pub fn is_group(name: &str) -> bool {
 /// dependent arguments: `AllelePseudoDepth`'s Dirichlet prior arguments,
 /// `--assembly-complexity-reference-mode`, the two `--denovo-*` thresholds and
 /// `--allow-old-rms-mapping-quality-annotation-data`.
+///
+/// These four are the classes under `tools/walkers/annotator` whose source carries `@Argument`,
+/// apart from the `VariantAnnotator` tool itself.
 const WITH_ARGUMENTS: [&str; 4] = [
     "AllelePseudoDepth",
     "AssemblyComplexity",
@@ -130,7 +195,9 @@ pub struct AnnotationArguments {
     pub enable_all: bool,
 }
 
-/// What `validateAndResolvePlugins` refuses, each a `CommandLineException`.
+/// What `validateAndResolvePlugins` refuses, each a `CommandLineException`. A Rust `enum` whose
+/// variants carry data is a closed set of cases, like a sealed Java class hierarchy; a `match` over
+/// it must name every variant or fail to compile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolutionError {
     /// `CommandLineException.BadArgumentValue`, whose message Barclay prefixes.
@@ -154,7 +221,14 @@ impl ResolutionError {
 /// `Utils.getDuplicatedItems`, each name repeated on the command line, in the order its second
 /// occurrence was seen. The reference collects them into a `HashSet`, so a line repeating two
 /// names lists them in hash order instead; a single repeated name, which is every row measured,
-/// reads the same either way.
+/// reads the same either way. `Utils.java:1249-1252`:
+///
+/// ```java
+/// final Set<T> unique = new HashSet<>();
+/// return objects.stream()
+///         .filter(name -> !unique.add(name))
+///         .collect(Collectors.toSet());
+/// ```
 fn duplicated(names: &[String]) -> Vec<String> {
     let mut seen: Vec<&String> = Vec::new();
     let mut duplicates: Vec<String> = Vec::new();
@@ -180,6 +254,8 @@ pub fn resolve(
     default_groups: &[&str],
     default_annotations: &[&str],
 ) -> Result<Vec<&'static Entry>, ResolutionError> {
+    // `GATKAnnotationPluginDescriptor.java:314-327`. `return Err(..)` is the `throw`; the
+    // caller's `?` or `match` is its `catch`.
     let enabled_twice = duplicated(&arguments.annotations);
     if !enabled_twice.is_empty() {
         return Err(ResolutionError::BadArgumentValue(format!(
@@ -194,6 +270,9 @@ pub fn resolve(
             disabled_twice.join(", ")
         )));
     }
+    // `GATKAnnotationPluginDescriptor.java:330-335`. The reference intersects into a `HashSet`
+    // and joins that, so with two or more such names its list is in hash order; this one keeps
+    // command-line order. One name reads the same either way.
     let both: Vec<String> = arguments
         .annotations
         .iter()
@@ -206,6 +285,8 @@ pub fn resolve(
             both.join(", ")
         )));
     }
+    // `GATKAnnotationPluginDescriptor.java:339-345`, without the warning for a disabled
+    // annotation the tool never enabled: warnings go to the log, not the output.
     for name in &arguments.excluded {
         if entry(name).is_none() {
             return Err(ResolutionError::BadArgumentValue(format!(
@@ -236,6 +317,8 @@ pub fn resolve(
             )));
         }
     }
+    // `GATKAnnotationPluginDescriptor.java:389-396`: a name that is neither discovered nor a tool
+    // default.
     for name in &arguments.annotations {
         if entry(name).is_none() && !default_annotations.contains(&name.as_str()) {
             return Err(ResolutionError::CommandLine(format!(
@@ -243,6 +326,7 @@ pub fn resolve(
             )));
         }
     }
+    // `GATKAnnotationPluginDescriptor.java:399-403`.
     for group in &arguments.groups {
         if !is_group(group) {
             return Err(ResolutionError::CommandLine(format!(
@@ -251,12 +335,18 @@ pub fn resolve(
         }
     }
 
+    // `getResolvedInstances` (`GATKAnnotationPluginDescriptor.java:477-497`). The reference adds
+    // to a `TreeSet` keyed on simple name, so adding a name twice is a no-op; `add` reproduces
+    // that, and the sort below reproduces the order. `let mut add = |..| {..}` is a closure that
+    // borrows `names` for writing until its last use; only after that is `names` touched directly.
     let mut names: Vec<&'static str> = Vec::new();
     let mut add = |entry: &'static Entry| {
         if !names.contains(&entry.name) {
             names.push(entry.name);
         }
     };
+    // The tool defaults: the individually named ones, then every member of a default group, which
+    // is what `validateAndResolvePlugins` folds into `toolDefaultAnnotations` at lines 406-410.
     if !arguments.disable_tool_defaults {
         for name in default_annotations {
             if let Some(found) = entry(name) {
@@ -280,6 +370,8 @@ pub fn resolve(
             add(found);
         }
     }
+    // `--enable-all-annotations` replaces the individually named ones rather than adding to them,
+    // as the reference's `if`/`else` does (`GATKAnnotationPluginDescriptor.java:487-493`).
     if arguments.enable_all {
         CATALOGUE.iter().for_each(&mut add);
     } else {
@@ -289,6 +381,8 @@ pub fn resolve(
             }
         }
     }
+    // `GATKAnnotationPluginDescriptor.java:494`: exclusion is applied last, to everything,
+    // including members of a group. `retain` keeps the elements the predicate accepts.
     names.retain(|name| !arguments.excluded.iter().any(|excluded| excluded == name));
     // The `TreeSet` by simple name, which is `String.compareTo`: UTF-16 code units, which for these
     // ASCII names is byte order.
@@ -305,6 +399,23 @@ pub fn resolve(
 /// The info annotations come first, each reducible one contributing its raw lines when asked to
 /// keep them and its finished lines unless `use_raw`; then the genotype annotations, then the two
 /// jumbo kinds. Duplicates are the caller's to collapse, as they are the reference's `Set`'s.
+///
+/// The reducible branch is `VariantAnnotatorEngine.java:177-183`:
+///
+/// ```java
+/// if (annotation instanceof ReducibleAnnotation) {
+///     if (useRaw || keepRawCombinedAnnotations) {
+///         descriptions.addAll(((ReducibleAnnotation) annotation).getRawDescriptions());
+///     }
+///     if (!useRaw) {
+///         descriptions.addAll(annotation.getDescriptions());
+///     }
+/// ```
+///
+/// The reference's `Set` is a `LinkedHashSet`, so the first occurrence keeps its place; a caller
+/// collapsing this list must keep first occurrences too. Within each kind the order is
+/// `resolved`'s, as the engine fills its four lists in the order of the `annotationList` it is
+/// constructed with (`VariantAnnotatorEngine.java:80-88`).
 pub fn descriptions(
     resolved: &[&'static Entry],
     use_raw: bool,
@@ -332,6 +443,11 @@ pub fn descriptions(
 }
 
 /// Every annotation the reference discovers, sorted by simple name.
+///
+/// One `Entry` per class, written out from the reference's own answers (see the module note);
+/// nothing in a row is computed by this port. Rows are not commented individually: each field's
+/// meaning is on [`Entry`]. Note the rows a reader might take for typos are verbatim, such as
+/// `Allele-specfic` in `AS_MappingQualityRankSumTest`'s raw description.
 pub static CATALOGUE: &[Entry] = &[
     Entry {
         name: "AS_BaseQualityRankSumTest",

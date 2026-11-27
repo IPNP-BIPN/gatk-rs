@@ -5,7 +5,33 @@
 #
 # Regenerate with: python3 tools/audit/comment_density.py --record
 
+crates/gatk-annotation/src/allele_pseudo_depth.rs 0.739
+crates/gatk-annotation/src/allele_specific_rank_sum.rs 0.814
+crates/gatk-annotation/src/allele_specific_site_statistics.rs 0.809
+crates/gatk-annotation/src/allele_specific_strand_bias.rs 0.781
+crates/gatk-annotation/src/assembly_complexity.rs 0.714
+crates/gatk-annotation/src/catalogue.rs 0.280
+crates/gatk-annotation/src/chromosome_counts.rs 1.500
+crates/gatk-annotation/src/coverage.rs 0.918
+crates/gatk-annotation/src/decimal_format.rs 0.723
+crates/gatk-annotation/src/depth_per_allele.rs 0.767
+crates/gatk-annotation/src/flow.rs 0.655
+crates/gatk-annotation/src/fragment_counts.rs 0.709
 crates/gatk-annotation/src/haplotype_filtering.rs 1.508
+crates/gatk-annotation/src/heterozygosity.rs 0.481
+crates/gatk-annotation/src/info_annotation.rs 2.167
+crates/gatk-annotation/src/lib.rs 0.926
+crates/gatk-annotation/src/mapping_quality.rs 0.552
+crates/gatk-annotation/src/original_alignment.rs 1.476
+crates/gatk-annotation/src/pedigree.rs 0.635
+crates/gatk-annotation/src/per_allele.rs 0.828
+crates/gatk-annotation/src/rank_sum.rs 0.968
+crates/gatk-annotation/src/raw_gt_count.rs 1.034
+crates/gatk-annotation/src/read_grouping.rs 0.745
+crates/gatk-annotation/src/sample_list.rs 1.889
+crates/gatk-annotation/src/site_statistics.rs 0.787
+crates/gatk-annotation/src/strand_bias.rs 0.656
+crates/gatk-annotation/src/tandem_repeat.rs 0.789
 crates/gatk-barclay/src/lib.rs 0.466
 crates/gatk-engine/src/allele_likelihoods.rs 0.700
 crates/gatk-engine/src/allele_list.rs 0.797

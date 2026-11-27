@@ -1,5 +1,5 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.annotator.AllelePseudoDepth`
-//! (GATK 4.6.2.0).
+//! (GATK 4.7.0.0; `AllelePseudoDepth.java` is unchanged since 4.6.2.0).
 //!
 //! `DD` and `DF`: an allele depth and an allele fraction, both read off the Dirichlet posterior
 //! that [`gatk_engine::somatic_likelihoods`] computes, and both emitted as **strings** rather than
@@ -18,12 +18,13 @@
 //! twelve orders of magnitude coarser than a last bit. The rounding argument was meant to be the
 //! load-bearing one; after G1.9.2 it is belt and braces.
 //!
-//! # `Math.pow` enters here, and it carries no bound
+//! # `Math.pow` enters here, and the port keeps the host's
 //!
-//! [`Self::calculate_weights`] ends on `Math.pow(10, secondAdjusted)`. That is a **second**
-//! unported intrinsic. It now has a bound — htsjdk-rs decision 0027 measured fdlibm's `pow` at
-//! **1 ulp** from `Math.pow` over 404,964 points, the same figure 0025 got for `exp` — but this
-//! port does not use fdlibm here, and the reason is measured rather than assumed.
+//! `AllelePseudoDepth::calculate_weights` computes
+//! `result[i] = 1 - Math.pow(10, secondAdjusted);`. That is a **second** unported intrinsic.
+//! It now has a bound (htsjdk-rs decision 0027 measured fdlibm's
+//! `pow` at **1 ulp** from `Math.pow` over 404,964 points, the same figure 0025 got for `exp`),
+//! but this port does not use fdlibm here, and the reason is measured rather than assumed.
 //!
 //! Switching all three of gatk-rs's `pow` call sites to [`jmath::strict_math::pow`] was tried. It
 //! **broke a passing byte-identity claim**: `heterozygosity_and_mq` moved from `3.3333333333333335`
@@ -33,7 +34,7 @@
 //!
 //! What that trade buys and costs is worth stating plainly, because it is the opposite of the one
 //! `NaturalLogUtils` makes for `exp`. fdlibm is fixed and the host libm is whatever the machine
-//! ships, so fdlibm would make the port host-independent — at the price of a suite that passes
+//! ships, so fdlibm would make the port host-independent, at the price of a suite that passes
 //! today. The evidence that the libm is safe here is not an assumption: these suites pass on
 //! aarch64 locally and on x86-64 in CI, which is two platforms agreeing. If a third ever disagrees,
 //! the bounded alternative now exists and this is the note that says so.
@@ -53,20 +54,22 @@
 //! # The prior array is cached, shared, and then written through
 //!
 //! ```java
-//! final double[] prior = composePriorPseudoCounts(allelesToEmit.size());   // cached, per size
-//! …
+//! final double[] prior = composePriorPseudoCounts(allelesToEmit.size());
+//! ...
 //! if (sampleMatrix.evidence().isEmpty()) {
-//!     posteriors = prior;                                                  // the same array
-//! }
-//! …
+//!     posteriors = prior;
+//! } else {
+//! ...
 //! if (!keepPriorInCount) {
-//!     for (int i = 0; i < posteriors.length; i++) { posteriors[i] -= prior[i]; }
+//!     for (int i = 0; i < posteriors.length; i++) {
+//!         posteriors[i] -= prior[i];
+//!     }
 //! }
 //! ```
 //!
 //! `composePriorPseudoCounts` memoises one array per allele count and hands out **that array**, not
 //! a copy. On the empty-evidence branch `posteriors` is that array. So the subtraction at the end
-//! is `prior[i] -= prior[i]`, which zeroes the cache — and every later genotype with the same
+//! is `prior[i] -= prior[i]`, which zeroes the cache, and every later genotype with the same
 //! allele count then gets a prior of zeros, a different annotation entirely.
 //!
 //! It is a real, order-dependent state bug in the reference, it is reachable from the default
@@ -79,20 +82,38 @@
 //! ```java
 //! final RealMatrixChangingVisitor log10ToLnTransformer = new DefaultRealMatrixChangingVisitor() {
 //!     public double visit(int row, int column, double value) {
-//!         return Math.max(value, -.1 * sampleMatrixForAlleles.evidence().get(row).getMappingQuality())
-//!                 * MathUtils.LOG_10;
-//!     }
-//! };
 //! ```
 //!
+//! and the body returns
+//! `Math.max(value, -.1 * sampleMatrixForAlleles.evidence().get(row).getMappingQuality())` times
+//! `MathUtils.LOG_10` (one Java line, too long to quote whole here).
+//!
 //! `visit` receives `(row, column)` as `(allele, read)`, and the mapping quality is looked up at
-//! `evidence().get(row)` — the evidence list indexed by the **allele** number. So every entry in
+//! `evidence().get(row)`: the evidence list indexed by the **allele** number. So every entry in
 //! an allele's row is floored using one read's mapping quality, the read that happens to share the
 //! allele's index, and a site with more alleles than reads throws `IndexOutOfBoundsException`
 //! before any of it matters.
 //!
-//! This only runs when the likelihoods are still in log10, which is why it has survived: the
-//! HaplotypeCaller hands over natural-log likelihoods and takes the other branch.
+//! This runs only when the likelihoods are still in log10. `isNaturalLog` is set only by
+//! `AlleleLikelihoods.switchToNaturalLog`, which GATK 4.7.0.0 calls from `Mutect2Engine` and
+//! `FilterAlignmentArtifacts` and not from the HaplotypeCaller, so Mutect2 takes the other branch
+//! and the HaplotypeCaller, with this annotation enabled, takes this one.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `&mut self` borrows the annotation writably, which is how a call updates the memo; `&self`
+//!   borrows it read-only;
+//! - `Result<Option<PseudoDepths>, PseudoDepthError>` is three outcomes: `Err(..)` a throw,
+//!   `Ok(None)` the silent return, `Ok(Some(..))` the two keys written. `?` after a call returns
+//!   its error at once, like an exception escaping that one call site;
+//! - `SampleMatrix<'a>` holds borrowed views (`&'a [..]`) of lists its creator keeps; `'a` names
+//!   how long they must stay alive, and nothing is copied;
+//! - `.entry(k).or_insert_with(|| ..)` is `computeIfAbsent`: look the key up, and store the
+//!   closure's value only if it is missing;
+//! - `.iter_mut().zip(&prior)` walks two lists in step, the first writable;
+//! - `impl Fn(f64) -> String` is a parameter that accepts any function of that shape, here a
+//!   `DecimalFormat::format`;
+//! - a body's last expression, without a semicolon, is its value.
 
 use std::collections::HashMap;
 
@@ -206,9 +227,17 @@ impl AllelePseudoDepth {
     /// `annotate(ref, vc, g, gb, likelihoods)`.
     ///
     /// `allele_indices` is `vc.getAlleles()` expressed against the matrix: the emitted alleles, in
-    /// emit order, by their row in `matrix`. That is what `SubsettedLikelihoodMatrix` does, and
-    /// when it is the identity the reference skips the wrapper — which changes nothing observable,
-    /// because the wrapper only renumbers.
+    /// emit order, by their row in `matrix`. That is what `SubsettedLikelihoodMatrix` does. The
+    /// reference skips the wrapper whenever the two allele **counts** are equal, whatever the
+    /// order:
+    ///
+    /// ```java
+    /// allelesToEmit.size() == likelihoods.numberOfAlleles()
+    ///         ? sampleMatrix : new SubsettedLikelihoodMatrix<>(sampleMatrix, allelesToEmit);
+    /// ```
+    ///
+    /// so in that case the caller must pass the identity, not the variant's order mapped onto the
+    /// matrix. `variant_annotator_engine.rs` in `gatk-tools` does.
     ///
     /// `None` is the reference's silent return: a null likelihoods object, or fewer than two
     /// alleles to emit. Neither puts a key in the genotype, and an absent key is not an empty one.
@@ -225,6 +254,9 @@ impl AllelePseudoDepth {
         }
 
         let allele_count = allele_indices.len();
+        // `.to_vec()` copies the stored array. Keeping the borrow instead would hold `self`
+        // borrowed through the calls below, which Rust refuses, so the reference's aliasing is
+        // reproduced by hand at the end rather than by sharing the array.
         let prior = self.compose_prior_pseudo_counts(allele_count).to_vec();
 
         // The empty-evidence branch aliases the cached prior array; every other branch allocates.
