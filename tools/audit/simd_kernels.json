@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "crates/gatk-engine/src/pair_hmm.rs": {
+      "class": "lane-wise",
+      "what": "LoglessPairHMM, one read per lane against one haplotype: each lane does the single pair's multiplies and adds in its order, unfused, no operation across lanes; AVX2 (4 lanes) and AVX-512F (8 lanes) dispatched at run time, the portable 4-lane body otherwise",
+      "test": "crates/gatk-engine/tests/pair_hmm_port.rs"
+    }
+  }
+}

@@ -135,11 +135,23 @@ gap. Inflating once and handing the buffer on belongs to Milestone S; it also sh
 above, since a single pass is a third of what stored blocks saved here.
 
 **Deflate** must reproduce GKL's choice per level (zlib's for most, ISA-L igzip's at level 2, which
-is GATKConfig's), so a kernel would transliterate each matcher, one block per thread. Deflate is
-several times inflate's cost, so it is the side that could pay. It cannot be measured on this host
-yet: level 2 needs ISA-L igzip, which has no ARM build here (`PrintReads` refuses with "GKL routes
-level 2 through ISA-L igzip, which this build cannot reach"). The pure-Rust igzip port in
-htsjdk-rs is what would make it measurable.
+is GATKConfig's), so a kernel would transliterate each matcher, one block per thread. The pure-Rust
+igzip port (htsjdk-rs#281, pinned here since 2026-11-14) made level 2 reachable on ARM, so the bound
+can now be taken: `tools/speed/bgzf_inflate_bound.py --deflate` has PrintReads read the stored BAM
+above and write it at level 2, then at level 0, whose deflate is a copy, and checks both hold the
+same records. On the M4 Max, best of three, with the host at a load average of 145 to 165 on 16
+cores:
+
+| level | output | 1 thread, wall | 1 thread, CPU | 16 threads, wall | 16 threads, CPU |
+|---:|---:|---:|---:|---:|---:|
+| 2 | 220 MB | 7.86 s | 4.63 s | 29.5 s | 5.91 s |
+| 0 | 894 MB | 3.73 s | 2.38 s | 10.3 s | 2.86 s |
+
+Deflate is about half of PrintReads' CPU (2.25 s of 4.63 s on one thread, 3.05 s of 5.91 s on 16),
+far over the 10% bar, so unlike inflate it stays a target. What it is worth in wall time on every
+core cannot be read from this run: at that load the 16-thread wall is slower than the 1-thread one.
+That figure, on an idle host, decides whether the kernel is built; the kernel itself would be
+igzip's level-2 matcher and zlib's per-level matchers transliterated onto integers, which is open.
 
 ## 4. The assembly graph and genotyping: open
 

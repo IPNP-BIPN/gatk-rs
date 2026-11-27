@@ -245,6 +245,15 @@ impl SampleDb {
         trios
     }
 
+    /// `getFamilies(ids)` flattened to the members `countFamilyViolations` judges: those named in
+    /// `ids`, with a family and at least one parent in the database.
+    pub fn children_in(&self, ids: &[String]) -> Vec<&Sample> {
+        self.samples
+            .iter()
+            .filter(|s| s.family_id.is_some() && ids.contains(&s.id) && self.parent_count(s) > 0)
+            .collect()
+    }
+
     /// `getFounderIds()`: the samples with no parent in the database, in insertion order.
     pub fn founder_ids(&self) -> Vec<String> {
         self.samples

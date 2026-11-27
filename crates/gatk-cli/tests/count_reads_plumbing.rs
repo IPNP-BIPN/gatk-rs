@@ -281,3 +281,44 @@ fn an_index_named_by_replacing_the_extension_is_found() {
     assert_eq!(run.status, 0, "{}", run.stderr);
     assert_eq!(run.stdout, expected);
 }
+
+/// SAM text is read, not refused as a BAM that does not parse: `count_reads.sam` answers 8 in the
+/// reference. CRAM takes the same path and is covered by the `test-resources` replay.
+#[test]
+fn a_sam_text_input_is_read() {
+    let dir = scratch("sam-text");
+    let sam = dir.join("reads.sam");
+    std::fs::write(
+        &sam,
+        "@HD\tVN:1.6\tSO:unsorted\n@SQ\tSN:chr1\tLN:100000\n@RG\tID:0\tSM:s\n\
+         a\t0\tchr1\t10\t60\t4M\t*\t0\t0\tACGT\tIIII\tRG:Z:0\n\
+         b\t16\tchr1\t20\t60\t4M\t*\t0\t0\tACGT\tIIII\tRG:Z:0\n\
+         c\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\tRG:Z:0\n",
+    )
+    .expect("the fixture");
+    let run = gatk_cli::run(&args(&["CountReads", "--input", &sam.to_string_lossy()]));
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert!(run.stdout.contains("Tool returned:\n3"), "{}", run.stdout);
+}
+
+/// A SAM text file that stops parsing after its first record is refused, not counted up to the
+/// bad line: the streamed count hands the file back to the path that answers the refusal.
+#[test]
+fn a_sam_text_input_that_stops_parsing_is_refused() {
+    let dir = scratch("sam-text-bad-line");
+    let sam = dir.join("reads.sam");
+    std::fs::write(
+        &sam,
+        "@SQ\tSN:chr1\tLN:100\n@RG\tID:0\tSM:s\n\
+         a\t0\tchr1\t10\t60\t4M\t*\t0\t0\tACGT\tIIII\tRG:Z:0\n\
+         not a record\n",
+    )
+    .expect("the fixture");
+    let run = gatk_cli::run(&args(&["CountReads", "--input", &sam.to_string_lossy()]));
+    assert_eq!(
+        run.status,
+        main_entry::exit_status(Failure::Other),
+        "{}",
+        run.stdout
+    );
+}

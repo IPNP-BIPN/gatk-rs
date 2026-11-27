@@ -376,8 +376,10 @@ copy, which is a worse position than reading the source rather than a better one
       learn Rust to check the port. `tools/audit/comment_density.py --check` is a ratchet, not a
       floor: it fails only when a file already on the list loses its explanations
 - [ ] the tranches, in the order a reader needs them: the engine's numeric primitives, then the
-      likelihood matrix, then the annotations, then the readers and writers. **3 of 122 files** in
-      this repository, 332 across the three
+      likelihood matrix, then the annotations, then the readers and writers. **13 of the 475 files
+      under `crates/*/src/`** in this repository are on `tools/audit/commented.txt`; htsjdk-rs has
+      159 and picard-rs 279, so 913 across the three (tests are out of scope: a fixture table
+      explains itself)
 
 ### G1.8 The argument layer
 
@@ -1355,6 +1357,14 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       — each marked removable or not
 - [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
+- [ ] **S.6** (#1452) bounded memory: a streaming engine. The costs above were measured on the
+      conformance fixtures, where the port's RSS is a fraction of the reference's; at scale it was
+      the other way round, because the port held whole inputs. `CountReads` over NA12878 chr20
+      (923 MB) peaked at 28.9 GB. Record order stays the same, only where records live changes, so
+      no suite may move. Streaming reader and read-walker iterator (#1458, #1459), BGZF writer with
+      the `.bai` built on the fly (#1460), and a guard under `ulimit -v` (#1461) bring that run to
+      98 MB; the assembly-region, locus and variant walkers, the external sort and the remaining
+      whole-file reads are what is left
 - [ ] **S.7** (#1453) speed and RAM at scale: the best-practices chain on chr20 of NA12878 at 30x,
       the data pinned by sha256 (`tools/speed/scale.json`), both sides in the pinned container at
       equal threads, wall clock, CPU and peak RSS, and the output bytes compared at scale. The
@@ -1374,16 +1384,14 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] the provenance guard (decision 0014), running in all three repositories
 - [x] covering arrays generated **and run** per tool. **208 gatk-rs tools** are measured against
       both the reference and the port on every CI run at t=2 (`tools/coverage/measured.json`,
-      frozen from run 43572913214 on main, printed per tool in `docs/VALIDATION.md`), **204 of
+      frozen from run 43572913214 on main, printed per tool in `docs/VALIDATION.md`), **205 of
       them at 1.000**, including the Spark SV, PathSeq, gCNV and Python-backed tools (#1403), the
       17 Picard tools GATK bundles, which the `gatk` binary now dispatches (#1415), and
       `ConvertCountsToDepthFile`, whose array landed with the move to 4.7.0.0 and was never frozen
       until now. The 28 rows a `.idx` with a returning contig used to cost (htsjdk's
       `LinkedHashMap` keeps one entry at the first place, fixed in IPNP-BIPN/htsjdk-rs#280) are
-      gone, which takes five Picard VCF tools to 1.000. The 4 still below:
-      - `FilterVcf`, 7 of 20: 11 rows are `--JAVASCRIPT_FILE`, a Nashorn script the port refuses
-        as a port limitation at the point where Picard builds the filter, and 2 are not yet
-        attributed
+      gone, which takes five Picard VCF tools to 1.000, and `FilterVcf` runs its `--JAVASCRIPT_FILE`
+      in Boa (`docs/filtervcf-javascript.md`). The 3 still below:
       - `SplitVcfs`, 22 of 26: 3 rows write an indexed `.vcf.gz` SNP output beside a text INDEL
         output, where htsjdk hands one tabix index to both writers, and 1 is a tabix out-of-order
         refusal Picard raises while streaming, which arrives after the port's SYMBOLIC refusal
