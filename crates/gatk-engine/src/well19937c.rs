@@ -211,7 +211,7 @@ impl Well19937c {
         // `assert!` panics (stops the program) when false, standing in for the reference's
         // rejection of a non-positive `n`. `{n}` puts the value into the message.
         assert!(n > 0, "{n} is smaller than, or equal to, the minimum (0)");
-        if (n & -n) == n {
+        if n.isolate_lowest_one() == n {
             return (((n as i64) * (self.next(31) as i64)) >> 31) as i32;
         }
         loop {
