@@ -1,7 +1,8 @@
 # Roadmap to 100% byte-identical reproduction
 
-Tracking document for the goal: a byte-for-byte reproduction of the **entire** GATK 4.6.2.0,
-Picard 3.4.0 and htsjdk 4.2.0 tool set in Rust. Deliberately honest about scale (the plan sizes
+Tracking document for the goal: a byte-for-byte reproduction of the **entire** GATK 4.7.0.0,
+Picard 3.5.0 and htsjdk 5.0.0 tool set in Rust (the target was 4.6.2.0, Picard 3.4.0 and htsjdk
+4.2.0 until #1420). Deliberately honest about scale (the plan sizes
 the whole program at 40 to 100 person-years), and meant to be followed and ticked off.
 
 Status legend: `[ ]` not started, `[~]` in progress or partial, `[x]` done **and** oracle-backed.
@@ -21,13 +22,18 @@ repository's `main` (htsjdk-rs `0730c93b`, picard-rs `bd199d29`, gatk-rs `099580
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 88 conformance suites, all oracle-backed. CRAM, GKL-exact deflate and full VCF remain |
 | **picard-rs** | 121 tools | 124 suites over 139 cases, 119 oracle-backed and 5 golden-pending; 115 tools carry a suite. Argument coverage is measured for 119 tools |
-| **gatk-rs** | 191 tools | 8 crates, **363 conformance suites over 368 cases, all 363 oracle-backed**, and all 54 annotations among them. A t=2 covering array is run against the reference and the port on every CI run for **207 tools, 200 of them at 1.000** (the seven below are Picard VCF tools, causes listed under Milestone V); the differential fuzzer has replayed its kept cases for 190 tools with no divergence. Cost against the reference is measured for 139 tools (Milestone S) |
+| **gatk-rs** | 191 tools | 8 crates, **363 conformance suites over 368 cases, all 363 oracle-backed**, and all 54 annotations among them. A t=2 covering array is run against the reference and the port on every CI run for **208 tools, 205 of them at 1.000** (`tools/coverage/measured.json`; the three below are listed under Milestone V); the differential fuzzer has replayed its kept cases for 190 tools with no divergence. Cost against the reference is measured for 139 tools (Milestone S) |
 
 Across the three repositories that is **570 oracle-backed suites**, and the generated dashboard
 ([docs/STATUS.md](docs/STATUS.md)) puts **all 312 tools** in an oracle-backed state. What
-oracle-backed does not yet say is the whole argument surface: three tools have no covering array
-(`ConvertCountsToDepthFile`, `IlluminaBasecallsToFastq`, `MergeBamAlignment`), which is the G2
-item on full parameter coverage.
+oracle-backed does not yet say is the whole argument surface: two tools have no covering array
+(`IlluminaBasecallsToFastq`, `MergeBamAlignment`, both picard-rs's), which is the G2 item on full
+parameter coverage.
+
+**At 100%, by the definition below: 0 of 312 tools** ([docs/VALIDATION.md](docs/VALIDATION.md),
+column `100%`). The criterion every tool still misses is the reference's own integration tests,
+which no committed measurement covers yet (V.12); with #1478's frozen replay counted, 29 of
+gatk-rs's 208 would pass. No release is cut before this number is 312 (Milestone R).
 
 Totals from the generated inventory (`tools/inventory`): **312 tools** (191 GATK-origin,
 121 Picard-origin), **39 Spark**, ~13,360 arguments.
@@ -46,17 +52,35 @@ with **zero quarantined fields**. Any quarantined field downgrades it to **bio-i
 the quarantine list attached. Everything ported so far reproduces the paths its suite covers,
 which is not yet this bar for any tool.
 
+What the bar admits, decided 2026-11-24:
+
+- **The declared canonicalization** covers only fields on which the reference itself has no stable
+  byte: an identity hash, a wall clock, a heap address under ASLR, an unseeded `Random`, a path the
+  reference refuses on the runner (AVX PairHMM), JVM error text. Each one needs evidence that the
+  reference varies run to run or host to host (`tools/reports/limits.json`, #1477). Anything else
+  set aside is a quarantine.
+- **A held-out argument** is admitted only when the reference has no byte target for it, or when it
+  needs an external service (`gs://`, HDFS, a Spark cluster master, a remote GenomicsDB). R, Python
+  and JavaScript are not external services: they have bytes, so they are run.
+- **The scope** is all 312 tools, gatk-rs's 208 and picard-rs's 104, and every box of this file:
+  S.6 and S.7, Milestone GPU and the commenting tranches included.
+
+`docs/VALIDATION.md` prints, per tool, `yes` or the criteria not met yet; a criterion nothing has
+measured counts as not met.
+
 ---
 
 ## Milestone G1: the GATK engine
 
 The single biggest unlock: 151 non-Spark GATK tools stand on it.
 
-**Closed.** Every box below is `[x]` except two, and neither is G1 work; the table keeps the two annotations that were once on it:
+**Closed.** Every box below is `[x]` except the two under "Explaining the code as it is written",
+which are documentation of the whole repository rather than engine work and are tracked there. The
+table keeps the annotations that were once open here:
 
 | open item | where it lives now | why |
 |---|---|---|
-| the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
+| the Tribble index (G1.3) | **done, htsjdk-rs #83** | it is an htsjdk capability GATK consumes, and it landed there |
 | the multi-input walkers (G1.6) | **done, G1.6** | `smartMergeHeaders` and `VariantContextComparator` landed in htsjdk-rs, and the walkers on them are oracle-backed by `multi-variant-walker` |
 | `AllelePseudoDepth` (G1.7) | **done, G1.9** | the licence was never what blocked it. Both values leave through a `DecimalFormat` at two and four decimals, and the fixed point turned out bit-identical anyway. Oracle-backed, 46 calls, no divergence |
 | `AssemblyComplexity` (G1.7) | **done, G3.1c** | it needed `Haplotype.getEventMap()`, the assembly event model, which landed with `HaplotypeCaller` (#1282). Oracle-backed, 21 cases |
@@ -95,14 +119,13 @@ Three of the four remain open, none of them G1 work.
 - [x] `ReadsDataSource` interval queries against a fixture BAM and its `.bai` (29 queries,
       htsjdk's stateful single-pass filter included)
 - [x] `ReferenceContext` and `ReadsContext` (352 window answers)
-- [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
+- [x] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
       order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
-      settings), and the **Tribble index it needed is now in** (htsjdk-rs #83). The suite pins what a tool sees and does **not** distinguish the cache from a
-      fresh query per call, which the manifest states. All three codecs `-L` reaches are ported
-      and oracle-backed in htsjdk-rs (**BED**, **IntervalList**, and **VCF**'s `canDecode`, the one
-      that decides by content). Still missing: the **Tribble index**, which is what turns a
-      Feature file into a random-access source rather than a linear read, and belongs in
-      Milestone H
+      settings), and the **Tribble index it needed is now in** (htsjdk-rs #83), which is what turns
+      a Feature file into a random-access source rather than a linear read. The suite pins what a
+      tool sees and does **not** distinguish the cache from a fresh query per call, which the
+      manifest states. All three codecs `-L` reaches are ported and oracle-backed in htsjdk-rs
+      (**BED**, **IntervalList**, and **VCF**'s `canDecode`, the one that decides by content)
 
 ### G1.4 Interval arguments
 
@@ -383,8 +406,9 @@ copy, which is a worse position than reading the source rather than a better one
 
 ### G1.8 The argument layer
 
-- [~] Barclay's argument model and validation at library level, so covering-array vectors are
-      interpreted as upstream interprets them. The unified CLI dispatcher stays out of scope
+- [x] Barclay's argument model and validation at library level, so covering-array vectors are
+      interpreted as upstream interprets them: every box below is `[x]`, and the scope is closed.
+      The unified CLI dispatcher stayed out of scope here and is Milestone C
 - [x] the **value model**: `NamedArgumentDefinition` and the grammar under it, 368 rows over 41
       command lines. Six of its rules are not what the annotation names suggest. `optional()` does
       not decide optionality (`isOptional` is the annotation **or** a default that renders as
@@ -452,7 +476,8 @@ copy, which is a worse position than reading the source rather than a better one
 
 - [x] `PrintReads`, byte-identical: six output BAMs and five `.bai` indexes, under the JDK
       deflater
-- [~] the rest of `record-transform` (56 tools, the largest archetype). **The calibration gate is
+- [x] the rest of `record-transform` (56 tools, the largest archetype): all 56 are oracle-backed
+      in `docs/STATUS.md`, which is the measurement this box now points at. **The calibration gate is
       answered**: `UnmarkDuplicates` and `RevertBaseQualityScores` are ported, with one suite
       covering both. What the second and third members cost is not the transform — both `apply`
       bodies are two lines — it is what the archetype hides:
@@ -477,13 +502,19 @@ copy, which is a worse position than reading the source rather than a better one
       Oracle-backed: **10 output BAMs and their indexes byte for byte, and both refusals
       reproduced** with the class and message the reference throws. The golden is byte-identical to
       the same container on Apple Silicon
-- [ ] `reporting-walker` (56 tools)
-- [ ] reference, interval, coverage, CNV/SV and genotyping-array utilities
-- [ ] full parameter coverage per tool (covering arrays plus fuzzing), not the default path
+- [x] `reporting-walker` (56 tools), all oracle-backed in `docs/STATUS.md`
+- [x] reference, interval, coverage, CNV/SV and genotyping-array utilities: `reference-utility`
+      15, `interval-utility` 6, `cnv-segmentation` 11, `sv-caller` 17 and `array-utility` 7, all
+      oracle-backed in `docs/STATUS.md`
+- [~] full parameter coverage per tool (covering arrays plus fuzzing), not the default path. This
+      is criteria 2 and 3 of "What 100% repro means", and the `100%` column of
+      `docs/VALIDATION.md` measures it per tool: 205 of 208 gatk-rs arrays at 1.000, 119 tools with
+      held-out arguments (V.11), and 18 gatk-rs and 104 picard-rs tools the fuzzer has not run on
+      (V.12)
 - [x] the **usage text** (`CommandLineArgumentParser.usage`), moved here from G1.8: it is help
       output rather than the argument model, no covering-array vector reads it, and it is printed
       by the tools rather than by the layer underneath them. `usage-text` now measures what `Main`
-      writes to stderr for `<Tool> --help` and `-h` for all 312 tools it names, and `gatk-rs <Tool>
+      writes to stderr for `<Tool> --help` and `-h` for all 312 tools it names, and `gatk <Tool>
       --help` prints it byte for byte for the 208 the port declares and runs (191 GATK, 17
       Picard). Beside each text the golden records what it is composed from and no declaration
       carries: each descriptor's possible values per tool, the mutex targets' field names and the
@@ -1208,12 +1239,17 @@ here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was op
       suite `vets-isolation-forest` (#1404)
 - [x] **CRAM**, closed under H.3
 - [x] **GKL-exact deflate**, closed under H
+- [~] **X.5** (#806) the five tools that shell out to Python (`DetermineGermlineContigPloidy`,
+      `GermlineCNVCaller`, `PostprocessGermlineCNVCalls`, `ScoreVariantAnnotations`,
+      `TrainVariantAnnotationsModel`), measured past the interpreter (#1457, #1466)
+- [~] **X.6** (#807) the three tools that shell out to R (`PlotDenoisedCopyRatios`,
+      `PlotModeledSegments`, `AlleleFrequencyQC`), measured past R (#1432; refrozen in #1504)
 
 ---
 
 ## Milestone GPU: accelerate without losing the byte
 
-There is nothing upstream to port here. GATK 4.6.2.0 ships no GPU kernel: `PairHMM` resolves to
+There is nothing upstream to port here. GATK 4.7.0.0, like 4.6.2.0 before it, ships no GPU kernel: `PairHMM` resolves to
 `AVX_LOGLESS_CACHING`, `AVX_LOGLESS_CACHING_OMP` or the pure-Java `LOGLESS_CACHING` through Intel
 GKL, and the only CUDA-adjacent tool is `NVScoreVariants`, which is ML inference and already sits
 in Milestone X.
@@ -1294,7 +1330,7 @@ depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
 
 ## Milestone S: speed, once the bytes are settled
 
-**Closed.** The harness (`tools/speed/`), the byte-neutrality guard (`tools/audit/arithmetic.py`)
+**S.1 to S.5 are closed; S.6 and S.7, added after, are open.** The harness (`tools/speed/`), the byte-neutrality guard (`tools/audit/arithmetic.py`)
 and the pages under `docs/speed/` exist; the baseline was committed from CI before any
 optimisation and STATUS.md carries a cost column beside each claim. On the rows the claim covers,
 the port costs a median 0.25% of the reference cold and 5.5% of a warmed-up JVM. The first target,
@@ -1357,7 +1393,7 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       — each marked removable or not
 - [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
-- [ ] **S.6** (#1452) bounded memory: a streaming engine. The costs above were measured on the
+- [~] **S.6** (#1452) bounded memory: a streaming engine. The costs above were measured on the
       conformance fixtures, where the port's RSS is a fraction of the reference's; at scale it was
       the other way round, because the port held whole inputs. `CountReads` over NA12878 chr20
       (923 MB) peaked at 28.9 GB. Record order stays the same, only where records live changes, so
@@ -1365,6 +1401,9 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
       the `.bai` built on the fly (#1460), and a guard under `ulimit -v` (#1461) bring that run to
       98 MB; the assembly-region, locus and variant walkers, the external sort and the remaining
       whole-file reads are what is left
+- [~] **S.7** (#1453) speed and RAM at scale against GATK, at equal threads, on x86-64 and arm64:
+      per tool, CPU time and peak RSS each at or below the reference's, with no trade of one for
+      the other and no byte moved
 
 Milestone GPU is a different thing: a second implementation on other hardware. This one is about
 the CPU path that already exists, and no bit-identity claim may weaken to buy a speedup.
@@ -1373,7 +1412,7 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 
 - [x] one conformance manifest per repository, with the CI generated from it and a guard that
       fails if the generated YAML is edited by hand
-- [x] the per-tool status dashboard, generated from the 311-tool inventory so it cannot drift
+- [x] the per-tool status dashboard, generated from the 312-tool inventory so it cannot drift
 - [x] the golden audit: every committed golden is declared, every declared golden exists, and a
       keyed suite whose golden collapses is refused
 - [x] the provenance guard (decision 0014), running in all three repositories
@@ -1386,18 +1425,18 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       until now. The 28 rows a `.idx` with a returning contig used to cost (htsjdk's
       `LinkedHashMap` keeps one entry at the first place, fixed in IPNP-BIPN/htsjdk-rs#280) are
       gone, which takes five Picard VCF tools to 1.000, and `FilterVcf` runs its `--JAVASCRIPT_FILE`
-      in Boa (`docs/filtervcf-javascript.md`). The 3 still below:
+      in Boa (`docs/filtervcf-javascript.md`). SelectVariants has since reached 51/51 in
+      `measured.json`. The 3 still below:
       - `SplitVcfs`, 22 of 26: 3 rows write an indexed `.vcf.gz` SNP output beside a text INDEL
         output, where htsjdk hands one tabix index to both writers, and 1 is a tabix out-of-order
         refusal Picard raises while streaming, which arrives after the port's SYMBOLIC refusal
-        because the port splits the whole file before writing
-      - `SelectVariants`, 50 of 51: the array regenerated with the GenomicsDB inputs (#1431) has a
-        row whose `-L` lies past the end of a 3000-base contig beside an `-XL`; GATK refuses the
-        interval as badly formed before it subtracts `-XL`, the port subtracts first and refuses
-        because `-XL` removed all territory
+        because the port splits the whole file before writing. The shared tabix index is #1450,
+        merged and not yet refrozen
       - `MarkDuplicatesSpark`, 26 of 27: one row's BAM came out a byte shorter on the port than in
         run 43552518084, with the tool, its array and the reference's output unchanged between the
-        two runs, so the port's output on that row is not yet reproducible run to run
+        two runs, so the port's output on that row is not yet reproducible run to run. The cause
+        was a linked ISA-L deriving a hash bucket from its stream's address; htsjdk-rs's own
+        igzip (its decision 0050) replaced it, and #1469 regenerates the array, not yet refrozen
 - [x] the coverage-guided differential fuzzer, in all three repositories: picard-rs fuzzes its
       tools, htsjdk-rs its byte-level parsers, and gatk-rs (`tools/fuzz/`) seeds from each tool's
       covering array, mutates one argument at a time within the array's own value domains while
@@ -1420,14 +1459,25 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 - [x] per-tool validation reports: `docs/VALIDATION.md`, generated by `tools/reports/generate.py`
       and checked for staleness in CI (inputs, records, byte-equal file count, argument rows, t
       level, fuzzer probes and divergences, held-out arguments, quarantined fields)
-- [~] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
-      are closed (see below). **The bill is measured**
+- [x] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0. Done in #1420:
+      the manifest's oracle is `gatk-rs-oracle:4.7.0.0`, every suite is oracle-backed against it,
+      and the five suites whose behaviour changed (`sv-concordance`, `sv-stratify`,
+      `grouped-sv-cluster`, `spark-walkers`, `cram-issue-8768-detector`) were re-derived. **The
+      bill was measured first**
       ([docs/the-move-to-4.7.0.0-measured.md](docs/the-move-to-4.7.0.0-measured.md)): of 362
       oracle-backed suites run under a 4.7.0.0 oracle, 316 are identical, 27 differ by the stamp
       only (the version and the new `--output-cram-version 3.1` in every command line), 7 by
       the dumps' own SAM text, now fixed, 6 by what the ground truth gains (`ConvertCountsToDepthFile`
       and the new arguments), and 5 by behaviour: SVConcordance, SVStratify, GroupedSVCluster's
       message order, one Spark exception class and CRAM 3.1 by default
+- [~] **V.11** (#1454) t=3 on the critical path, and every held-out argument back in its array or
+      kept for a reason the bar admits. No tool has a t=3 array on `main` yet (#1464 adds eleven);
+      VALIDATION.md counts 596 held-out arguments over 119 tools (196 on the #1529 stack)
+- [~] **V.12** (#1455) every applicable input under `src/test/resources`, and the fuzzer on every
+      tool. #1478 replays GATK's integration tests on both sides: of 1,571 invocations replayed,
+      754 match, and 35 of 147 tools match on all of theirs (frozen from CI run 44800247407, not
+      yet on `main`). The fuzzer has not run on 18 gatk-rs tools (#1476) nor on picard-rs's 104
+      (picard-rs #486), and Picard's own tests have no replay yet
 
 ---
 
@@ -1437,7 +1487,7 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 a command line, and every one of those 46 is measured against the reference across a t-wise
 covering array at 1.000. What remains is per-tool work, tracked by G2 and by V, not a mechanism
 this milestone still owes. The paragraphs below are what it said while it was open. The
-binary is `gatk-rs`, in the `gatk-cli` crate; before it there was none in this repository, and
+binary is `gatk` (it was `gatk-rs` until 5f8257a0), in the `gatk-cli` crate; before it there was none in this repository, and
 there is still none in htsjdk-rs. picard-rs has two, and their own headers
 say what they are: benchmark harnesses, not "the Barclay command line the program commits to".
 
@@ -1460,9 +1510,10 @@ cases the dumps exercise". It does not mean any of them runs, and it does not me
 agrees with the reference across its argument surface. This milestone is what turns the first
 sentence into the second.
 
-- [x] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
-      shape the bit-identity claim is defined against. The crate is `gatk-cli` and the binary is
-      `gatk-rs`, deliberately not `gatk`. Routing, the five exit statuses, the version, the
+- [x] **C.1 the dispatcher binary**, `gatk <Tool> <args>`, the tool named first, which is the
+      shape the bit-identity claim is defined against. The crate is `gatk-cli`. The binary was
+      first `gatk-rs`, deliberately not `gatk`, and was renamed `gatk` on 2026-10-16 (5f8257a0) so
+      that a GATK command line runs unchanged; comparisons name each side by its path. Routing, the five exit statuses, the version, the
       refusals and BOTH handlers are compared against the `main-entry` and `main-non-user`
       goldens: a non-user failure prints the exception's own class where the port used to print
       one banner for both. Every declared tool's command line reaches the parser, a walker's
@@ -1501,7 +1552,7 @@ sentence into the second.
       conditional blocks are one per read filter that declares an argument, ordered by the
       ownership table (`plugin-argument-ownership`); `--read-filter` and `--disable-read-filter`
       print the catalogue and the tool's own defaults (`read-filter-catalogue`); and the mutex
-      sentence names the target definition's FIELD (`mutex-target-names`). `gatk-rs CountReads -h`
+      sentence names the target definition's FIELD (`mutex-target-names`). `gatk CountReads -h`
       answers with the reference's two hundred and ninety-seven lines
 - [x] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
       and what unblocks V.5. A hundred and thirty-seven tools are measured on both sides on every CI run,
@@ -1563,41 +1614,64 @@ divergences the array finds, not the runner.
 
 ---
 
-## The reference has moved on, and this one deliberately has not
+## The move to 4.7.0.0
 
 GATK [4.7.0.0](https://github.com/broadinstitute/gatk/releases/tag/4.7.0.0) was released on
 2026-08-18. It pins **htsjdk 5.0.0**, **Picard 3.5.0**, GKL 0.9.1 and commons-beanutils 1.11.0.
 
-**The target stays at 4.6.2.0 until G2 and P are closed.** 216 suites are oracle-backed against
-4.6.2.0, and moving the target does not adjust them, it re-opens them: every golden has to be
-re-measured on a new oracle and either survives the bump or is replaced with the difference
-explained. The three ports are also coherent only because they name one set of pins, and htsjdk
-4.2.0 to 5.0.0 is a major bump, so htsjdk-rs would have to land first. Finishing against a frozen
-target and moving once is cheaper than chasing a moving one.
+The plan was to finish against a frozen 4.6.2.0 and move once, after G2 and P. picard-rs moved
+first, once P was closed (picard-rs decisions 0012 and 0013); gatk-rs followed in #1420, after
+the bill had been measured
+([docs/the-move-to-4.7.0.0-measured.md](docs/the-move-to-4.7.0.0-measured.md)). Since then the
+three ports name one set of pins again, and every golden here is re-derived from the 4.7.0.0
+oracle (Milestone V).
 
-**picard-rs has moved without waiting.** Once P was closed it measured the bill first (picard-rs
-decision 0012), found that nothing in it needed htsjdk-rs to move, and moved to Picard 3.5.0 on
-its own (picard-rs decision 0013), porting the three htsjdk 5.0.0 behaviours it reaches beside the
-Picard code that reaches them. So the ports no longer name one set of pins: gatk-rs and htsjdk-rs
-stay at 4.6.2.0 and 4.2.0, picard-rs is at 3.5.0.
+What the move brought, in short:
 
-What will be waiting, in short. The full delta, per pull request, is in the tracking issue.
-
-| Where | What changes |
+| Where | What changed |
 |---|---|
-| GATK 4.7.0.0 | one new tool, `ConvertCountsToDepthFile`, so the inventory's 311 becomes 312; behaviour changes in `SVConcordance`, `SVStratify`, `SVAnnotate`, `PrintSVEvidence`, `CollectSVEvidence`, `HaplotypeCaller`, `GenotypeGVCFs` and `Funcotator`, all still open; `--output-cram-version`, defaulting to 3.1 |
-| htsjdk 5.0.0 | `jlibdeflate` becomes the default DEFLATE engine, so every BGZF byte depends on a pinning that must be re-verified; CRAM 3.1 write support with a trial-compression codec choice; `SAMRecord.toString()` returns the full SAM line; three fixed bugs that this port reproduced faithfully and would now have to stop reproducing |
-| Picard 3.5.0 | `MarkDuplicates` physical location moves from `short` to `int`, changing optical-duplicate counts; `FilterVcf` plumbs `CREATE_INDEX`; fixes in `RevertSam`, `CollectRnaSeqMetrics`, `MergeBamAlignment` and `CrosscheckFingerprints` |
+| GATK 4.7.0.0 | one new tool, `ConvertCountsToDepthFile`, so the inventory's 311 became 312; behaviour changes in `SVConcordance`, `SVStratify`, `SVAnnotate`, `PrintSVEvidence`, `CollectSVEvidence`, `HaplotypeCaller`, `GenotypeGVCFs` and `Funcotator`; `--output-cram-version`, defaulting to 3.1 |
+| htsjdk 5.0.0 | `jlibdeflate` the default DEFLATE engine, so every BGZF byte depends on a pinning re-verified on the move; CRAM 3.1 write support with a trial-compression codec choice; `SAMRecord.toString()` returns the full SAM line; three fixed bugs that this port had reproduced faithfully and now does not |
+| Picard 3.5.0 | `MarkDuplicates` physical location from `short` to `int`, changing optical-duplicate counts; `FilterVcf` plumbs `CREATE_INDEX`; fixes in `RevertSam`, `CollectRnaSeqMetrics`, `MergeBamAlignment` and `CrosscheckFingerprints` |
 
-The deflater line is the one to watch. The dumps already pin the factory and print
-`deflater\t<class>` into every golden, which is the guard put there after a Picard call silently
-replaced the factory and the goldens after it were GKL bytes. It is what makes this bump
-survivable at all, and on the move it must be re-verified against the new default rather than
+The deflater line was the one to watch. The dumps pin the factory and print `deflater\t<class>`
+into every golden, the guard put there after a Picard call silently replaced the factory and the
+goldens after it were GKL bytes; on the move it was re-verified against the new default rather than
 assumed to still hold.
+
+Later htsjdk releases (5.0.1, 5.0.2, 6.0.0) fix bugs where 5.0.0 loses data. The target is
+4.7.0.0's bytes, so those fixes are **not** taken here (IPNP-BIPN/htsjdk-rs#293 triages
+them); taking them would be a divergence from the reference, and the bar admits none.
+
+---
+
+## Milestone R: the first release
+
+No release is cut before the `100%` column of `docs/VALIDATION.md` reads 312 of 312. Each box is
+ticked in the commit that makes it true; the tag itself, a release and any publication are each the
+maintainer's explicit decision.
+
+- [ ] **R.1** every other box of this file is `[x]`, and the `100%` column reads 312 of 312
+- [ ] **R.2** `measured.json` (coverage, fuzz, test resources) frozen from the CI run of the tree to
+      be tagged, with no diff
+- [ ] **R.3** the release workflow's dry run green on Linux x86-64, Linux arm64, macOS arm64 and
+      macOS x86-64, each binary smoke-tested on its host (and under `qemu64` for x86-64)
+- [ ] **R.4** every archive carries the licence of every crate linked into it, and the provenance
+      guard is green
+- [ ] **R.5** `docs/known-limits.md` and the CHANGELOG name every declared canonicalization and
+      every admitted held-out argument, and say that the bytes are verified on x86-64
+- [ ] **R.6** `v0.1.0` tagged on a green `main` and its draft release published, ticked in the
+      first commit after the tag
 
 ---
 
 ## The critical path, in order
+
+This is the order that brought the programme here, kept as it was written. What remains is ordered
+by what the `100%` column of `docs/VALIDATION.md` still misses: the reference's own tests (V.12),
+then the port limitations they reach, the held-out arguments and t=3 (V.11), the fuzzer on every
+tool (V.12), bounded memory and speed at scale (S.6, S.7), Milestone GPU, and the commenting
+tranches; then Milestone R.
 
 1. **Close G1.5**, the pileup floor, then `LocusWalker`. It is what the largest GATK archetype
    needs and the last big engine piece before tools can fan out.
@@ -1628,6 +1702,6 @@ every tool, not the count of tools with a first slice, is what the 100% claim re
 - This file is the human-readable milestone list. Each `[ ]` is a checkable unit, ticked in the
   same commit that makes it true.
 - The per-tool status dashboard is generated from `tools/inventory`, so it cannot drift from the
-  311-tool ground truth. This file is the plan; `docs/STATUS.md` is the measurement.
+  312-tool ground truth. This file is the plan; `docs/STATUS.md` is the measurement.
 - Progress lands as one commit per slice (one ported symbol or feature), CI-gated on the
   digest-pinned oracle, merged only when green.
