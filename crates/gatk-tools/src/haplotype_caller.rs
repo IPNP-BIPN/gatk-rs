@@ -746,6 +746,7 @@ fn call_variants_into(
             || off_ramp.is_some()
             || detection.debug_stdout
             || arguments.assembler.graph_output.is_some()
+            || arguments.haplotype_histogram_output.is_some()
             || arguments.assembler.debug_graph_transformations;
         let threads = if sequential {
             1
