@@ -577,6 +577,18 @@ pub fn variant_recalibrator(parser: &Parser) -> Outcome {
     let loaded = match argument(parser, "input-model") {
         None => None,
         Some(path) => {
+            // `GATKPath.getInputStream` on a file that is not there.
+            if !std::path::Path::new(&path).exists() {
+                let absolute = std::path::absolute(&path)
+                    .map(|absolute| absolute.display().to_string())
+                    .unwrap_or_else(|_| path.clone());
+                return Err(Thrown::non_user(
+                    "java.lang.RuntimeException",
+                    format!(
+                        "Could not create open input stream for {path} (as URI file://{absolute})"
+                    ),
+                ));
+            }
             let text = std::fs::read_to_string(&path).map_err(|_| {
                 Thrown::user(format!(
                     "Couldn't read file. Error was: File: ({path}) with exception: {path}"
