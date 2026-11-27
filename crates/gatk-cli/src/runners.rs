@@ -11773,6 +11773,24 @@ pub(crate) const FLOW_MATRIX_ARGUMENTS: &[&str] = &[
     "flow-hmm-engine-flat-deletion-penatly",
 ];
 
+/// What `AssemblyBasedCallerUtils.createLikelihoodCalculationEngine` does before the flow tools
+/// look at the engine it built: the DRAGstr parameters parsed for a PairHMM or FlowBasedHMM
+/// engine, and a PairHMM engine's `--pair-hmm-results-file` opened, never written or closed, so it
+/// is left empty. The FlowBased engine reads neither.
+pub(crate) fn likelihood_engine_side_effects(parser: &Parser, engine: &str) -> Result<(), Thrown> {
+    if matches!(engine, "PairHMM" | "FlowBasedHMM")
+        && !flag(parser, "dont-use-dragstr-pair-hmm-scores")
+    {
+        haplotype_caller::dragstr_params(parser)?;
+    }
+    if engine == "PairHMM" {
+        if let Some(path) = argument(parser, "pair-hmm-results-file") {
+            write_file(&path, b"")?;
+        }
+    }
+    Ok(())
+}
+
 /// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
 /// row and, with `--report-file`, the error-rate report.
 ///
@@ -11803,6 +11821,7 @@ pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
     // `onTraversalStart`: the engine, the prior, the CSV, the report.
     let engine =
         scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
+    likelihood_engine_side_effects(parser, &engine)?;
     if engine != "FlowBased" {
         return Err(Thrown::non_user(
             "org.broadinstitute.hellbender.exceptions.GATKException",

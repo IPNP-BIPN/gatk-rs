@@ -167,7 +167,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | FlagStat | gatk-rs | oracle-backed | 30 suite | 0 suite | 21/21 (100.0%) | 2 | 2124 probes (+25), 0/12 diverge | 5 | 0 | none |
 | FlagStatSpark | gatk-rs | oracle-backed | 5 | 1 | 19/19 (100.0%) | 2 | 2008 probes (+4), 0/11 diverge | 5 | 1 | none |
 | FlowFeatureMapper | gatk-rs | oracle-backed | 197 suite | 0 suite | 25/25 (100.0%) | 2 | 3066 probes (+11), 0/15 diverge | 2 | 8 | none |
-| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 40/40 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 4 | 8 | none |
+| FlowPairHMMAlignReadsToHaplotypes | gatk-rs | oracle-backed | 16 suite | 0 suite | 40/40 (100.0%) | 2 | 2646 probes (+0), 0/10 diverge | 6 | 6 | none |
 | FuncotateSegments | gatk-rs | oracle-backed | 11 suite | 0 suite | 25/25 (100.0%) | 2 | 6148 probes (+0), 0/12 diverge | 10 | 7 | none |
 | Funcotator | gatk-rs | oracle-backed | 15 suite | 0 suite | 31/31 (100.0%) | 2 | 5849 probes (+20), 0/24 diverge | 9 | 6 | none |
 | FuncotatorDataSourceDownloader | gatk-rs | oracle-backed | 54 suite | 10 suite | 8/8 (100.0%) | 2 | 1568 probes (+286), 0/4 diverge | 2 | 2 | none |
@@ -187,8 +187,8 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | GetPileupSummaries | gatk-rs | oracle-backed | 8 suite | 0 suite | 19/19 (100.0%) | 2 | 3053 probes (+2), 0/10 diverge | 6 | 0 | none |
 | GetSampleName | gatk-rs | oracle-backed | 35 suite | 0 suite | 21/21 (100.0%) | 2 | 1824 probes (+2), 0/9 diverge | 5 | 0 | none |
 | GnarlyGenotyper | gatk-rs | oracle-backed | 47 suite | 0 suite | 28/28 (100.0%) | 2 | 3562 probes (+2), 0/10 diverge | 4 | 5 | none |
-| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 32/32 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 5 | 8 | none |
-| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 30/30 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 6 | 8 | none |
+| GroundTruthReadsBuilder | gatk-rs | oracle-backed | 17 suite | 0 suite | 32/32 (100.0%) | 2 | 3122 probes (+3), 0/21 diverge | 7 | 6 | none |
+| GroundTruthScorer | gatk-rs | oracle-backed | 59 suite | 0 suite | 30/30 (100.0%) | 2 | 3704 probes (+0), 0/12 diverge | 8 | 6 | none |
 | GroupedSVCluster | gatk-rs | oracle-backed | 257 suite | 0 suite | 23/23 (100.0%) | 2 | 3860 probes (+0), 0/13 diverge | 9 | 8 | none |
 | GtcToVcf | picard-rs | oracle-backed | not vendored | not vendored | 18/18 (100.0%) | 2 | not measured | 0 | 0 | none |
 | GtfToBed | gatk-rs | oracle-backed | 9 suite | 0 suite | 20/20 (100.0%) | 2 | 2184 probes (+4), 0/10 diverge | 3 | 4 | none |
@@ -1217,11 +1217,11 @@ flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared 
 
 Suites: `flow-pairhmm-align-reads-to-haplotypes`.
 
-Inputs: `flow.bam`, `haplotypes.fasta`, `haplotypes_dup.fasta`, `mutect_ref.fasta`.
+Inputs: `dragstr.txt`, `flow.bam`, `haplotypes.fasta`, `haplotypes_dup.fasta`, `mutect_ref.fasta`, `no_such_dragstr.txt`.
 
-Held out: `--dont-require-soft-clips-both-ends`, `--dragstr-params-path`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--pair-hmm-results-file`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
 
-flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten, each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch, a copy with three substitutions, one with a three-base deletion and one shorter than any read; haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal; FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held.
+flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten, each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch, a copy with three substitutions, one with a three-base deletion and one shorter than any read; haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal; FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held. --dragstr-params-path and --pair-hmm-results-file are absent, given or (the parameters) a file that does not exist: this tool builds its aligner itself and reads neither, so every value answers the same.
 
 ### FuncotateSegments
 
@@ -1401,21 +1401,21 @@ gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP
 
 Suites: `ground-truth-reads-builder`.
 
-Inputs: ``, `gt.bam`, `gt_maternal.fasta`, `gt_paternal.fasta`, `mutect_ref.fasta`.
+Inputs: ``, `dragstr.txt`, `gt.bam`, `gt_maternal.fasta`, `gt_paternal.fasta`, `mutect_ref.fasta`, `no_such_dragstr.txt`.
 
-Held out: `--dont-require-soft-clips-both-ends`, `--dragstr-params-path`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--pair-hmm-results-file`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
 
-gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820, gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one. The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands. --subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after opening both ancestral references.
+gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820, gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one. The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands. --subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after opening both ancestral references. --dragstr-params-path is absent, dragstr.txt or a file that does not exist, and --pair-hmm-results-file absent or given: the engine factory parses the parameters and opens the results file for a PairHMM engine, which the tool then refuses, so the missing file is refused first and the results file is left empty; the FlowBased engine reads neither.
 
 ### GroundTruthScorer
 
 Suites: `series-stats`, `ground-truth-scorer`.
 
-Inputs: `flow_snv.bam`, `gt.bam`, `gt_features.vcf`, `gt_prior.csv`, `gt_prior_short.csv`, `mutect_ref.fasta`.
+Inputs: `dragstr.txt`, `flow_snv.bam`, `gt.bam`, `gt_features.vcf`, `gt_prior.csv`, `gt_prior_short.csv`, `mutect_ref.fasta`, `no_such_dragstr.txt`.
 
-Held out: `--dont-require-soft-clips-both-ends`, `--dragstr-params-path`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--pair-hmm-results-file`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
+Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--keep-reverse-strand-only`, `--read-filter-tag-op`, `--read-index`, `--sequence-dictionary`.
 
-gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped), reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's. --likelihood-calculation-engine must be FlowBased: PairHMM is the refusal onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior reader runs past. --report-file is never paired with --omit-zeros-from-report false: the four-level table is then five million rows whatever the reads say, so the pair measures the writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path belong to the PairHMM engine, which the tool refuses, and the implementation is held at its default for the same reason. --gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV.
+gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped), reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's. --likelihood-calculation-engine must be FlowBased: PairHMM is the refusal onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior reader runs past. --report-file is never paired with --omit-zeros-from-report false: the four-level table is then five million rows whatever the reads say, so the pair measures the writer's patience; the constraint says so. --gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV. --dragstr-params-path is absent, dragstr.txt or a file that does not exist, and --pair-hmm-results-file absent or given: the engine factory parses the parameters and opens the results file for a PairHMM engine, which the tool then refuses, so the missing file is refused first and the results file is left empty; the FlowBased engine reads neither.
 
 ### GroupedSVCluster
 
