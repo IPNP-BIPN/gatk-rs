@@ -3445,13 +3445,15 @@ fn revert_output_files(
     let Some(map) = argument(parser, "output-map") else {
         // Barclay's mutex guarantees one of the two, and `Paths.get(outputDir, fileName)` joins them.
         let directory = output.unwrap_or_default();
-        return Ok(groups
-            .iter()
-            .map(|id| {
-                let path = std::path::Path::new(&directory).join(format!("{id}{extension}"));
-                (Some(id.clone()), path.display().to_string())
-            })
-            .collect());
+        return in_hash_map_order(
+            groups
+                .iter()
+                .map(|id| {
+                    let path = std::path::Path::new(&directory).join(format!("{id}{extension}"));
+                    (Some(id.clone()), path.display().to_string())
+                })
+                .collect(),
+        );
     };
 
     // `createOutputMapFromFile` through `TableCodec(null)`: the first line names the columns, any
@@ -3481,20 +3483,50 @@ fn revert_output_files(
     for line in lines.filter(|line| !line.starts_with('#') && !line.starts_with("track")) {
         let (id_at, output_at) = (column("READ_GROUP_ID")?, column("OUTPUT")?);
         let fields: Vec<&str> = line.split_whitespace().collect();
-        let (Some(id), Some(file)) = (fields.get(id_at), fields.get(output_at)) else {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                format!(
-                    "{map}: a row short of its columns fails the reference's TableFeature, which \
-                     this port does not reproduce. This message is the port's own and not GATK's."
-                ),
-            ));
+        // `row.get(name)` indexes the row's array, the group's column first.
+        let field = |at: usize| {
+            fields.get(at).ok_or_else(|| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!("Index {at} out of bounds for length {}", fields.len()),
+                )
+            })
         };
+        let (id, file) = (field(id_at)?, field(output_at)?);
         // A `HashMap`, so a later row of the same group wins.
         files.retain(|(group, _)| group.as_deref() != Some(*id));
         files.push((Some(id.to_string()), file.to_string()));
     }
-    Ok(files)
+    in_hash_map_order(files)
+}
+
+/// The groups' files in the order the reference's `HashMap` iterates them, which is the order
+/// `outputMap` prints in and the order the files are written.
+fn in_hash_map_order(
+    files: Vec<(Option<String>, String)>,
+) -> Result<Vec<(Option<String>, String)>, Thrown> {
+    let keys: Vec<String> = files
+        .iter()
+        .map(|(group, _)| group.clone().unwrap_or_default())
+        .collect();
+    let order = gatk_engine::java_hash::hash_set_order(&keys).map_err(|error| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "a HashMap order this port has not measured: {error:?}. This message is the \
+                 port's own and not GATK's."
+            ),
+        )
+    })?;
+    Ok(order
+        .iter()
+        .filter_map(|key| {
+            files
+                .iter()
+                .find(|(group, _)| group.as_deref() == Some(key.as_str()))
+                .cloned()
+        })
+        .collect())
 }
 
 /// `new SAMFileHeader()` with what `createOutHeader` carries over, and the read groups it is given.
@@ -3893,14 +3925,11 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
             .cloned()
             .collect();
         if groups.is_empty() {
-            // `headerMap.get(id)` is null for a group only the map names, and the task writing
-            // that group's file dereferences it: the executor logs the task's failure, and the
-            // driver's `SparkHadoopWriter` aborts the job. The stage and task numbers are the
-            // executor's own count, which the comparison masks.
-            eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+            // `headerMap.get(id)` is null for a group only the map names, and the writer asks it
+            // for its sort order.
             return Err(Thrown::non_user(
-                "org.apache.spark.SparkException",
-                "Job aborted.",
+                "java.lang.NullPointerException",
+                "Cannot invoke \"htsjdk.samtools.SAMFileHeader.getSortOrder()\" because \"header\" is null",
             ));
         }
         let out = revert_out_header(&driver, &sort_order, &groups, keep_alignment);

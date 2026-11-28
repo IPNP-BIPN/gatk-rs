@@ -18990,15 +18990,24 @@ pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
     let output = argument(parser, "O")
         .ok_or_else(|| Thrown::command_line("Argument O was missing: Argument 'O' is required"))?;
     let inputs = arguments(parser, "I");
-    let text = std::fs::read_to_string(&dictionary_path).map_err(|_| {
+    // `loadFastaDictionary(File)` makes the path absolute and opens it through a GATKPath, whose
+    // `getInputStream` wraps any failure to open; a directory opens and fails on its first read.
+    let absolute = java_absolute_path(&dictionary_path);
+    if std::path::Path::new(&dictionary_path).is_dir() {
+        return Err(Thrown::non_user(
+            "htsjdk.samtools.util.RuntimeIOException",
+            "java.io.IOException: Is a directory",
+        ));
+    }
+    let bytes = std::fs::read(&dictionary_path).map_err(|_| {
         Thrown::non_user(
-            PORT_LIMITATION,
-            format!(
-                "{dictionary_path} could not be read, and the reference's refusal carries the \
-                 message of an IOException the port does not reproduce"
-            ),
+            "java.lang.RuntimeException",
+            // shortcut: the URI is not percent-encoded, which a path with a space or a non-ASCII
+            // character would need.
+            format!("Could not create open input stream for {absolute} (as URI file://{absolute})"),
         )
     })?;
+    let text = String::from_utf8_lossy(&bytes);
     let header = htsjdk_bam::reader::parse_header_text(&text);
     if header.sequences.is_empty() {
         return Err(Thrown {
@@ -19006,8 +19015,7 @@ pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
             exception: "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile",
             message: Some(format!(
                 "Unknown file is malformed: Could not read sequence dictionary from given fasta \
-                 file {}",
-                java_absolute_path(&dictionary_path)
+                 file {absolute}"
             )),
         });
     }
@@ -20207,8 +20215,8 @@ fn java_allele(allele: &htsjdk_vcf::allele::Allele) -> String {
 /// The grouping, the three rejection rules and the draws are
 /// [`gatk_tools::downsample_by_duplicate_set`], where a golden measures them. The runner adds the
 /// read walker's startup and filters, and the writer. A traversal that hands over no read at all
-/// is the reference's own `NullPointerException`; a read without a well-formed `MI` is a refusal of
-/// the port's own, since what the reference throws depends on how the tag is malformed.
+/// is the reference's own `NullPointerException`, and a malformed `MI` is the JVM exception the
+/// reference throws where it first parses that tag.
 pub fn downsample_by_duplicate_set(parser: &Parser) -> Outcome {
     use gatk_tools::downsample_by_duplicate_set as downsample;
 
@@ -20247,22 +20255,23 @@ pub fn downsample_by_duplicate_set(parser: &Parser) -> Outcome {
     match downsample::downsample_with(&source, &options, &filter, level, deflater, &arguments)
         .map_err(reads_traversal_error)?
     {
+        // `getAttributeAsString` renders a numeric array through `Object.toString`, whose
+        // identity hash is the JVM's and not the file's.
         None => Err(Thrown::non_user(
             PORT_LIMITATION,
-            "DownsampleByDuplicateSet met a read without a well-formed MI tag, which the reference \
-             fails on with a JVM exception",
+            "DownsampleByDuplicateSet met an MI tag that is a numeric array, which the reference \
+             renders as an identity hash. This message is the port's own and not GATK's.",
         )),
-        // `processLastReadSet` asks the set it never started for its reads: a helpful NPE naming
-        // the field, which is deterministic.
-        Some(Err(downsample::DownsampleError::NoReads)) => Err(Thrown::non_user(
-            "java.lang.NullPointerException",
-            "Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.consensus.ReadsWithSameUMI.getReads()\" because \"this.currentReadsWithSameUMI\" is null",
-        )),
-        Some(Err(error)) => Err(Thrown::user(error.message())),
-        Some(Ok((bytes, bai))) => {
+        Some(((bytes, bai), error)) => {
+            // `closeTool` closes the writer whether or not the walk threw.
             write_bam(parser, &output, &bytes, bai)?;
-            // `onTraversalSuccess` returns the word, which `handleResult` prints.
-            Ok(Some("SUCCESS".to_string()))
+            match error {
+                None => Ok(Some("SUCCESS".to_string())),
+                Some(error @ downsample::DownsampleError::NotSortedByMoleculeId) => {
+                    Err(Thrown::user(error.message()))
+                }
+                Some(error) => Err(Thrown::non_user(error.java_class(), error.message())),
+            }
         }
     }
 }
@@ -22501,12 +22510,9 @@ impl<'p> SvClusterWalker<'p> {
         };
 
         // `onTraversalStart`: the reference and its dictionary, then the ploidy table.
-        let Some(reference_path) = argument(parser, "reference") else {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                "A cluster walker without --reference is refused by the engine before it starts, which this port does not word yet. This message is the port's own and not GATK's.",
-            ));
-        };
+        let reference_path = argument(parser, "reference").ok_or_else(|| {
+            Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+        })?;
         let Some(dictionary) = reference_dictionary(parser)? else {
             return Err(Thrown::user("Reference sequence dictionary required"));
         };

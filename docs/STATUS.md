@@ -220,7 +220,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) | 0.003 / 0.067 |
 | `DetermineGermlineContigPloidy` | cnv-segmentation | oracle-backed | gcnv-frozen, interpreter-tools | 2 | t=2, 32/32 rows (100%), **1 distinct output** | not measured |
 | `DiscoverVariantsFromContigAlignmentsSAMSpark` | sv-caller | oracle-backed | spark-walkers | 1 | t=2, 19/19 rows (100%) | not measured |
-| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
+| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set, port-limitations | 2 | t=2, 18/18 rows (100%) | 0.003 / 0.041 |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.064 |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.054 |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | t=2, 16/16 rows (100%) | 0.002 / 0.057 |
@@ -246,7 +246,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | t=2, 8/8 rows (100%), **1 distinct output** | not measured |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | t=2, 6/6 rows (100%) | 0.003 / 0.077 |
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.002 / 0.066 |
-| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) | 0.003 / 0.080 |
+| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers, port-limitations | 2 | t=2, 6/6 rows (100%) | 0.003 / 0.080 |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.060 |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums | 3 | t=2, 11/11 rows (100%) | 0.003 / 0.088 |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.058 |
@@ -266,7 +266,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 49/49 rows (100%) | not measured |
 | `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 12/12 rows (100%) | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums | 3 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
-| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker | 2 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
+| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker, port-limitations | 3 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | t=2, 22/22 rows (100%) | 0.004 / 0.091 |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
@@ -314,9 +314,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.056 |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) | 0.002 / 0.055 |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.043 |
-| `RevertSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 28/28 rows (100%) | not measured |
+| `RevertSamSpark` | record-transform | oracle-backed | port-limitations, spark-walkers | 2 | t=2, 28/28 rows (100%) | not measured |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.067 |
-| `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, sv-cluster | 2 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
+| `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, port-limitations, sv-cluster | 3 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 40/40 rows (100%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | multi-variant-walker, sv-stratify | 2 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
 | `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |

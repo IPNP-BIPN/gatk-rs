@@ -588,6 +588,10 @@ jobs:
             index: "73/73"
             slug: "sv-evidence-sv-partitions-gcnv-frozen-nvscorevariants-vets-isolation-forest"
             suites: "sv-evidence sv-partitions gcnv-frozen nvscorevariants vets-isolation-forest"
+          - group: golden-pending
+            index: "1/1"
+            slug: "port-limitations"
+            suites: "port-limitations"
     steps:
       - uses: actions/checkout@v7
 
