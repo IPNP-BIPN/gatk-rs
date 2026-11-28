@@ -1056,8 +1056,8 @@ fn funcotator_header(
 /// ends placed on their transcripts as one-base variants carrying the START's reference base.
 /// The runner is the `FeatureWalker` around it:
 ///
-/// * **the segments are read in file order**, and `-L` over them is refused because a segment
-///   file has no index;
+/// * **the segments are read in file order**, and `-L` keeps those it overlaps, given the file's
+///   index;
 /// * **each segment becomes a symbolic variant**: `<DEL>`, `<INS>`, `<COPY_NEUTRAL>` or `<*>` from
 ///   its call, its annotations renamed through `--alias-to-key-mapping`;
 /// * **SEG output is two files**, the segments and `<output>.gene_list.txt`, and a segment at or
@@ -1076,14 +1076,11 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
             false,
         ))
     })?;
-    let reference_header = reference_dictionary(parser)?.unwrap_or_default();
-    if interval_arguments(parser, &reference_header)?.is_some() {
-        return Err(Thrown::user(format!(
-            "Input {segments_path} must support random access to enable traversal by intervals. If it's a file, please index it using the bundled tool IndexFeatureFile"
-        )));
-    }
+    let intervals = tool_intervals(parser, std::slice::from_ref(&segments_path))?;
     // `validateSequenceDictionaries`: a BAM under `--input` is opened and checked too.
     validate_tool_dictionaries(parser)?;
+    // `FeatureWalker.onStartup`: `-L` needs the segment file's index.
+    require_feature_index(&segments_path, intervals.as_deref())?;
 
     // `onTraversalStart`.
     if scalar(parser, "transcript-selection-mode").as_deref() == Some("ALL") {
@@ -1173,7 +1170,15 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
         .filter(|f| !excluded.contains(f))
         .collect();
 
-    let parsed = parse_segments(&segments_text, &segments_path)?;
+    let mut parsed = parse_segments(&segments_text, &segments_path)?;
+    parsed.retain(|segment| {
+        in_traversal(
+            intervals.as_deref(),
+            &segment.contig,
+            segment.start,
+            segment.end,
+        )
+    });
     let mut failure: Option<Thrown> = None;
     for segment in &parsed {
         let base = fe::Reference::bases(

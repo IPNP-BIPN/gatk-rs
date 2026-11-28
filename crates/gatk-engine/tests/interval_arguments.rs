@@ -351,3 +351,27 @@ fn every_command_line_resolves_as_the_reference_resolves_it() {
         "the dump carries a case this test does not"
     );
 }
+
+/// `-XL` alone over a dictionary an index synthesized, every length unknown: the whole-contig
+/// interval `createOverEntireContig` builds is refused, as the oracle refused
+/// ExampleMultiFeatureWalker's row over an indexed depth file with no reference.
+#[test]
+fn exclusion_alone_over_an_index_dictionary_is_refused() {
+    let mut header = SamHeader::default();
+    header.sequences.push(SequenceRecord::new("chr1", 0));
+    let error = traversal_parameters(
+        &[],
+        &["chr1:200-300".to_string()],
+        &header,
+        SetRule::Union,
+        MergingRule::All,
+        0,
+        0,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message(),
+        "Badly formed genome unclippedLoc: Parameters to GenomeLocParser are incorrect:The stop \
+         position 0 is less than start 1 in contig chr1"
+    );
+}
