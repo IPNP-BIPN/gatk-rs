@@ -272,7 +272,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | RevertBaseQualityScores | gatk-rs | oracle-backed | 49 suite | 0 suite | 19/19 (100.0%) | 2 | 2187 probes (+0), 0/7 diverge | 4 | 0 | none |
 | RevertOriginalBaseQualitiesAndAddMateCigar | picard-rs | oracle-backed | not vendored | not vendored | 15/15 (100.0%) | 2 | not measured | 0 | 0 | none |
 | RevertSam | picard-rs | oracle-backed | not vendored | not vendored | 21/21 (100.0%) | 2 | not measured | 0 | 0 | none |
-| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 4 | 3 | none |
+| RevertSamSpark | gatk-rs | oracle-backed | 67 | 21 | 28/28 (100.0%) | 2 | 2632 probes (+8), 0/18 diverge | 5 | 1 | none |
 | SVAnnotate | gatk-rs | oracle-backed | 15 suite | 0 suite | 18/18 (100.0%) | 2 | 2777 probes (+2), 0/9 diverge | 4 | 9 | none |
 | SVCluster | gatk-rs | oracle-backed | 254 suite | 0 suite | 24/24 (100.0%) | 2 | 3563 probes (+0), 0/11 diverge | 5 | 8 | none |
 | SVConcordance | gatk-rs | oracle-backed | 10 suite | 0 suite | 40/40 (100.0%) | 2 | 3011 probes (+3), 0/8 diverge | 6 | 9 | none |
@@ -1003,7 +1003,7 @@ Contigs with each signature and a smaller set; the refusals, and the contigs the
 
 ### DownsampleByDuplicateSet
 
-Suites: `downsample-by-duplicate-set`.
+Suites: `downsample-by-duplicate-set`, `port-limitations`.
 
 Inputs: `molecules.bam`, `molecules_backwards.bam`.
 
@@ -1285,7 +1285,7 @@ Held out: none.
 
 ### GatherPileupSummaries
 
-Suites: `mutect-gathers`.
+Suites: `mutect-gathers`, `port-limitations`.
 
 Inputs: `matching.dict`, `mixed_pileups.list`, `pileups.list`, `summaries_b.table`, `sv.dict`.
 
@@ -1479,7 +1479,7 @@ Every row reaches the pinned htsget-rs server run_array.py starts beside it, ser
 
 ### JointGermlineCNVSegmentation
 
-Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`.
+Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`, `port-limitations`.
 
 Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
 
@@ -1971,13 +1971,13 @@ The tool aborts on the first read with no `OQ` rather than skipping it, so the t
 
 ### RevertSamSpark
 
-Suites: `spark-walkers`.
+Suites: `spark-walkers`, `port-limitations`.
 
-Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
+Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `revert_map.tsv`.
 
-Held out: `--output-map`, `--output-shard-tmp-dir`, `--remove-default-attributes-to-clear`.
+Held out: `--output-shard-tmp-dir`.
 
-SortSamSpark's values and writer. `cram` is left out of the file format because Disq's CRAM writer is not ported, and `--output-map` because a row cannot carry both it and `--output`; the map is measured by the `revert-sam-map` runs of the spark-walkers golden. `--remove-default-attributes-to-clear` always fails, so it would take every row it sits on; the `revert-sam-defaults` run measures it.
+SortSamSpark's values and writer. `cram` is left out of the file format because Disq's CRAM writer is not ported. `--output-map` (revert_map.tsv, one output per read group of the two BAMs) and `--output` are mutex, so each is a path or `<unset>` and the constraints keep exactly one of them on a row. `--remove-default-attributes-to-clear` is `<unset>` or true; true is refused on every row, and the `revert-sam-defaults` run of the spark-walkers golden measures what it clears.
 
 ### SVAnnotate
 
@@ -1991,7 +1991,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### SVCluster
 
-Suites: `multi-variant-walker`, `sv-cluster`.
+Suites: `multi-variant-walker`, `sv-cluster`, `port-limitations`.
 
 Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 

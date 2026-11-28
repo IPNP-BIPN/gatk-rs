@@ -12679,9 +12679,13 @@
       ],
       "--output": [
         "/work/out/revert_spark.bam",
-        "/work/out/revert_spark2.bam"
+        "/work/out/revert_spark2.bam",
+        "<unset>"
       ],
-      "--output-map": [],
+      "--output-map": [
+        "<unset>",
+        "/work/fixtures/revert_map.tsv"
+      ],
       "--output-by-readgroup-file-format": [
         "sam",
         "bam",
@@ -12730,12 +12734,16 @@
         "<unset>"
       ],
       "$why": [
-        "SortSamSpark's values and writer. `cram` is left out of the file format because Disq's CRAM",
-        "writer is not ported, and `--output-map` because a row cannot carry both it and `--output`;",
-        "the map is measured by the `revert-sam-map` runs of the spark-walkers golden.",
-        "`--remove-default-attributes-to-clear` always fails, so it would take every row it sits on; the `revert-sam-defaults` run measures it."
+        "SortSamSpark's values and writer. `cram` is left out of the file format because Disq's CRAM writer",
+        "is not ported. `--output-map` (revert_map.tsv, one output per read group of the two BAMs) and",
+        "`--output` are mutex, so each is a path or `<unset>` and the constraints keep exactly one of them on",
+        "a row. `--remove-default-attributes-to-clear` is `<unset>` or true; true is refused on every row,",
+        "and the `revert-sam-defaults` run of the spark-walkers golden measures what it clears."
       ],
-      "--remove-default-attributes-to-clear": []
+      "--remove-default-attributes-to-clear": [
+        "<unset>",
+        "true"
+      ]
     },
     "MeanQualityByCycleSpark": {
       "--input": [
@@ -20229,6 +20237,36 @@
         "--exclude-intervals": "null"
       },
       "why": "A filtering mode with no -L or -XL is the one MissingArgument at the end of onStartup, on every such row."
+    },
+    {
+      "tools": [
+        "RevertSamSpark"
+      ],
+      "forbid": {
+        "--output-map": "/work/fixtures/revert_map.tsv",
+        "--output": "/work/out/revert_spark.bam"
+      },
+      "why": "--output-map and --output are mutex; the pair would measure the parser's refusal."
+    },
+    {
+      "tools": [
+        "RevertSamSpark"
+      ],
+      "forbid": {
+        "--output-map": "/work/fixtures/revert_map.tsv",
+        "--output": "/work/out/revert_spark2.bam"
+      },
+      "why": "--output-map and --output are mutex; the pair would measure the parser's refusal."
+    },
+    {
+      "tools": [
+        "RevertSamSpark"
+      ],
+      "forbid": {
+        "--output-map": "<unset>",
+        "--output": "<unset>"
+      },
+      "why": "A run with neither output is one refusal, which the spark-walkers golden measures."
     }
   ],
   "exclude": {
