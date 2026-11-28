@@ -2924,9 +2924,8 @@
         "not carry, and FIND_SNPS_ONLY compares bases into a directory this port does not write yet: a row carrying",
         "either would measure a refusal of the port's own. --input is reads.bam or unset and --read-index its index or",
         "unset, never an index without its BAM: the tool reads no reads, so a given BAM adds GATKTool's",
-        "reads-against-reference and reads-against-master dictionary checks. --sequence-dictionary is held out. It is",
-        "the master dictionary, which the engine validates against the reference, and that validation is measured by",
-        "the tools that traverse."
+        "reads-against-reference and reads-against-master dictionary checks. --sequence-dictionary is unset or",
+        "reference.dict: the master dictionary, which the engine validates against the reference and a given BAM."
       ],
       "--references-to-compare": [
         "/work/fixtures/other.fasta",
@@ -2948,7 +2947,10 @@
         "<unset>",
         "/work/fixtures/reads.bai"
       ],
-      "--sequence-dictionary": []
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/reference.dict"
+      ]
     },
     "CheckReferenceCompatibility": {
       "$why": [
@@ -3220,10 +3222,10 @@
         "each sample the other fraction. Both hold an indel BAFSiteIterator skips. --min-total-depth 10 and",
         "30, --max-std 0.2 and 0.05, --min-het-probability 0.5 and 0.9: each keeps a different set of the",
         "sites, since the depths are chosen to straddle each threshold. --baf-evidence-output carries a",
-        "mixed-case name, which the codec lower-cases. --sequence-dictionary is held at sv.dict and",
-        "--reference out: the tool asserts the sites VCF's dictionary IS the walk's, and a mismatch is an",
-        "AssertionError whose message the port does not reproduce, so a row that varied either would measure",
-        "that gap. --sample-names is held out: it reaches only a .bci output, and a .bci or block-compressed",
+        "mixed-case name, which the codec lower-cases. --sequence-dictionary is held at sv.dict and --reference is",
+        "unset or sv_reference.fasta, whose dictionary is sv.dict: the tool asserts the sites VCF's dictionary IS the",
+        "walk's, and a mismatch is an AssertionError whose message the port does not reproduce. --sample-names is held",
+        "out: it reaches only a .bci output, and a .bci or block-compressed",
         "output is a refusal of the port's own. --input is reads.bam or unset and --read-index its index or",
         "unset, never an index without its BAM. --intervals is unset or chr1:1-500 and --exclude-intervals unset or",
         "chr1:90-110: the file the tool walks is indexed in the corpus (MakeFixtures runs IndexFeatureFile on it), so",
@@ -3260,7 +3262,10 @@
       "--sequence-dictionary": [
         "/work/fixtures/sv.dict"
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/sv_reference.fasta"
+      ],
       "--sample-names": [],
       "--input": [
         "<unset>",
@@ -3990,12 +3995,15 @@
         "that escapes every rule because the last set is never asked; molecules_backwards.bam swaps two",
         "molecules, which the walker refuses as not sorted by MI. --fraction-to-keep is 0.5 and 1.0: the",
         "seeded draws keep and drop whole molecules, and a rejected molecule costs no draw. --min-reads is",
-        "1 and 4, --min-per-strand-reads 0 and 1. --read-index, --intervals and --exclude-intervals are",
-        "held out: the file is unsorted and unindexed. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags."
+        "1 and 4, --min-per-strand-reads 0 and 1. --input also carries molecules_coord.bam, the same records",
+        "coordinate-sorted and indexed, and --read-index is unset or its molecules_coord.bai, never beside the unsorted",
+        "files. -L and -XL over the unsorted files are the random-access refusal. The three read-filter arguments vary",
+        "with their filters, as for AddOriginalAlignmentTags."
       ],
       "--input": [
         "/work/fixtures/molecules.bam",
-        "/work/fixtures/molecules_backwards.bam"
+        "/work/fixtures/molecules_backwards.bam",
+        "/work/fixtures/molecules_coord.bam"
       ],
       "--fraction-to-keep": [
         "0.5",
@@ -4013,7 +4021,10 @@
         "/work/out/downsampled.bam",
         "/work/out/downsampled2.bam"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/molecules_coord.bai"
+      ],
       "--intervals": [
         "<unset>",
         "chr1:1-1000"
@@ -7384,8 +7395,15 @@
         "true"
       ],
       "--read-validation-stringency": [],
-      "--sequence-dictionary": [],
-      "--read-index": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/va_ref.dict"
+      ],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/va.bai",
+        "/work/fixtures/va2.bai"
+      ],
       "--variant-output-filtering": [],
       "--add-output-vcf-command-line": [
         "false"
@@ -7427,8 +7445,11 @@
         "--dirichlet-keep-prior-in-count are held out: each is refused without its annotation, and",
         "the port's parser does not yet tie an annotation's arguments to it. --pedigree, --founder-id",
         "and --flow-order-for-annotations are held out: the port carries no pedigree or flow",
-        "annotation for this tool. The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags. --read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
-        "other variant walkers that read BAMs. --variant-output-filtering is held out: every mode but",
+        "annotation for this tool. The three read-filter arguments vary with their filters, as for",
+        "AddOriginalAlignmentTags. --read-validation-stringency is held out, as for the other variant walkers that read",
+        "BAMs. --sequence-dictionary is unset or va_ref.dict, the master the engine checks the reference, the reads and",
+        "the variants against. --read-index is unset or the index of the BAM beside it, va.bai or va2.bai, never",
+        "another BAM's. --variant-output-filtering is held out: every mode but",
         "ANYWHERE needs -L, and was compared by hand.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
@@ -7804,8 +7825,8 @@
         "--sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz",
         "output is plain text. --add-output-vcf-command-line is held at false for the reason every",
         "variant writer holds it: the line carries the run's date.",
-        "--read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the",
-        "corpus belongs to the refused coordinate-sorted file.",
+        "--read-index is unset or svd_coord.bai, only beside svd_coord.bam: a queryname-sorted file cannot be indexed,",
+        "so the one index in the corpus belongs to the coordinate-sorted file the tool refuses.",
         "The three read-filter arguments vary with their filters, as for AddOriginalAlignmentTags.",
         "The complex-event path (three or more alignments) is not in the corpus: the port refuses it",
         "as its own limitation."
@@ -7890,7 +7911,10 @@
         "false",
         "true"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/svd_coord.bai"
+      ],
       "--sequence-dictionary": [
         "null",
         "/work/fixtures/svd_ref.dict"
@@ -8091,7 +8115,8 @@
         "The index is held off because a .idx records the output's modification time; the command line is held off",
         "because it records the date. --rscript-file without --dont-run-rscript is refused, the pinned container having",
         "no Rscript. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM.",
-        "--sequence-dictionary is not given: the tool reads no base. --reference is absent or vr_ref.fasta, which holds",
+        "--sequence-dictionary is unset or vr_ref.dict, the master dictionary GATKTool checks the reference and a given",
+        "BAM against. --reference is absent or vr_ref.fasta, which holds",
         "chr2 alone: the output's ##contig lines come from getBestAvailableSequenceDictionary, the call sets' own",
         "dictionary, and the reference only names their assembly= and the ##reference line, by name. chr20 30x is where",
         "the port wrote the reference's dictionary instead (gatk-rs#1453). --output-model is held absent, and the",
@@ -8252,7 +8277,10 @@
         "null",
         "/work/fixtures/vr_ref.fasta"
       ],
-      "--sequence-dictionary": [],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/vr_ref.dict"
+      ],
       "--max-variants-per-shard": [
         "0"
       ]
@@ -8272,7 +8300,7 @@
         "mitochondrial code, which renames four codons.",
         "-L and -XL are on the amplicon's contig: the tool bounds nothing with them, but they are still",
         "resolved against the dictionary, so the shared chr1 values would only measure that refusal.",
-        "--read-index is held out: neither BAM has an index.",
+        "--read-index is unset or asm_coord.bai, only beside asm_coord.bam, the one BAM sorted so it can be indexed.",
         "--write-rejected-reads is held at false: GATK writes BAMs asynchronously, and a read rejected",
         "before its report exists is added to the rejected BAM twice, once tagged XX:unmapped and then,",
         "after processReport retags the same object XX:lowQ, again. Whether the first copy was encoded",
@@ -8335,7 +8363,10 @@
         "/work/fixtures/amplicon.dict",
         "/work/fixtures/amplicon_plus.dict"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/asm_coord.bai"
+      ],
       "--write-rejected-reads": [
         "false"
       ]
@@ -9091,7 +9122,8 @@
         "The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two runs of the",
         "reference already write different bytes. A plain VCF output with an index is forbidden because its .idx",
         "records the output's modification time; the command line is held off because it records the date.",
-        "--sequence-dictionary is not given: the tool reads no base and no read. --reference is absent or vr_ref.fasta,",
+        "--sequence-dictionary is unset or vr_ref.dict, the master dictionary GATKTool checks the reference and a given",
+        "BAM against. --reference is absent or vr_ref.fasta,",
         "which holds chr2 alone: the output's ##contig lines come from getBestAvailableSequenceDictionary, the call",
         "sets' own dictionary, and the reference only names their assembly= and the ##reference line, by name. chr20",
         "30x is where the port wrote the reference's dictionary instead (gatk-rs#1453). --input is reads.bam or unset",
@@ -9172,7 +9204,10 @@
         "null",
         "/work/fixtures/vr_ref.fasta"
       ],
-      "--sequence-dictionary": []
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/vr_ref.dict"
+      ]
     },
     "FilterAlignmentArtifacts": {
       "$why": [
@@ -13831,9 +13866,13 @@
       "$why": [
         "CountVariantsSpark's values, with a plain and a block-compressed output, which Disq",
         "writes as text with no index and as BGZF with its .tbi.",
-        "The sites-only VCFs reach the writer, where a record with genotypes never does, and the genotyped one is that failure. No --reference: the corpus's other dictionary only refuses, and the startup's refusal is the other Spark tools' to measure."
+        "The sites-only VCFs reach the writer, where a record with genotypes never does, and the genotyped one is that",
+        "failure. --reference is unset or reference.fasta, whose dictionary is the reads'."
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
       "--disable-read-filter": [
         "WellformedReadFilter"
       ],
@@ -17685,7 +17724,10 @@
         "/work/fixtures/sv_evidence2.bai",
         "/work/fixtures/sv_evidence_lone.bai"
       ],
-      "--reference": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/sv_contigs.fasta"
+      ],
       "--intervals": [
         "<unset>",
         "chr1:1-9000",
@@ -17703,8 +17745,8 @@
         "Reads with every kind of evidence, another template size, and an unpaired read for the refusal. The aligner image and kmers are required and never opened by this tool.",
         "--read-index is each BAM's own index or unset; a row pairing a BAM with another's index is",
         "forbidden, since it would measure htsjdk reading a foreign index rather than the tool.",
-        "--reference is held out: no reference in the corpus carries the reads' three contigs, so any value",
-        "is the startup's dictionary refusal."
+        "--reference is unset or sv_contigs.fasta, which carries the reads' chr1 and chr2 at their lengths and not",
+        "their alt contig."
       ],
       "--cross-contigs-to-ignore": [
         "<unset>",
@@ -18172,7 +18214,10 @@
         "<unset>",
         "/work/tmp/shards"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/bwa_reads_coord.bai"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -18193,12 +18238,14 @@
       "$why": [
         "Reads as a sequencer leaves them, paired and single-ended, on a reference with its own image and one named by the argument. A filter that a paired run applies after alignment is the suite's, as is the non-image, which kills the reference's JVM.",
         "--sharded-output is held out: the reference then writes one part per reducer with its Hadoop checksums, which the suite measures.",
-        "--read-index is held out: the reads are unaligned, and no input BAM has an index."
+        "--input also carries bwa_reads_coord.bam, the unaligned reads coordinate-sorted and indexed, and --read-index",
+        "is unset or its bwa_reads_coord.bai, never beside another BAM."
       ],
       "--input": [
         "/work/fixtures/bwa_reads.bam",
         "/work/fixtures/bwa_reads_unsorted.bam",
-        "/work/fixtures/bwa_reads_dictionary.bam"
+        "/work/fixtures/bwa_reads_dictionary.bam",
+        "/work/fixtures/bwa_reads_coord.bam"
       ],
       "--reference": [
         "/work/fixtures/bwa.fasta"
@@ -18238,7 +18285,10 @@
         "<unset>",
         "/work/tmp/shards"
       ],
-      "--read-index": [],
+      "--read-index": [
+        "<unset>",
+        "/work/fixtures/bwa_reads_coord.bai"
+      ],
       "--intervals": [
         "<unset>"
       ],
@@ -18258,11 +18308,13 @@
       ],
       "$why": [
         "The same reads with the marking over them, which is why the fixture repeats fragments. The flow arguments are held out: they read flow reads, and these are not.",
-        "--read-index is held out: the reads are unaligned, and no input BAM has an index."
+        "--input also carries bwa_reads_coord.bam, the unaligned reads coordinate-sorted and indexed, and --read-index",
+        "is unset or its bwa_reads_coord.bai, never beside another BAM."
       ],
       "--input": [
         "/work/fixtures/bwa_reads.bam",
-        "/work/fixtures/bwa_reads_no_group.bam"
+        "/work/fixtures/bwa_reads_no_group.bam",
+        "/work/fixtures/bwa_reads_coord.bam"
       ],
       "--reference": [
         "/work/fixtures/bwa.fasta"
@@ -18702,8 +18754,10 @@
     "PostprocessGermlineCNVCalls": {
       "$why": [
         "GATKTool's startup comes first, and -L there reads the shards' interval lists for its dictionary, so a -L over",
-        "a shard directory that holds none is refused ahead of the import that otherwise ends every row. --reference",
-        "and --sequence-dictionary are held out: past that import nothing reads them. --variant-output-filtering is",
+        "a shard directory that holds none is refused ahead of the import that otherwise ends every row. --reference is",
+        "unset or reference.fasta and --sequence-dictionary unset or reference.dict: past that import nothing reads",
+        "them, so they reach GATKTool's startup alone, its dictionary checks and the dictionary -L resolves against.",
+        "--variant-output-filtering is",
         "held out too: a mode with -L ends at the same import, and the port does not refuse a mode without -L, a port",
         "limitation. --input is reads.bam or unset and --read-index its index or unset, never an index without its BAM:",
         "the tool reads no reads, so a given BAM adds GATKTool's reads-against-reference and reads-against-master",
@@ -18779,8 +18833,14 @@
         "<unset>",
         "/work/fixtures/reads.bai"
       ],
-      "--reference": [],
-      "--sequence-dictionary": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/reference.dict"
+      ],
       "--add-output-vcf-command-line": [
         "false"
       ],
@@ -18835,8 +18895,8 @@
         "it/score.py (MakeFixtures) on each side. The command line is held off because it records the date. The two",
         "thresholds (--snp-calibration-sensitivity-threshold, --indel-calibration-sensitivity-threshold) are not",
         "varied: their bounds refuse a null where the parser reads one, so a row without them would stop before the",
-        "pass. The dump covers their refusals. --sequence-dictionary is not given, as for ExtractVariantAnnotations:",
-        "the tool reads no base and no read. --reference is held out: it names the ##contig lines' assembly= and the",
+        "pass. The dump covers their refusals. --sequence-dictionary is unset or vr_ref.dict, as for",
+        "ExtractVariantAnnotations. --reference is held out: it names the ##contig lines' assembly= and the",
         "##reference line, which ExtractVariantAnnotations varies, but the port's scored header does not rebuild them",
         "(gatk-rs#1479 reached ExtractVariantAnnotations and VariantRecalibrator only), a port limitation.",
         "--variant-output-filtering is held out: the port neither filters the scored records by it nor refuses a mode",
@@ -18945,8 +19005,14 @@
         "<unset>",
         "/work/fixtures/reads.bai"
       ],
-      "--reference": [],
-      "--sequence-dictionary": [],
+      "--reference": [
+        "<unset>",
+        "/work/fixtures/vr_ref.fasta"
+      ],
+      "--sequence-dictionary": [
+        "<unset>",
+        "/work/fixtures/vr_ref.dict"
+      ],
       "--variant-output-filtering": []
     },
     "DetermineGermlineContigPloidy": {
@@ -23850,6 +23916,146 @@
         "--input": "<unset>"
       },
       "why": "An index with no reads beside it is counted against zero inputs, a refusal the read walkers' arrays already measure."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/va.bai",
+        "--input": "null"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/va.bai",
+        "--input": "/work/fixtures/va2.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/va2.bai",
+        "--input": "null"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/va2.bai",
+        "--input": "/work/fixtures/va.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/svd_coord.bai",
+        "--input": "/work/fixtures/svd.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/svd_coord.bai",
+        "--input": "/work/fixtures/svd2.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "AnalyzeSaturationMutagenesis"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/asm_coord.bai",
+        "--input": "/work/fixtures/asm.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "DownsampleByDuplicateSet"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/molecules_coord.bai",
+        "--input": "/work/fixtures/molecules.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "DownsampleByDuplicateSet"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/molecules_coord.bai",
+        "--input": "/work/fixtures/molecules_backwards.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "BwaSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/bwa_reads_coord.bai",
+        "--input": "/work/fixtures/bwa_reads.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "BwaSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/bwa_reads_coord.bai",
+        "--input": "/work/fixtures/bwa_reads_unsorted.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "BwaSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/bwa_reads_coord.bai",
+        "--input": "/work/fixtures/bwa_reads_dictionary.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "BwaAndMarkDuplicatesPipelineSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/bwa_reads_coord.bai",
+        "--input": "/work/fixtures/bwa_reads.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
+    },
+    {
+      "tools": [
+        "BwaAndMarkDuplicatesPipelineSpark"
+      ],
+      "forbid": {
+        "--read-index": "/work/fixtures/bwa_reads_coord.bai",
+        "--input": "/work/fixtures/bwa_reads_no_group.bam"
+      },
+      "why": "An index beside reads it does not belong to is a pairing the reference never builds."
     }
   ],
   "exclude": {
