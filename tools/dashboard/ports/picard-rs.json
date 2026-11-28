@@ -1098,7 +1098,7 @@
     }
   ],
   "source": "picard-rs origin/main",
-  "commit": "bd199d296c43cb9206de1621bc8c620d8b82d0f4",
+  "commit": "7d740c8f25d4dca9e968e01df2769f2c6edd5954",
   "coverage": {
     "AccumulateQualityYieldMetrics": {
       "rows": 6,
@@ -1850,6 +1850,16 @@
       "t": 2,
       "share": 1.0
     },
+    "IlluminaBasecallsToFastq": {
+      "rows": 30,
+      "accepted": 13,
+      "rejected": 17,
+      "distinct_outputs": 10,
+      "distinct_rejections": 8,
+      "matched": 30,
+      "t": 2,
+      "share": 1.0
+    },
     "IlluminaBasecallsToSam": {
       "rows": 31,
       "accepted": 14,
@@ -1967,6 +1977,16 @@
       "distinct_outputs": 3,
       "distinct_rejections": 2,
       "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "MergeBamAlignment": {
+      "rows": 38,
+      "accepted": 23,
+      "rejected": 15,
+      "distinct_outputs": 21,
+      "distinct_rejections": 5,
+      "matched": 38,
       "t": 2,
       "share": 1.0
     },

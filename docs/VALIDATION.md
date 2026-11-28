@@ -197,7 +197,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | HaplotypeCallerSpark | gatk-rs | oracle-backed | 64 | 15 | 49/49 (100.0%) | 2 | 11894 probes (+2), 0/27 diverge | 11 | 15 | none |
 | HtsgetReader | gatk-rs | oracle-backed | 865 | 41 | 12/12 (100.0%) | 2 | 1084 probes (+2), 0/5 diverge | 0 | 0 | none |
 | IdentifyContaminant | picard-rs | oracle-backed | not vendored | not vendored | 13/13 (100.0%) | 2 | not measured | 0 | 0 | none |
-| IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
+| IlluminaBasecallsToFastq | picard-rs | oracle-backed | not vendored | not vendored | 30/30 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IlluminaBasecallsToSam | picard-rs | oracle-backed | not vendored | not vendored | 31/31 (100.0%) | 2 | not measured | 0 | 0 | none |
 | IndexFeatureFile | gatk-rs | oracle-backed | 36278 suite | 0 suite | 8/8 (100.0%) | 2 | 1219 probes (+10), 0/9 diverge | 0 | 0 | none |
 | IntervalListToBed | picard-rs | oracle-backed | not vendored | not vendored | 8/8 (100.0%) | 2 | not measured | 0 | 0 | none |
@@ -221,7 +221,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | MeanQualityByCycleSpark | gatk-rs | oracle-backed | 9 | 2 | 21/21 (100.0%) | 2 | 2162 probes (+4), 0/13 diverge | 4 | 2 | none |
 | MergeAnnotatedRegions | gatk-rs | oracle-backed | 14 suite | 0 suite | 18/18 (100.0%) | 2 | 2040 probes (+0), 0/6 diverge | 5 | 8 | none |
 | MergeAnnotatedRegionsByAnnotation | gatk-rs | oracle-backed | 9 suite | 0 suite | 22/22 (100.0%) | 2 | 1986 probes (+0), 0/7 diverge | 5 | 8 | none |
-| MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | not measured | - | not measured | 0 | 0 | none |
+| MergeBamAlignment | picard-rs | oracle-backed | not vendored | not vendored | 38/38 (100.0%) | 2 | not measured | 0 | 0 | none |
 | MergeMutect2CallsWithMC3 | gatk-rs | oracle-backed | 12 suite | 0 suite | 16/16 (100.0%) | 2 | 1811 probes (+0), 0/6 diverge | 3 | 10 | none |
 | MergeMutectStats | gatk-rs | oracle-backed | 11 suite | 0 suite | 7/7 (100.0%) | 2 | 1126 probes (+2), 0/5 diverge | 3 | 0 | none |
 | MergePedIntoVcf | picard-rs | oracle-backed | not vendored | not vendored | 19/19 (100.0%) | 2 | not measured | 0 | 0 | none |
