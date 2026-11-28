@@ -8,15 +8,6 @@
 #[cfg(all(feature = "gpu", target_os = "macos"))]
 mod metal;
 
-/// What `read_likelihood_given_haplotype_log10` reads off one read.
-pub struct ReadInputs<'a> {
-    pub bases: &'a [u8],
-    pub qualities: &'a [u8],
-    pub insertion: &'a [u8],
-    pub deletion: &'a [u8],
-    pub gap_continuation: &'a [u8],
-}
-
 /// Whether the environment asks for the device path.
 pub fn requested() -> bool {
     std::env::var_os("GATK_RS_GPU").is_some_and(|v| !v.is_empty() && v != "0")
@@ -28,17 +19,6 @@ pub fn device_name() -> Option<String> {
     if requested() {
         return metal::device_name();
     }
-    None
-}
-
-/// `read_likelihood_given_haplotype_log10` for every read against every haplotype, read-major
-/// (`reads.len() * haplotypes.len()` values), or `None` when the device path is not taken.
-pub fn pair_hmm_log10(haplotypes: &[Vec<u8>], reads: &[ReadInputs]) -> Option<Vec<f64>> {
-    #[cfg(all(feature = "gpu", target_os = "macos"))]
-    if requested() {
-        return metal::pair_hmm_log10(haplotypes, reads);
-    }
-    let _ = (haplotypes, reads);
     None
 }
 

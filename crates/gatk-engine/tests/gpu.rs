@@ -4,7 +4,6 @@
 //! unless the device actually ran, so a GPU job cannot go green on a host that fell back.
 
 use gatk_engine::gpu;
-use gatk_engine::pair_hmm::read_likelihood_given_haplotype_log10;
 
 /// SplitMix64, so the cases are the same on every run without a dependency.
 struct Random(u64);
@@ -115,114 +114,5 @@ fn the_device_adds_and_multiplies_as_the_host_does() {
             }
         }
         assert_eq!(wrong, 0, "{wrong} of {} results differ for {name}", a.len());
-    }
-}
-
-struct Read {
-    bases: Vec<u8>,
-    qualities: Vec<u8>,
-    insertion: Vec<u8>,
-    deletion: Vec<u8>,
-    gap: Vec<u8>,
-}
-
-fn bases(random: &mut Random, length: usize) -> Vec<u8> {
-    (0..length)
-        .map(|_| {
-            let alphabet = if random.below(20) == 0 { 5 } else { 4 };
-            b"ACGTN"[random.below(alphabet) as usize]
-        })
-        .collect()
-}
-
-#[test]
-fn the_device_pair_hmm_is_the_cpu_pair_hmm() {
-    let mut random = Random(0xBB67_AE85_84CA_A73B);
-    let reference = bases(&mut random, 600);
-    // Haplotypes as an assembler makes them: windows of one reference, some edited.
-    let haplotypes: Vec<Vec<u8>> = (0..12)
-        .map(|_| {
-            let start = random.below(200) as usize;
-            let mut h = reference[start..start + 40 + random.below(300) as usize].to_vec();
-            for _ in 0..random.below(4) {
-                let at = random.below(h.len() as u64) as usize;
-                match random.below(3) {
-                    0 => h[at] = b"ACGT"[random.below(4) as usize],
-                    1 => h.insert(at, b"ACGT"[random.below(4) as usize]),
-                    _ => {
-                        h.remove(at);
-                    }
-                }
-            }
-            h
-        })
-        .collect();
-    let mut reads: Vec<Read> = (0..60)
-        .map(|_| {
-            let length = 1 + random.below(150) as usize;
-            let source = &haplotypes[random.below(haplotypes.len() as u64) as usize];
-            let mut b = if length < source.len() {
-                let start = random.below((source.len() - length) as u64) as usize;
-                source[start..start + length].to_vec()
-            } else {
-                bases(&mut random, length)
-            };
-            for _ in 0..random.below(5) {
-                let at = random.below(b.len() as u64) as usize;
-                b[at] = b"ACGTN"[random.below(5) as usize];
-            }
-            let quality = |r: &mut Random, low: u64, high: u64| -> Vec<u8> {
-                (0..b.len())
-                    .map(|_| (low + r.below(high - low)) as u8)
-                    .collect()
-            };
-            Read {
-                qualities: quality(&mut random, 2, 60),
-                insertion: quality(&mut random, 10, 70),
-                deletion: quality(&mut random, 10, 70),
-                gap: quality(&mut random, 5, 15),
-                bases: b,
-            }
-        })
-        .collect();
-    // An empty read, whose likelihood is the log of zero.
-    reads.push(Read {
-        bases: vec![],
-        qualities: vec![],
-        insertion: vec![],
-        deletion: vec![],
-        gap: vec![],
-    });
-    let inputs: Vec<gpu::ReadInputs> = reads
-        .iter()
-        .map(|r| gpu::ReadInputs {
-            bases: &r.bases,
-            qualities: &r.qualities,
-            insertion: &r.insertion,
-            deletion: &r.deletion,
-            gap_continuation: &r.gap,
-        })
-        .collect();
-    let Some(device) = device_ran(gpu::pair_hmm_log10(&haplotypes, &inputs)) else {
-        return;
-    };
-    assert_eq!(device.len(), reads.len() * haplotypes.len());
-    for (r, read) in reads.iter().enumerate() {
-        for (h, haplotype) in haplotypes.iter().enumerate() {
-            let cpu = read_likelihood_given_haplotype_log10(
-                haplotype,
-                &read.bases,
-                &read.qualities,
-                &read.insertion,
-                &read.deletion,
-                &read.gap,
-            );
-            let gpu = device[r * haplotypes.len() + h];
-            assert_eq!(
-                cpu.to_bits(),
-                gpu.to_bits(),
-                "read {r} haplotype {h}: cpu {cpu:e}, gpu {gpu:e}"
-            );
-        }
     }
 }

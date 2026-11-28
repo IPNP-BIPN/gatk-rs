@@ -1284,8 +1284,8 @@ GATK, which targets concordance and says so.
       container digest, because a kernel's result is a property of all three
       (`tools/provenance/record.py`, format 2, `device` on a `GATK_RS_GPU` run)
 - [x] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
-      that is not faster gets deleted rather than kept (`docs/gpu/targets.md`,
-      `crates/gatk-engine/examples/gpu_speed.rs`)
+      that is not faster gets deleted rather than kept (`docs/gpu/targets.md`; the PairHMM kernel
+      was deleted on that rule, §1)
 
 **Scope note.** This milestone is optional and runs in parallel: nothing in G1, G2, G3, H or P
 depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
