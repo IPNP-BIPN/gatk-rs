@@ -1003,7 +1003,7 @@ Contigs with each signature and a smaller set; the refusals, and the contigs the
 
 ### DownsampleByDuplicateSet
 
-Suites: `downsample-by-duplicate-set`.
+Suites: `downsample-by-duplicate-set`, `port-limitations`.
 
 Inputs: `molecules.bam`, `molecules_backwards.bam`.
 
@@ -1285,7 +1285,7 @@ Held out: none.
 
 ### GatherPileupSummaries
 
-Suites: `mutect-gathers`.
+Suites: `mutect-gathers`, `port-limitations`.
 
 Inputs: `matching.dict`, `mixed_pileups.list`, `pileups.list`, `summaries_b.table`, `sv.dict`.
 
@@ -1479,7 +1479,7 @@ Every row reaches the pinned htsget-rs server run_array.py starts beside it, ser
 
 ### JointGermlineCNVSegmentation
 
-Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`.
+Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`, `port-limitations`.
 
 Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
 
@@ -1971,7 +1971,7 @@ The tool aborts on the first read with no `OQ` rather than skipping it, so the t
 
 ### RevertSamSpark
 
-Suites: `spark-walkers`.
+Suites: `spark-walkers`, `port-limitations`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`, `revert_map.tsv`.
 
@@ -1991,7 +1991,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### SVCluster
 
-Suites: `multi-variant-walker`, `sv-cluster`.
+Suites: `multi-variant-walker`, `sv-cluster`, `port-limitations`.
 
 Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 
