@@ -1,17 +1,17 @@
-# Graph Report - wt-graphify-gatk-rs  (2026-11-27)
+# Graph Report - wt-graphify-gatk-rs  (2026-11-28)
 
 ## Corpus Check
-- 1611 files · ~4,678,100 words
+- 1613 files · ~4,690,597 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 378 file(s) not represented in the graph (top: .gz 371, (none) 5, .toml 2)
 
 ## Summary
-- 29339 nodes · 75007 edges · 1081 communities (837 shown, 244 thin omitted)
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 4611 edges (avg confidence: 0.83)
+- 29408 nodes · 75126 edges · 1087 communities (833 shown, 254 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 4632 edges (avg confidence: 0.83)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1c4d82b0`
+- Built from commit: `a709713c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -21,7 +21,7 @@
 - runners.rs
 - src/tool_declarations.rs
 - htsjdk.variant.variantcontext.Allele
-- org.broadinstitute.hellbender.utils.haplotype.Haplotype
+- Ctg
 - gatk-cli/src/lib.rs
 - htsjdk.samtools.SAMFileHeader
 - What each array draws on and leaves out
@@ -32,9 +32,9 @@
 - genomicsdb_query.rs
 - .escape
 - FeatureCache
-- bytearrayoutputstream
+- PluginArgumentOwnershipDump.java
 - flag
-- SampleList
+- AlleleLikelihoods
 - AnnotationValue
 - runners_interpreter_tools.rs
 - src/filter_mutect_calls.rs
@@ -47,7 +47,7 @@
 - Event
 - tests/read_threading_assembler.rs
 - sv_breakpoints.rs
-- ReferenceContext
+- src/methylation_type_caller.rs
 - reference_confidence_merger.rs
 - tests/haplotype_based_variant_recaller.rs
 - run_array.py
@@ -55,7 +55,7 @@
 - src/read_threading_assembler.rs
 - f2j_dbdsdc.rs
 - RecalDatum
-- ModelError
+- EvalError
 - ReadThreadingGraph
 - src/covariates.rs
 - tests/slippage_filter.rs
@@ -75,11 +75,11 @@
 - tests/allele_specific_site_statistics.rs
 - Allele
 - runners/haplotype_caller.rs
-- Engine
+- src/sv_concordance.rs
 - gvcf_blocks.rs
-- IntervalArguments
+- ReferenceContext
 - genotyping_engine.rs
-- Haplotype
+- partially_determined.rs
 - src/flow_feature_mapper.rs
 - MakeFixtures
 - src/baq.rs
@@ -88,7 +88,7 @@
 - tests/usage_text.rs
 - tests/check_pileup.rs
 - AssemblyRegion
-- ApplyBqsrDump.java
+- tests/per_allele.rs
 - tests/funcotator.rs
 - read_utils.rs
 - SvKmerLong
@@ -104,7 +104,7 @@
 - scorer_pickle.rs
 - germline_filter.rs
 - pathseq_filter.rs
-- LoadedReference
+- runners/funcotator.rs
 - src/overhang_fixing_manager.rs
 - src/add_flow_base_quality.rs
 - tests/count_variants.rs
@@ -118,7 +118,7 @@
 - subprocess
 - mutect_engine.rs
 - reblock_gvcf.rs
-- src/strand_bias.rs
+- tests/strand_bias.rs
 - src/apply_filters.rs
 - src/gatk_report.rs
 - src/post_process_reads_for_rsem.rs
@@ -187,7 +187,7 @@
 - read_metadata.rs
 - os
 - RPlotsDump
-- filter_stats.rs
+- filtering_stats.rs
 - tests/fasta_alternate_reference_maker.rs
 - src/recalibration_report.rs
 - tests/threshold_calculator.rs
@@ -216,7 +216,7 @@
 - tests/ase_read_counter.rs
 - metal.rs
 - readsdatasource
-- argparse
+- pathlib
 - src/contamination_tables.rs
 - java_hash.rs
 - src/collect_f1r2_counts.rs
@@ -227,7 +227,7 @@
 - SvError
 - PanelArpackDump.java
 - .samLine
-- src/interval_arguments.rs
+- tests/compare_interval_lists.rs
 - tests/funcotate_segments.rs
 - src/site_statistics.rs
 - kernel_segmenter.rs
@@ -243,14 +243,13 @@
 - tests/variant_recalibrator.rs
 - src/compare_base_qualities.rs
 - src/allele_frequency_calculator.rs
-- src/add_original_alignment_tags.rs
-- tests/fasta_reference_maker.rs
+- src/transfer_read_tags.rs
+- tests/add_flow_base_quality.rs
 - normal_artifact_data.rs
 - covering.py
 - SvEvidenceDump
 - src/analyze_covariates.rs
-- SimpleInterval
-- VariantContext
+- Record
 - heterozygosity_and_mq.rs
 - heterozygosity.rs
 - src/bqsr_transformer.rs
@@ -294,7 +293,7 @@
 - src/main_entry.rs
 - pathseq_score.rs
 - splitting_index.rs
-- mapping_quality.rs
+- Interval
 - src/calculate_mixing_fractions.rs
 - .contains
 - tests/covariates.rs
@@ -303,7 +302,7 @@
 - tests/sv_stratify.rs
 - src/allele_specific_rank_sum.rs
 - tandem_repeat.rs
-- genotypes_in_canonical_order
+- tests/contamination_filter.rs
 - variant_context_utils.rs
 - AlignmentContext
 - Output
@@ -321,7 +320,7 @@
 - tests/clip_reads.rs
 - ground_truth_reads_builder_traverse
 - Well19937c
-- tests/accumulate_data.rs
+- src/validate_basic_somatic_short_mutations.rs
 - sample_db.rs
 - src/persistence_optimizer.rs
 - reference_confidence_model.rs
@@ -339,11 +338,11 @@
 - tests/mutect_gathers.rs
 - src/picard_gather_vcfs.rs
 - Evaluator
-- tempfile
+- argparse
 - tests/calibrate_dragstr_model.rs
 - tests/index_feature_file.rs
 - calculate_contamination_tool.rs
-- src/haplotype_caller.rs
+- src/variant_annotator.rs
 - op
 - tests/pair_hmm_likelihood_engine.rs
 - Rld
@@ -367,7 +366,7 @@
 - tests/filter_variant_tranches.rs
 - Allele
 - Variant
-- filtering_engine.rs
+- pair_hmm_port.rs
 - tests/add_flow_snv_quality.rs
 - tests/model_segments.rs
 - tests/analyze_saturation_mutagenesis.rs
@@ -378,7 +377,7 @@
 - variant_eval_engine.rs
 - src/variant_recalibrator.rs
 - tests/collect_f1r2_counts.rs
-- tests/allele_specific_rank_sum.rs
+- likelihood_annotations.rs
 - runners/multi_variant.rs
 - panel_rank.rs
 - RecalDatumDump
@@ -401,7 +400,7 @@
 - src/compare_references.rs
 - src/funcotator_data_source_downloader.rs
 - src/grouped_sv_cluster.rs
-- tests/methylation_type_caller.rs
+- germline_probability.rs
 - nv_score_variants/mod.rs
 - write
 - scorer_pickle_template.rs
@@ -417,7 +416,7 @@
 - tests/family_priors.rs
 - src/decimal_format.rs
 - ValueClass
-- os
+- re
 - tests/assembly_region_iterator.rs
 - tests/calculate_genotype_posteriors.rs
 - assembly_based_caller_utils.rs
@@ -427,8 +426,8 @@
 - InterpreterToolsDump
 - PathSeqTaxonomyKryoDump
 - tests/gnarly_genotyper.rs
-- tests/cram_issue_8768.rs
-- Thrown
+- arithmetic.py
+- Data
 - src/multi_feature_walker.rs
 - analyze_saturation_mutagenesis_engine.rs
 - src/annotate_vcf_with_bam_depth.rs
@@ -444,12 +443,12 @@
 - tests/create_somatic_panel_of_normals.rs
 - tests/calculate_mixing_fractions.rs
 - tests/filter_funcotations.rs
-- count_reads_and_bases.rs
+- h5py_scores.rs
 - tests/pedigree.rs
 - argument_collections.rs
 - multi_variant_walker.rs
 - gpu.rs
-- DragenGenotypesDump
+- run
 - src/variant_filtration.rs
 - tests/overhang_fixing_manager.rs
 - src/compose_str_table.rs
@@ -467,7 +466,7 @@
 - tests/mt_low_heteroplasmy.rs
 - tests/annotate_intervals.rs
 - tests/tool_declarations.rs
-- annotations.rs
+- tests/post_process_reads_for_rsem.rs
 - tests/original_alignment.rs
 - ConcordanceRecord
 - src/calibrate_dragstr_model.rs
@@ -479,7 +478,7 @@
 - src/numt_filter.rs
 - select_variants_output.rs
 - src/split_vcfs.rs
-- src/transfer_read_tags.rs
+- glibc_libm.rs
 - haplotype_caller_engine.rs
 - tests/variants_to_table.rs
 - concordance_filter_analysis.rs
@@ -487,8 +486,8 @@
 - tests/reference_block_concordance.rs
 - tests/convert_counts_to_depth_file.rs
 - tests/merge_mutect2_mc3.rs
-- interval
-- PowerError
+- updates
+- tests/somatic_validation_power.rs
 - src/left_align_and_trim_variants.rs
 - tests/sa_tag.rs
 - src/allele_frequency_qc.rs
@@ -500,10 +499,10 @@
 - SeqGraphDump
 - GenomicsDBImportDump
 - SVConcordanceDump
-- HeterozygosityAndMqDump
+- src/model_segments.rs
 - variant_bridge.rs
 - tests/call_copy_ratio_segments.rs
-- hashmap
+- model.rs
 - tests/learn_read_orientation_model.rs
 - src/apply_bqsr.rs
 - panel_arpack.rs
@@ -532,7 +531,7 @@
 - src/concordance_walker.rs
 - gatk_report_reader.rs
 - kernel_segmentation.rs
-- Record
+- comments_only.py
 - Span
 - sam_file_header_merger.rs
 - libm_pow_two.rs
@@ -559,7 +558,7 @@
 - left_align_and_trim.rs
 - unitig.rs
 - ReportType
-- traverse
+- ReadsDataSource
 - GencodeFuncotation
 - src/gtf_to_bed.rs
 - read_vcf
@@ -592,12 +591,12 @@
 - raw_gt_count.rs
 - tests/gtf_to_bed.rs
 - pileup_tool.rs
-- tests/dragen_genotypes.rs
+- VidField
 - STATUS.md
 - TsvTableDump
 - Roadmap to 100% byte-identical reproduction
 - .main
-- PrintDistantMatesDump
+- CompressedDataList
 - trim_alleles.rs
 - src/analyze_saturation_mutagenesis.rs
 - src/annotate_intervals.rs
@@ -605,7 +604,7 @@
 - bwa_mem_index_image_creator.rs
 - .utr
 - Known
-- .operate
+- sum_or_mean
 - State
 - tests/split_intervals.rs
 - read_walker_refusal.rs
@@ -618,8 +617,8 @@
 - tests/split_intervals.rs
 - HtsgetReaderDump
 - dispatcher.rs
-- string_hash_code
-- readgroup
+- a_mismatch_names_an_upper_case_sum_against_a_lower_case_one
+- tests/calculate_average_combined_annotations.rs
 - tests/base_recalibration_engine.rs
 - src/denoise_read_counts.rs
 - src/left_align_indels.rs
@@ -635,7 +634,7 @@
 - tests/convert_headerless_shard.rs
 - tests/flow.rs
 - Report
-- SequenceRecord
+- readgroup
 - FilterResolutionError
 - .new
 - .traverse_all_paths
@@ -647,15 +646,15 @@
 - tests/picard_gather_vcfs.rs
 - tests/preprocess_intervals.rs
 - tests/remove_nearby_indels.rs
-- filtering_stats.rs
+- AsRankSum
 - Well19937cDump
 - TaggedPath
 - dump_layers.py
 - FixMisencodedDump
-- tests/java_regex.rs
-- tests/apply_bqsr.rs
+- Het
+- thread_independence.py
 - tests/combine_segment_breakpoints.rs
-- nv_score_variants_gpu.rs
+- interval_file.rs
 - tests/vcf_format_converter.rs
 - count_variants_plumbing.rs
 - hc_debug_outputs.rs
@@ -673,9 +672,9 @@
 - BuildBamIndexDump
 - FinalizeRegionDump
 - FlowFeatureMapperDump
-- DataType
+- FlowPairHMMAlignReadsToHaplotypesDump
 - PairHmmLikelihoodEngineDump
-- stream.rs
+- Write
 - given_alleles.rs
 - src/build_bam_index.rs
 - population_priors.rs
@@ -688,33 +687,32 @@
 - value_classes.rs
 - tests/downsample_by_duplicate_set.rs
 - tests/recalibration_report.rs
-- src/collect_allelic_counts.rs
+- ReadPileup
 - SvType
 - extract_undocumented.py
 - tool_argument_enums.rs
-- Driving
+- RecalVariant
 - tests/series_stats.rs
 - tests/contamination_model.rs
 - src/gather_bam_files.rs
 - fgkl and Lorikeet against the callers' kernels
 - native_driver.c
-- tests/rank_sum.rs
 - with
 - BaseRecalibratorDump
 - CheckReferenceCompatibilityDump
 - CollectF1R2CountsDump
-- germline_wrapper.rs
+- PrintError
 - SVStratifyDump
 - TransferReadTagsDump
 - VCFComparatorDump
-- error_probabilities.rs
+- src/vcf_format_converter.rs
 - read_walker_refusals.rs
 - adaptive_chain_pruner.rs
 - sv_feature_codecs.rs
 - count_reads_plumbing.rs
 - Tag
 - src/base_recalibrator.rs
-- GroundTruthReadsBuilderDump
+- Builder
 - tests/mann_whitney.rs
 - tests/read_threading_graph.rs
 - jexl_filter.rs
@@ -727,7 +725,7 @@
 - tests/fix_vcf_header.rs
 - kryo_stream.rs
 - Event
-- FlowAnnotationDump.java
+- FlushedOutput
 - FilterAlignmentArtifactsDump
 - gatk-rs
 - Milestone G1: the GATK engine
@@ -740,7 +738,7 @@
 - FuncotatorDataSourceDownloaderDump
 - GATKReportReaderDump
 - GeneExpressionEvaluationDump
-- ReportReadError
+- Compatibility
 - HcAnnotatedCallsDump
 - MethylationTypeCallerDump
 - PicardGatherVcfsDump
@@ -754,10 +752,10 @@
 - tests/tsv_table.rs
 - ksw.rs
 - BaseDistributionMetric
-- AlleleSpecificStrandBiasDump
+- PrintReadCountsDump
 - LocalAssemblerDump
 - tests/dangling_ends.rs
-- DataManager
+- JavaRandom
 - tests/filter_vcf.rs
 - tests/merge_vcfs.rs
 - Spark, threads and partitions
@@ -771,15 +769,15 @@
 - CalibrateDragstrModelDump
 - CombineGVCFsDump
 - ConvertHeaderlessShardDump
-- math_utils.rs
+- hc_pdhmm.rs
 - HcCallRegionDump
 - HcGenotypingDump
 - HcPhasingDump
-- Datum
+- Token
 - JavaRandomDump
 - JointGermlineCNVSegmentationDump
 - LeftAlignIndelsToolDump
-- AlleleSpecificSiteStatisticsDump
+- .describe_variants_as_codons
 - VariantRecalibratorDump
 - tests/allele_pseudo_depth.rs
 - ReferenceBases<'_>
@@ -788,7 +786,7 @@
 - hc_bamout.rs
 - hc_contamination.rs
 - hc_linked_graph.rs
-- FragmentCountsDump
+- .get
 - hc_pileup.rs
 - AnalyzeSaturationMutagenesisDump
 - hc_resources.rs
@@ -797,11 +795,11 @@
 - leveling.rs
 - DecimationTable
 - Arguments
-- record_transform.rs
+- Settings
 - with
 - CellType
 - FeatureCacheDump
-- RecalibrationTablesDump
+- hdf5_second_reader.rs
 - filter_to
 - ModelError
 - VcType
@@ -813,13 +811,13 @@
 - NVScoreVariants: what the port reproduces, in numbers
 - What pairwise coverage actually costs
 - When a dependency is cheaper than a port, and when it is not
-- chain_pruner.rs
+- tests/vcf_to_interval_list.rs
 - MannWhitneyDump
 - FuzzDriver
 - BarclayValueModelDump
 - steps
 - gcnv_frozen_env.sh
-- java_double_to_string
+- ActivityProfileDump
 - AddFlowSNVQualityDump
 - AnnotateVcfWithBamDepthDump
 - ClipReadsDump
@@ -833,7 +831,7 @@
 - fix_misencoded.rs
 - ReblockGVCFDump
 - RecalibrationReportDump
-- tests/get_sample_name.rs
+- PrintFileDiagnosticsDump
 - SelectVariantsHeaderDump
 - StructuralVariantDiscovererDump
 - VariantAnnotatorDump
@@ -848,7 +846,7 @@
 - haplotype_caller_gvcf_end_to_end.rs
 - hc_allele_filtering.rs
 - hc_allele_graphs.rs
-- gatk-tools/src/pileup.rs
+- hc_pedigree.rs
 - mutect2_dragstr.rs
 - mutect2_end_to_end.rs
 - mutect2_gvcf.rs
@@ -856,21 +854,21 @@
 - mutect2_permutect.rs
 - mutect2_resources.rs
 - variant_eval_end_to_end.rs
-- tests/well19937c.rs
-- Mixture
+- at
+- DownloadError
 - Cell
 - AnnotationDump
 - Failure
-- generate_ci.py
+- Targets, chosen from the baseline
 - Op
-- AlleleFrequencyCalculatorDump.java
+- FilterMutectCallsDump
 - tests/usage_text.rs
 - Reached through the host libm, bypassing `jmath`
 - org.broadinstitute.hellbender.tools.walkers.mutect.filtering.M2FiltersArgumentCollection
 - NaturalLogUtilsDump
 - VariantGettersDump
-- gatk-engine/tests/left_align_indels.rs
-- create_read_count_panel_of_normals
+- spark_walkers_end_to_end.rs
+- Kernel
 - MainEntryDump
 - MainNonUserDump
 - MainUsageDump
@@ -878,15 +876,15 @@
 - ReferenceBlockConcordanceDump
 - SplitReadsDump
 - GenotypeType
-- CreateHadoopBamSplittingIndexDump
-- Value
+- CollectionError
+- ContextType
 - ks_introsort
 - tests/kbest_haplotype.rs
-- ReadStrands
+- count
 - HaplotypeRecord
 - RemoveNearbyIndelsDump
 - genomicsdb_query_end_to_end.rs
-- tests/seq_graph.rs
+- SeqGraphError
 - CallType
 - Reason
 - FeatureKind
@@ -898,7 +896,7 @@
 - gatk-cli
 - tests/filter_resolution.rs
 - tests/main_usage.rs
-- tests/dump_tabix_index.rs
+- Interval
 - GenotypeIndexDump
 - HcIsActiveDump
 - CalculateMixingFractionsDump
@@ -908,7 +906,7 @@
 - AlleleFrequencyQcMetric
 - CheckPileupDump
 - Reference
-- variant_bases
+- Input
 - numpy_ziggurat.rs
 - compare_port.py
 - hdf5-pure as a second reader of the port's HDF5
@@ -918,9 +916,9 @@
 - GatherBamFilesDump
 - read_clipping.rs
 - Column
-- sequence_dictionary_validation.rs
+- CompareReferencesDump
 - Decision
-- BwaMemIndexImageCreatorDump
+- golden
 - ComposeSTRTableFileDump
 - CondenseDepthEvidenceDump
 - GetNormalArtifactDataDump
@@ -940,13 +938,13 @@
 - MainCatalogueDump
 - add_to_qual_report
 - main_non_user.rs
-- SampleSelectionError
-- ValidateVariantsDump
+- AlnModType
+- BarclayArgumentsFileDump
 - A truncated alignment that looks finished
 - Archetype counts: what the inventory says, and one thing the plan got wrong
 - BWA through bwa-mem4, against the JNI GATK runs
 - What makes a kernel eligible
-- A change made for speed may not move a byte
+- BarclayPluginDescriptorDump
 - Three readings of a tool's arguments, and which one a command line obeys
 - DecimalFormatDump.java
 - CountReadsPlumbingDump
@@ -956,31 +954,31 @@
 - ploidy_trace.sh
 - hc_flow.rs
 - CalculateGenotypePosteriorsDump
-- AddCommentsToBamDump
+- KernelSegmentationDump
 - reblock_gvcf_end_to_end.rs
 - FamilyPriorsDump
-- AssemblyComplexityDump
 - MainDispatchDump
 - MTLowHeteroplasmyDump
 - NuMTFilterDump
-- PrintSVEvidenceDump
+- Transform
 - error_probabilities
 - Route
-- ComplicationClass
+- annotated_variant
 - SegmenterMode
-- Milestone GPU: accelerate without losing the byte
+- the_snp_label_is_reserved
 - ReadWalkerRefusalDump
-- java_parse_double
+- AlignmentSignature
 - Tool inventory
 - CalculateAverageCombinedAnnotationsDump
-- CountFalsePositivesDump
-- walker_usage.rs
+- DragstrDump
+- CollectAllelicCountsDump
 - DoubleToStringDump
-- JavaHashCode
+- CollectReadCountsDump
 - PicardUpdateVcfDictionaryDump
-- PrintReadsHeaderDump
-- CommentError
-- SmithWatermanDump
+- GatherTranchesDump
+- ReferenceContextDump
+- Milestone S: speed, once the bytes are settled
+- FilterIntervalsDump
 - HmmState
 - StringFormatDump
 - CycleSkipStatus
@@ -998,40 +996,38 @@
 - measure_vets.sh
 - probe_mkl.sh script
 - gatk-corpus
-- decode_annotation
+- GermlineProbabilityDump
 - argument-coverage-t3-merge
 - run
 - read_coordinates.rs
-- InputError
+- RenameSampleInVcfDump
 - SortVcfDump
-- on
+- Steady
 - ToolArgumentEnumDump
 - steps
 - ApplyVqsrTranchesDump
-- haplotype_based_variant_recaller
+- runners_haplotype_based_variant_recaller.rs
 - VariantType
-- header_line
+- Stream
 - TagGermlineEventsDump
 - Scoring
-- SvKind
-- include
-- FilterVariantTranchesDump
-- runners_filter_alignment_artifacts.rs
+- Cell<N>
+- super
 - AnnotateIntervalsDump
 - LeftAlignIndelsDump
 - MutectEngineArithmeticDump
 
 ## God Nodes (most connected - your core abstractions)
 1. `SimpleInterval` - 318 edges
-2. `Parser` - 277 edges
-3. `argument()` - 263 edges
+2. `Parser` - 280 edges
+3. `argument()` - 264 edges
 4. `Declaration` - 228 edges
 5. `What each array draws on and leaves out` - 207 edges
 6. `parsed()` - 197 edges
 7. `flag()` - 186 edges
 8. `AlleleLikelihoods` - 169 edges
 9. `Haplotype` - 142 edges
-10. `Outcome` - 133 edges
+10. `Outcome` - 134 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `GPU.3 How it is verified` --references--> `device()`  [INFERRED]
@@ -1040,10 +1036,10 @@
   docs/mutants.md → tools/readfilter-conformance/AssemblyRegionDump.java
 - `How it is checked` --references--> `GenomicsDBQueryDump`  [INFERRED]
   docs/what-a-genomicsdb-query-hands-the-callers.md → tools/readfilter-conformance/GenomicsDBQueryDump.java
-- `How the 63 of gatk-readfilter were sorted` --references--> `CovariatesDump`  [INFERRED]
-  docs/mutants.md → tools/readfilter-conformance/CovariatesDump.java
 - `1b. NVScoreVariants' convolutions: shipped (GPU.4, #1021)` --references--> `conv2d_fused()`  [INFERRED]
   docs/gpu/targets.md → crates/gatk-engine/src/gpu/kernels.metal
+- `Task 1: Close the ratchet's back door` --references--> `sources()`  [INFERRED]
+  docs/superpowers/plans/2026-08-01-commenting-gatk-rs.md → tools/audit/comment_density.py
 
 ## Import Cycles
 - 1-file cycle: `crates/gatk-barclay/src/lib.rs -> crates/gatk-barclay/src/lib.rs`
@@ -1052,27 +1048,27 @@
 - 2-file cycle: `crates/gatk-engine/src/haplotype.rs -> crates/gatk-engine/src/haplotype_alignment.rs -> crates/gatk-engine/src/haplotype.rs`
 - 3-file cycle: `crates/gatk-engine/src/event_map.rs -> crates/gatk-engine/src/haplotype.rs -> crates/gatk-engine/src/haplotype_alignment.rs -> crates/gatk-engine/src/event_map.rs`
 
-## Communities (1081 total, 244 thin omitted)
+## Communities (1087 total, 254 thin omitted)
 
 ### Community 1 - "htsjdk.variant.variantcontext.VariantContext"
 Cohesion: 0.02
-Nodes (24): AccumulateDataDump, AlleleFilterBaseDump, ApplyFiltersDump, FixedAllele, FixedSite, ContaminationFilterDump, EngineAssemblyDump, FilteredHaplotypeFilterDump (+16 more)
+Nodes (25): AccumulateDataDump, AlleleFilterBaseDump, AlleleFrequencyCalculatorDump, ApplyFiltersDump, FixedAllele, FixedSite, ContaminationFilterDump, EngineAssemblyDump (+17 more)
 
 ### Community 2 - "runners.rs"
 Cohesion: 0.03
-Nodes (323): Parser, PluginResolution, absolute_path(), add_flow_base_quality(), add_flow_snv_quality(), add_original_alignment_tags(), allele_frequency_qc(), AlleleFrequencyQcPresets (+315 more)
+Nodes (316): Parser, PluginResolution, custom_validation(), absolute_path(), add_flow_base_quality(), add_flow_snv_quality(), add_original_alignment_tags(), allele_frequency_qc() (+308 more)
 
 ### Community 3 - "src/tool_declarations.rs"
 Cohesion: 0.02
 Nodes (243): ADDFLOWBASEQUALITY, ADDFLOWSNVQUALITY, ADDORIGINALALIGNMENTTAGS, ALLELEFREQUENCYQC, ANALYZECOVARIATES, ANALYZESATURATIONMUTAGENESIS, ANNOTATEINTERVALS, ANNOTATEVCFWITHBAMDEPTH (+235 more)
 
 ### Community 4 - "htsjdk.variant.variantcontext.Allele"
-Cohesion: 0.03
-Nodes (12): AllelePseudoDepthDump, DepthPerAlleleDump, LikelihoodAnnotationDump, OriginalAlignmentDump, PerAlleleAnnotationDump, RankSumAnnotationDump, ReadGroupingAnnotationDump, StrandBiasAnnotationDump (+4 more)
+Cohesion: 0.02
+Nodes (20): AllelePseudoDepthDump, AlleleSpecificSiteStatisticsDump, AlleleSpecificStrandBiasDump, DepthPerAlleleDump, FragmentCountsDump, HaplotypeFilteringAnnotationDump, HeterozygosityAndMqDump, LikelihoodAnnotationDump (+12 more)
 
-### Community 5 - "org.broadinstitute.hellbender.utils.haplotype.Haplotype"
-Cohesion: 0.10
-Nodes (5): HaplotypeFilteringAnnotationDump, EventMapDump, Pair, PairHmmDump, LikelihoodMatrix<GATKRead, Haplotype>
+### Community 5 - "Ctg"
+Cohesion: 0.17
+Nodes (3): ContigData, Ctg, ListView
 
 ### Community 6 - "gatk-cli/src/lib.rs"
 Cohesion: 0.03
@@ -1080,7 +1076,7 @@ Nodes (213): COMMAND_LINE_NAME, composed_usage(), HTSJDK_VERSION, not_ported(), 
 
 ### Community 7 - "htsjdk.samtools.SAMFileHeader"
 Cohesion: 0.02
-Nodes (22): SiteStatisticsDump, AlignmentContextBuilderDump, AlignmentStateDump, AllelePileupCounterDump, Body, ASEReadCounterDump, BqsrTransformerDump, CallableLociDump (+14 more)
+Nodes (24): FlowAnnotationDump, SiteStatisticsDump, AlignmentContextBuilderDump, AlignmentStateDump, AlleleMappingDump, AllelePileupCounterDump, Body, ASEReadCounterDump (+16 more)
 
 ### Community 8 - "What each array draws on and leaves out"
 Cohesion: 0.01
@@ -1088,7 +1084,7 @@ Nodes (207): AddCommentsToBam, AddFlowBaseQuality, AddFlowSNVQuality, AddOrigina
 
 ### Community 9 - "ReadsDataSource"
 Cohesion: 0.03
-Nodes (90): a_local_split_stops_at_the_block_size_and_the_slop_keeps_a_tenth(), a_zero_end_swallows_what_follows_it_on_the_same_contig(), abutting_intervals_merge_so_a_read_is_returned_once(), an_sbi_chunk_is_the_offsets_between_its_ceilings(), an_sbi_holds_its_count_then_its_offsets(), At, block_table(), BlockCursor (+82 more)
+Nodes (89): a_local_split_stops_at_the_block_size_and_the_slop_keeps_a_tenth(), a_zero_end_swallows_what_follows_it_on_the_same_contig(), abutting_intervals_merge_so_a_read_is_returned_once(), an_sbi_chunk_is_the_offsets_between_its_ceilings(), an_sbi_holds_its_count_then_its_offsets(), At, block_table(), BlockCursor (+81 more)
 
 ### Community 10 - "org.broadinstitute.hellbender.engine.ReferenceContext"
 Cohesion: 0.03
@@ -1096,107 +1092,107 @@ Nodes (28): AssemblyRegionWalkerDump, ProbeWalker, ConcordanceWalkerDump, Defaul
 
 ### Community 11 - "runners_spark.rs"
 Cohesion: 0.05
-Nodes (140): expanded(), java_display_now(), open_feature_input(), apply_bqsr_spark(), assembly_task_failure(), base_recalibrator_spark(), bqsr_pipeline_spark(), breakpoint_arguments() (+132 more)
+Nodes (139): expanded(), java_display_now(), apply_bqsr_spark(), assembly_task_failure(), base_recalibrator_spark(), bqsr_pipeline_spark(), breakpoint_arguments(), breakpoint_failure() (+131 more)
 
 ### Community 12 - ".emptyDirectory"
-Cohesion: 0.02
-Nodes (49): CallCopyRatioSegmentsDump, CollectAllelicCountsDump, CollectReadCountsDump, CompareIntervalListsDump, DenoiseReadCountsDump, FastaAlternateReferenceMakerDump, FastaReferenceMakerDump, FilterIntervalsDump (+41 more)
+Cohesion: 0.03
+Nodes (44): CallCopyRatioSegmentsDump, CompareIntervalListsDump, DenoiseReadCountsDump, FastaAlternateReferenceMakerDump, FastaReferenceMakerDump, FilterVcfDump, FixVcfHeaderDump, HcAllAnnotationsDump (+36 more)
 
 ### Community 13 - "genomicsdb_query.rs"
 Cohesion: 0.08
-Nodes (35): binomial(), FLOAT_MISSING, FLOAT_VECTOR_END, format_sharp_g(), genotype_count(), genotype_index(), genotypes(), genotypes_are_in_vcf_order() (+27 more)
+Nodes (36): binomial(), Cell, delta_decode(), FLOAT_MISSING, FLOAT_VECTOR_END, format_sharp_g(), genotype_count(), genotype_index() (+28 more)
 
 ### Community 14 - ".escape"
 Cohesion: 0.02
-Nodes (29): AnnotateVcfWithExpectedAlleleFractionDump, ApplyVqsrAlleleSpecificDump, ApplyVqsrSiteFilteringDump, CompareReferencesDump, ConcordanceAnnotatedVcfsDump, ConcordanceDump, ConcordanceFilterAnalysisDump, ContaminationTablesDump (+21 more)
+Nodes (32): AnnotateVcfWithExpectedAlleleFractionDump, ApplyVqsrAlleleSpecificDump, ApplyVqsrSiteFilteringDump, BwaMemIndexImageCreatorDump, ConcordanceAnnotatedVcfsDump, ConcordanceDump, ConcordanceFilterAnalysisDump, ContaminationTablesDump (+24 more)
 
 ### Community 15 - "FeatureCache"
-Cohesion: 0.11
-Nodes (11): Feature, FeatureCache, FeatureDataSource, FeatureDataSource<R>, FeatureReader, R, every_query_returns_what_the_reference_returns(), FEATURES (+3 more)
+Cohesion: 0.10
+Nodes (12): Feature, FeatureCache, FeatureContext, FeatureDataSource, FeatureDataSource<R>, FeatureReader, R, every_query_returns_what_the_reference_returns() (+4 more)
 
-### Community 16 - "bytearrayoutputstream"
-Cohesion: 0.02
-Nodes (16): Args, BarclayArgumentsFileDump, Args, BarclayPluginDescriptorDump, ExpandedCommandLineDump, MutexTargetsDump, PluginArgumentOwnershipDump, Args (+8 more)
+### Community 16 - "PluginArgumentOwnershipDump.java"
+Cohesion: 0.04
+Nodes (12): ExpandedCommandLineDump, MutexTargetsDump, PluginArgumentOwnershipDump, Args, ReadFilterCatalogueDump, ToolArgumentDeclarationDump, ToolArgumentValueClassDump, Target (+4 more)
 
 ### Community 17 - "flag"
 Cohesion: 0.03
-Nodes (83): absolute(), block_copy(), compress(), reheader(), run(), assert_readable(), assert_writable(), run() (+75 more)
+Nodes (92): absolute(), block_copy(), compress(), reheader(), run(), assert_readable(), assert_writable(), run() (+84 more)
 
-### Community 18 - "SampleList"
-Cohesion: 0.05
-Nodes (24): allele(), case(), every_annotation_answers_as_the_reference_answers(), every_reference_window_produces_the_same_string(), golden(), matrix(), on_alt(), read() (+16 more)
+### Community 18 - "AlleleLikelihoods"
+Cohesion: 0.13
+Nodes (24): allele(), case(), every_annotation_answers_as_the_reference_answers(), golden(), likelihoods_for(), one(), read(), rendered() (+16 more)
 
 ### Community 19 - "AnnotationValue"
-Cohesion: 0.04
-Nodes (48): ChromosomeCounts, KEY_NAMES, all_evidence(), CountNs, Coverage, DEPTH_KEY, MAPPING_QUALITY_ZERO_KEY, MappingQualityZero (+40 more)
+Cohesion: 0.03
+Nodes (67): ChromosomeCounts, KEY_NAMES, all_evidence(), CountNs, Coverage, DEPTH_KEY, MAPPING_QUALITY_ZERO_KEY, MappingQualityZero (+59 more)
 
 ### Community 20 - "runners_interpreter_tools.rs"
 Cohesion: 0.04
-Nodes (121): extract_variant_annotations(), genotype_facts(), labelled_walker_start(), LabelledStart, matching_labels(), matrix(), Metadata, metadata() (+113 more)
+Nodes (120): extract_variant_annotations(), genotype_facts(), labelled_walker_start(), LabelledStart, matching_labels(), matrix(), Metadata, metadata() (+112 more)
 
 ### Community 21 - "src/filter_mutect_calls.rs"
 Cohesion: 0.05
-Nodes (30): AppliedRecord, filter_line(), engine_rows(), every_row_matches_the_golden(), golden(), ours(), accumulate(), annotation_for() (+22 more)
+Nodes (45): AppliedRecord, a_filter_that_answers_an_empty_list_is_dropped(), a_site_filter_copies_its_answer_to_every_allele(), artifact(), by_type(), combined(), FilterAnswer, kept() (+37 more)
 
 ### Community 22 - "sv_evidence.rs"
-Cohesion: 0.04
-Nodes (90): LibraryName, MetadataArguments, ReadMetadata, IntervalMap<V>, mapped_qnames(), a_soft_clip_needs_quality(), after_collect(), aligned_bases() (+82 more)
+Cohesion: 0.05
+Nodes (88): LibraryName, MetadataArguments, ReadMetadata, mapped_qnames(), a_soft_clip_needs_quality(), after_collect(), aligned_bases(), an_interval_prints_as_the_reference_does() (+80 more)
 
 ### Community 23 - "SampleList"
-Cohesion: 0.08
-Nodes (15): AlleleLikelihoods<E, A>, AlleleLikelihoods<E, Allele>, AlleleLikelihoods<htsjdk_bam::record::BamRecord, A>, BestAllele, BestAllele<A>, LikelihoodsError, AlreadyNaturalLog, NoAlleles (+7 more)
+Cohesion: 0.04
+Nodes (26): AlleleLikelihoods<E, A>, AlleleLikelihoods<E, Allele>, AlleleLikelihoods<htsjdk_bam::record::BamRecord, A>, BestAllele, BestAllele<A>, LikelihoodsError, AlreadyNaturalLog, NoAlleles (+18 more)
 
 ### Community 24 - "src/vcf_comparator.rs"
-Cohesion: 0.05
-Nodes (72): is_span_del(), reverse_trim_alleles(), ALLELE_COUNT_KEY, allele_depth_sum(), ALLELE_NUMBER_KEY, allele_order(), allele_string(), alleles_string() (+64 more)
+Cohesion: 0.06
+Nodes (70): ALLELE_COUNT_KEY, allele_depth_sum(), ALLELE_NUMBER_KEY, allele_order(), allele_string(), alleles_string(), AS_INBREEDING_COEFFICIENT_KEY, AS_QUAL_BY_DEPTH_KEY (+62 more)
 
 ### Community 25 - "GenotypeData"
-Cohesion: 0.06
-Nodes (46): a_repeated_allele_collapses_to_one_key(), a_short_allele_depth_array_is_out_of_bounds(), a_short_list_shifts_the_gather(), alt_data_by_allele(), combine(), data_by_allele(), GenotypeData, sum_ads_over_samples() (+38 more)
+Cohesion: 0.08
+Nodes (43): a_repeated_allele_collapses_to_one_key(), a_short_allele_depth_array_is_out_of_bounds(), a_short_list_shifts_the_gather(), alt_data_by_allele(), combine(), data_by_allele(), GenotypeData, sum_ads_over_samples() (+35 more)
 
 ### Community 26 - "SomaticClusteringModel"
-Cohesion: 0.07
-Nodes (39): AlleleFractionCluster, BetaBinomial, Binomial, BetaDistributionShape, .FLAT, corrected_log_likelihood(), Datum, digamma() (+31 more)
+Cohesion: 0.04
+Nodes (73): AlleleFractionCluster, BetaBinomial, Binomial, BetaDistributionShape, .FLAT, corrected_log_likelihood(), Datum, digamma() (+65 more)
 
 ### Community 27 - "src/assembly_region_iterator.rs"
-Cohesion: 0.04
-Nodes (56): ActivityAnswer, ArgsError, MinAboveMax, NegativeIndelPadding, NegativeMaxReads, NegativePadding, NegativeSnpPadding, SizeNotPositive (+48 more)
+Cohesion: 0.05
+Nodes (52): ActivityAnswer, ArgsError, MinAboveMax, NegativeIndelPadding, NegativeMaxReads, NegativePadding, NegativeSnpPadding, SizeNotPositive (+44 more)
 
 ### Community 28 - "Event"
-Cohesion: 0.06
-Nodes (56): build_event_maps_for_haplotypes(), Event, event_start_positions(), EventError, Allele, IllegalArgument, IndexOutOfBounds, NoCigar (+48 more)
+Cohesion: 0.05
+Nodes (61): build_event_maps_for_haplotypes(), Event, event_start_positions(), EventError, Allele, IllegalArgument, IndexOutOfBounds, NoCigar (+53 more)
 
 ### Community 29 - "tests/read_threading_assembler.rs"
-Cohesion: 0.20
-Nodes (11): Case, cases(), CONTIG, every_case_matches_the_reference(), header(), record(), reference_haplotype(), render_cigar() (+3 more)
+Cohesion: 0.11
+Nodes (19): ALIGNMENT_START, every_stop_matches_the_reference(), golden(), read_for(), cigar(), element(), every_clip_produces_the_cigar_the_reference_produces(), golden() (+11 more)
 
 ### Community 30 - "sv_breakpoints.rs"
 Cohesion: 0.06
-Nodes (67): mix(), ReadPartitions, a_partitioned_key_hashes_as_scala_2_13_does(), a_shuffle_leaves_the_hash_order_of_its_slots(), a_shuffle_sends_a_key_to_the_partition_its_hash_says_from_every_map(), accurate_kmer_coverage(), apply_alignment(), Arguments (+59 more)
+Nodes (68): ContigAlignment, mix(), ReadPartitions, a_partitioned_key_hashes_as_scala_2_13_does(), a_shuffle_leaves_the_hash_order_of_its_slots(), a_shuffle_sends_a_key_to_the_partition_its_hash_says_from_every_map(), accurate_kmer_coverage(), apply_alignment() (+60 more)
 
-### Community 31 - "ReferenceContext"
-Cohesion: 0.04
-Nodes (51): ContextError, ContigNotInReference, InvalidArgument, NegativeWindow, Reference, contig_length(), ReadFilterFn, ReadsContext (+43 more)
+### Community 31 - "src/methylation_type_caller.rs"
+Cohesion: 0.11
+Nodes (28): apply(), base_index(), CONVERTED_BASE_COVERAGE_KEY, create_methylation_header(), DEPTH_KEY, GENOTYPE_KEY, header_with(), METHYLATION_REFERENCE_CONTEXT_KEY (+20 more)
 
 ### Community 32 - "reference_confidence_merger.rs"
-Cohesion: 0.06
-Nodes (67): allele_to_string(), attribute_as_list(), attribute_to_doubles(), attribute_to_list(), bases_of(), best_depth_value(), biallelic_type(), collect_target_alleles() (+59 more)
+Cohesion: 0.05
+Nodes (68): allele_to_string(), attribute_as_list(), attribute_to_doubles(), attribute_to_list(), bases_of(), best_depth_value(), biallelic_type(), collect_target_alleles() (+60 more)
 
 ### Community 33 - "tests/haplotype_based_variant_recaller.rs"
 Cohesion: 0.13
-Nodes (14): a_duplicate_read_never_reaches_the_matrix(), a_variant_inside_a_deletion_is_not_dropped_but_comes_out_wrong(), Block, blocks(), golden(), likelihoods(), reads(), section() (+6 more)
+Nodes (21): matrix_line(), Read, variant_bases(), a_duplicate_read_never_reaches_the_matrix(), a_read_that_does_not_span_the_variant_is_dropped(), a_variant_inside_a_deletion_is_not_dropped_but_comes_out_wrong(), Block, blocks() (+13 more)
 
 ### Community 34 - "run_array.py"
 Cohesion: 0.03
-Nodes (57): What needs CI, array_file(), as_cli(), build_fixtures(), build_gcnv(), build_port_with_r(), bwa_image_masked(), clear() (+49 more)
+Nodes (52): What needs CI, array_file(), as_cli(), build_fixtures(), build_gcnv(), build_port_with_r(), bwa_image_masked(), clear() (+44 more)
 
 ### Community 35 - "java_double_to_string"
 Cohesion: 0.05
 Nodes (58): a_one_entry_table_drops_the_filter(), a_site_below_the_threshold_moves_the_prior_and_not_the_shape(), ALPHA_SEQ, an_empty_pass_returns_to_the_initial_shape(), ANNOTATION, ARTIFACT_PSEUDOCOUNT, artifact_strand_log_likelihood(), at() (+50 more)
 
 ### Community 36 - "src/read_threading_assembler.rs"
-Cohesion: 0.05
-Nodes (49): AssemblyResult, AssemblyStatus, AssembledSomeVariation, Failed, JustAssembledReference, edge_text(), read_threading_graph(), read_threading_vertex_name() (+41 more)
+Cohesion: 0.03
+Nodes (57): AlleleType, AssemblyResult, AssemblyResultSet, AssemblyStatus, AssembledSomeVariation, Failed, JustAssembledReference, ResultSetError (+49 more)
 
 ### Community 37 - "f2j_dbdsdc.rs"
 Cohesion: 0.05
@@ -1206,49 +1202,49 @@ Nodes (62): a_bidiagonal_comes_back_from_its_values_and_vectors(), dbdsdc(), dbd
 Cohesion: 0.05
 Nodes (54): a_nan_prior_is_a_flat_prior(), an_impossible_outcome_is_the_most_negative_double_and_not_infinity(), bayesian_estimate_of_empirical_quality(), combining_two_empty_datums_leaves_a_nan_that_the_setter_would_have_refused(), get_log_binomial_likelihood(), get_log_prior(), increment_is_the_one_unchecked_way_in(), java_double() (+46 more)
 
-### Community 39 - "ModelError"
-Cohesion: 0.30
-Nodes (5): evaluate_data(), ModelError, nan_tolerant_log10_sum_log10(), normal_distribution_log10(), worst_performing_annotation()
+### Community 39 - "EvalError"
+Cohesion: 0.11
+Nodes (17): I, S, Cell, distinct_states(), EvalError, jexl_matches(), make_stratifier(), s() (+9 more)
 
 ### Community 40 - "ReadThreadingGraph"
 Cohesion: 0.06
-Nodes (23): a_repeated_kmer_is_never_merged_into(), a_weight_one_bubble_is_pruned_and_the_reference_kept(), adaptive_chains_to_remove(), ANONYMOUS_SAMPLE, Chain, chain_bases(), chain_log_odds(), compare_bases() (+15 more)
+Nodes (24): a_repeated_kmer_is_never_merged_into(), a_weight_one_bubble_is_pruned_and_the_reference_kept(), adaptive_chains_to_remove(), AdaptivePruning, ANONYMOUS_SAMPLE, Chain, chain_bases(), chain_log_odds() (+16 more)
 
 ### Community 41 - "src/covariates.rs"
 Cohesion: 0.05
-Nodes (48): a_wildcard_is_an_a_and_an_n_is_nothing(), an_unknown_index_is_a_dot_and_not_a_failure(), base_index_to_simple_base(), simple_base_to_base_index(), simple_complement(), simple_reverse_complement(), the_complement_uppercases(), a_context_size_past_thirteen_names_the_argument_that_was_too_big() (+40 more)
+Nodes (47): a_wildcard_is_an_a_and_an_n_is_nothing(), an_unknown_index_is_a_dot_and_not_a_failure(), base_index_to_simple_base(), simple_base_to_base_index(), simple_complement(), simple_reverse_complement(), the_complement_uppercases(), a_context_size_past_thirteen_names_the_argument_that_was_too_big() (+39 more)
 
 ### Community 42 - "tests/slippage_filter.rs"
 Cohesion: 0.08
-Nodes (34): AlleleDepthTooShort, a_decimal_repeat_count_is_refused_with_the_string_it_was_given(), ANNOTATION, answer(), both_halves_of_the_gate_are_needed(), calculate_error_probability(), DEFAULT_MIN_SLIPPAGE_LENGTH, DEFAULT_SLIPPAGE_RATE (+26 more)
+Nodes (33): a_decimal_repeat_count_is_refused_with_the_string_it_was_given(), ANNOTATION, answer(), both_halves_of_the_gate_are_needed(), calculate_error_probability(), DEFAULT_MIN_SLIPPAGE_LENGTH, DEFAULT_SLIPPAGE_RATE, FILTER_NAME (+25 more)
 
 ### Community 43 - ".base64"
 Cohesion: 0.05
-Nodes (14): ApplyBqsrDump, CheckTerminatorBlockDump, CountingWalkersDump, DumpTabixIndexDump, PrintBgzfBlockInformationDump, PrintFileDiagnosticsDump, ReadAnonymizerDump, Invocation (+6 more)
+Nodes (14): ApplyBqsrDump, CheckTerminatorBlockDump, CountingWalkersDump, CreateHadoopBamSplittingIndexDump, DumpTabixIndexDump, PrintBgzfBlockInformationDump, ReadAnonymizerDump, Invocation (+6 more)
 
 ### Community 44 - "src/hc_genotyping.rs"
 Cohesion: 0.08
 Nodes (29): DragenGenotypesModel, every_site_matches_the_reference(), REF, START, text(), assign_genotype_likelihoods(), assign_genotype_likelihoods_annotated(), assign_genotype_likelihoods_full() (+21 more)
 
 ### Community 45 - "Graph"
-Cohesion: 0.11
-Nodes (11): Adj, AdjData, ContigData, Ctg, final_call(), Graph, initial_call(), ListView (+3 more)
+Cohesion: 0.14
+Nodes (11): Adj, AdjData, AssemblyError, final_call(), Graph, initial_call(), is_canonical(), kmer_index() (+3 more)
 
 ### Community 46 - "tests/split_cram.rs"
-Cohesion: 0.16
-Nodes (23): accepts_template(), DEFAULT_SHARD_RECORDS, DEFAULT_TEMPLATE, find_formatter(), format_name(), plan(), Shard, SplitError (+15 more)
+Cohesion: 0.14
+Nodes (24): accepts_template(), DEFAULT_SHARD_RECORDS, DEFAULT_TEMPLATE, find_formatter(), format_name(), Formatter, plan(), Shard (+16 more)
 
 ### Community 47 - "model_segments_models.rs"
 Cohesion: 0.05
-Nodes (47): deciles(), double_stream_average(), AF_EPSILON, af_log(), AlleleFractionData, AlleleFractionModeller, AlleleFractionState, APPROX_THRESHOLD (+39 more)
+Nodes (49): commons_mean(), commons_variance(), deciles(), double_stream_average(), AF_EPSILON, af_log(), AlleleFractionData, AlleleFractionModeller (+41 more)
 
 ### Community 48 - "AlignmentError"
-Cohesion: 0.11
-Nodes (34): a_cigar_with_no_indel_comes_back_untouched(), a_homopolymer_deletion_walks_off_the_start_and_moves_the_read(), aligned(), AlignmentError, BadAlleleRanges, BadTrim, Builder, CigarMissesReadBases (+26 more)
+Cohesion: 0.07
+Nodes (47): a_cigar_with_no_indel_comes_back_untouched(), a_homopolymer_deletion_walks_off_the_start_and_moves_the_read(), aligned(), AlignmentError, BadAlleleRanges, BadTrim, Builder, CigarMissesReadBases (+39 more)
 
 ### Community 49 - "ReadFilterDump.java"
-Cohesion: 0.05
-Nodes (9): How the 132 of gatk-barclay were sorted, How the 63 of gatk-readfilter were sorted, Mutants: where the goldens do not look, Survivors per crate, What it costs, and where it runs, CountingFilterDump, ReadClipperDump, ReadCoordinateDump (+1 more)
+Cohesion: 0.03
+Nodes (14): How the 132 of gatk-barclay were sorted, How the 63 of gatk-readfilter were sorted, Mutants: where the goldens do not look, Survivors per crate, What it costs, and where it runs, BqsrTransformerDump, CountingFilterDump, CovariatesDump (+6 more)
 
 ### Community 50 - "tests/haplotype_filter.rs"
 Cohesion: 0.07
@@ -1256,55 +1252,55 @@ Nodes (42): TUMOR_EVIDENCE_ERROR_TYPE, ErrorType, Artifact, NonSomatic, Sequenci
 
 ### Community 51 - "gatk-readfilter/src/lib.rs"
 Cohesion: 0.05
-Nodes (79): an_initialised_field_is_optional_whatever_the_annotation_says(), pileup_from_reads(), a_read_without_a_cigar_throws_in_the_hmer_walk(), a_short_value_array_throws(), alignment_agrees_with_header(), allow_all_reads(), by_name(), cigar_contains_no_n_operator() (+71 more)
+Nodes (75): pileup_from_reads(), a_read_without_a_cigar_throws_in_the_hmer_walk(), a_short_value_array_throws(), alignment_agrees_with_header(), allow_all_reads(), cigar_contains_no_n_operator(), contains_n_operator(), excessive_end_clipped_never_sums_the_two_ends() (+67 more)
 
 ### Community 52 - "src/java_regex.rs"
-Cohesion: 0.08
-Nodes (39): a_dot_is_every_character_but_a_line_terminator(), a_repetition_that_consumes_nothing_stops_rather_than_spinning(), alternation_and_groups_are_tried_in_order(), an_unclosed_class_is_the_reference_s_message(), classes_carry_ranges_negation_and_shorthands(), ClassMember, Range, Shorthand (+31 more)
+Cohesion: 0.06
+Nodes (53): a_dot_is_every_character_but_a_line_terminator(), a_repetition_that_consumes_nothing_stops_rather_than_spinning(), alternation_and_groups_are_tried_in_order(), an_unclosed_class_is_the_reference_s_message(), classes_carry_ranges_negation_and_shorthands(), ClassMember, Range, Shorthand (+45 more)
 
 ### Community 53 - "apply_vqsr.rs"
 Cohesion: 0.05
 Nodes (70): a_filtered_record_is_untouched_and_exclude_filtered_does_not_drop_it(), a_level_above_every_tranche_is_a_refusal(), a_level_keeps_the_tranches_at_or_above_it(), a_mixed_site_is_left_unfiltered_until_both_modes_have_run(), a_pass_anywhere_lets_the_whole_site_pass(), a_plain_cutoff_has_two_answers(), a_spanning_deletion_counts_as_a_snp_and_is_padded_anyway(), allele_is_of() (+62 more)
 
 ### Community 54 - "filtering_engine.rs"
-Cohesion: 0.08
-Nodes (32): an_explicit_default_prior_is_the_mitochondrial_one(), Arity, PerAllele, PerSite, build_filters_list(), default_log_indel_prior(), default_log_indel_prior_for_mito(), default_log_snv_prior() (+24 more)
+Cohesion: 0.05
+Nodes (53): log10_to_log(), a_bare_record_is_answered_only_by_the_per_site_filters(), annotated(), answer_for(), answers(), EngineAnswer, EngineArguments, EngineError (+45 more)
 
 ### Community 55 - "argparse"
 Cohesion: 0.05
-Nodes (31): collapsing_keys(), committed_goldens(), main(), canonicalize(), compare_case(), load_manifest(), main(), _mask_hdf5_modification_times() (+23 more)
+Nodes (32): collapsing_keys(), committed_goldens(), main(), canonicalize(), compare_case(), load_manifest(), main(), _mask_hdf5_modification_times() (+24 more)
 
 ### Community 56 - "tests/allele_specific_site_statistics.rs"
 Cohesion: 0.05
-Nodes (59): ad_counts(), allele_depths(), as_inbreeding_coefficient(), as_inbreeding_coefficient_for(), AS_INBREEDING_COEFFICIENT_KEY, as_qual_by_depth(), AS_QUAL_BY_DEPTH_KEY, AS_QUAL_KEY (+51 more)
+Nodes (58): ad_counts(), allele_depths(), as_inbreeding_coefficient(), as_inbreeding_coefficient_for(), AS_INBREEDING_COEFFICIENT_KEY, as_qual_by_depth(), AS_QUAL_BY_DEPTH_KEY, AS_QUAL_KEY (+50 more)
 
 ### Community 57 - "Allele"
-Cohesion: 0.05
-Nodes (65): AllelePileupCounter, CounterError, NegativeMinimumBaseQuality, NonReferenceReference, ReferenceAlternate, SymbolicReference, is_usable_read(), java_string() (+57 more)
+Cohesion: 0.06
+Nodes (62): AllelePileupCounter, CounterError, NegativeMinimumBaseQuality, NonReferenceReference, ReferenceAlternate, SymbolicReference, is_usable_read(), java_string() (+54 more)
 
 ### Community 58 - "runners/haplotype_caller.rs"
 Cohesion: 0.05
-Nodes (61): double_or(), flow_mode_pairs(), allele_filter_arguments(), annotation_broadcast_refusal(), arguments_or_default_bands(), artificial_haplotype_recovery_refusal(), assembler_arguments(), contamination_downsampling() (+53 more)
+Nodes (60): flow_mode_pairs(), allele_filter_arguments(), annotation_broadcast_refusal(), arguments_or_default_bands(), artificial_haplotype_recovery_refusal(), assembler_arguments(), contamination_downsampling(), DRAGEN_3412_MODE (+52 more)
 
-### Community 59 - "Engine"
-Cohesion: 0.13
-Nodes (11): within_one_ulp(), Active, ConcordanceError, Unregistered, Unsorted, Engine, Finder, Finished (+3 more)
+### Community 59 - "src/sv_concordance.rs"
+Cohesion: 0.06
+Nodes (51): within_one_ulp(), LinkageResult, Active, annotate(), Annotation, are_clusterable(), closeness(), closest() (+43 more)
 
 ### Community 60 - "gvcf_blocks.rs"
 Cohesion: 0.08
 Nodes (32): add_ranges_to_header(), an_even_count_takes_the_mean_of_its_middle_depths(), BlockCombiner, calculate_gq_from_pls(), end_attribute(), gatk_exception(), genotype_tlod(), GVCF_BLOCK (+24 more)
 
-### Community 61 - "IntervalArguments"
-Cohesion: 0.07
-Nodes (40): IntervalArguments, BaseCounts, count(), run(), run_over(), DEFAULT_LINE_WIDTH, empty_outputs(), finalize() (+32 more)
+### Community 61 - "ReferenceContext"
+Cohesion: 0.03
+Nodes (76): ContextError, ContigNotInReference, InvalidArgument, NegativeWindow, Reference, contig_length(), ReadFilterFn, ReadsContext (+68 more)
 
 ### Community 62 - "genotyping_engine.rs"
 Cohesion: 0.06
-Nodes (48): AS_QUAL_KEY, Configuration, EngineError, Limitation, Runtime, extract_p_no_alt(), format_gp(), GenotypePriors (+40 more)
+Nodes (47): AS_QUAL_KEY, Configuration, EngineError, Limitation, Runtime, extract_p_no_alt(), format_gp(), GenotypePriors (+39 more)
 
-### Community 63 - "Haplotype"
-Cohesion: 0.04
-Nodes (27): AssemblyResultSet, ResultSetError, Haplotype, IllegalState, NoGenomeLocation, SecondReference, Haplotype, crate::haplotype::Haplotype (+19 more)
+### Community 63 - "partially_determined.rs"
+Cohesion: 0.15
+Nodes (9): crate::haplotype::Haplotype, DEL_END, DEL_START, equals(), G, hash_code(), PartiallyDetermined, SNP (+1 more)
 
 ### Community 64 - "src/flow_feature_mapper.rs"
 Cohesion: 0.06
@@ -1312,15 +1308,15 @@ Nodes (47): alignment_end(), Arguments, calc_smq(), CIGAR_KEY, CigarElement, con
 
 ### Community 66 - "src/baq.rs"
 Cohesion: 0.05
-Nodes (46): Baq, BAQ_TAG, BaqCalculationResult, BaqError, BaqLargerThanQuality, MissingTag, NegativeQueryStart, QualityLengthMismatch (+38 more)
+Nodes (42): Baq, BAQ_TAG, BaqCalculationResult, BaqError, BaqLargerThanQuality, MissingTag, NegativeQueryStart, QualityLengthMismatch (+34 more)
 
 ### Community 67 - "src/mutect2.rs"
-Cohesion: 0.08
-Nodes (51): assembly_region_rows(), allele_indices(), allele_to_string(), attribute_as_double_list(), call_mutations(), call_region(), call_variants(), call_variants_with() (+43 more)
+Cohesion: 0.06
+Nodes (51): AssemblyVariantsOut, assembly_region_rows(), allele_indices(), allele_to_string(), attribute_as_double_list(), call_mutations(), call_region(), call_variants() (+43 more)
 
 ### Community 68 - "ramp_files.rs"
 Cohesion: 0.07
-Nodes (37): a_region_object_lists_its_keys_in_hash_order_and_a_lone_member_stays_inline(), compare_reads(), CsvTable, haplotype_bam_header(), HAPLOTYPE_READ_GROUP, HAPLOTYPE_SAMPLE_TAG, interval_text(), Json (+29 more)
+Nodes (38): a_region_object_lists_its_keys_in_hash_order_and_a_lone_member_stays_inline(), compare_reads(), CsvTable, haplotype_bam_header(), HAPLOTYPE_READ_GROUP, HAPLOTYPE_SAMPLE_TAG, interval_text(), Json (+30 more)
 
 ### Community 69 - "tests/usage_text.rs"
 Cohesion: 0.10
@@ -1328,11 +1324,15 @@ Nodes (31): annotation_owner(), deprecation(), descriptor_values(), ADVANCED_TIT
 
 ### Community 70 - "tests/check_pileup.rs"
 Cohesion: 0.06
-Nodes (54): fix_pair_overlapping_qualities(), a_coverage_of_zero_never_looks_at_the_columns_after_it(), a_dot_is_the_reference_base_and_a_star_is_a_d(), can_decode(), decode(), fastq_to_phred(), MAXIMUM_FIELDS, MINIMUM_FIELDS (+46 more)
+Nodes (53): a_coverage_of_zero_never_looks_at_the_columns_after_it(), a_dot_is_the_reference_base_and_a_star_is_a_d(), can_decode(), decode(), fastq_to_phred(), MAXIMUM_FIELDS, MINIMUM_FIELDS, parse_base() (+45 more)
 
 ### Community 71 - "AssemblyRegion"
-Cohesion: 0.06
+Cohesion: 0.07
 Nodes (40): AssemblyRegion, contig_length(), contig_name(), overlaps(), pretty_print_sequence_records(), RegionError, Clip, InvalidReadInterval (+32 more)
+
+### Community 72 - "tests/per_allele.rs"
+Cohesion: 0.12
+Nodes (16): MissingBucket, Case, REF, run(), START, allele(), case(), every_annotation_answers_as_the_reference_answers() (+8 more)
 
 ### Community 73 - "tests/funcotator.rs"
 Cohesion: 0.05
@@ -1351,12 +1351,12 @@ Cohesion: 0.06
 Nodes (22): annotation_cases(), phred_cases(), random_cases(), main(), walk(), main(), normal_scorer(), read() (+14 more)
 
 ### Community 77 - "model_segments_tool.rs"
-Cohesion: 0.14
-Nodes (33): Het, allelic_counts_text(), AllelicCounts, alternate_fraction(), BAD_INPUT, copy_ratio_segments_text(), CopyRatios, find_segmentation() (+25 more)
+Cohesion: 0.13
+Nodes (39): absolute_path(), allelic_counts_text(), bad_input(), BAD_INPUT, can_read_file(), copy_ratio_segments_text(), CopyRatios, format_double() (+31 more)
 
 ### Community 78 - "SeqGraph"
-Cohesion: 0.06
-Nodes (29): find_best_haplotypes(), find_guilty(), has_cycles(), KBestHaplotype, remove_cycles(), common_maximum_prefix_length(), common_maximum_suffix_length(), graph_equals() (+21 more)
+Cohesion: 0.09
+Nodes (11): common_maximum_prefix_length(), common_maximum_suffix_length(), graph_equals(), SeqEdge, SeqGraph, SplitEdge, Splitter, SplitVertex (+3 more)
 
 ### Community 79 - "encode.rs"
 Cohesion: 0.06
@@ -1364,7 +1364,7 @@ Nodes (54): add_insertions(), ADDEND, annotation(), annotations(), base_to_sort_
 
 ### Community 80 - "Alignment"
 Cohesion: 0.08
-Nodes (39): a_group_keeps_its_slot_order_and_first_key(), append_only_group(), alt_arrangements(), canonical_representation(), Classified, clip_alignment(), complex_calls(), configuration_score() (+31 more)
+Nodes (38): alt_arrangements(), Canonical, canonical_representation(), Classified, clip_alignment(), compactify_missing(), configuration_score(), contains_on_read() (+30 more)
 
 ### Community 81 - "tests/joint_germline_cnv_segmentation.rs"
 Cohesion: 0.06
@@ -1372,43 +1372,47 @@ Nodes (41): ALLOSOMAL_CONTIGS, are_clusterable(), correct_genotype_ploidy(), DEF
 
 ### Community 82 - "SimpleInterval"
 Cohesion: 0.04
-Nodes (79): ReadsContext<'a>, Claimed, Bed, IntervalList, Vcf, codec_failure(), RegisteredCodecs, FeatureContext (+71 more)
+Nodes (105): ReadsContext<'a>, Claimed, Bed, IntervalList, Vcf, codec_failure(), RegisteredCodecs, a_bare_contig_is_the_whole_contig() (+97 more)
 
 ### Community 83 - "select_variants.rs"
 Cohesion: 0.07
-Nodes (49): add_annotations(), AlleleRestriction, All, Biallelic, Multiallelic, calculate_chromosome_counts(), call_type(), ComparisonArguments (+41 more)
+Nodes (50): Genotype, add_annotations(), AlleleRestriction, All, Biallelic, Multiallelic, calculate_chromosome_counts(), call_type() (+42 more)
 
 ### Community 84 - "sys"
-Cohesion: 0.09
-Nodes (20): constant_name(), cross_check(), deprecation_table(), descriptor_table(), enum_table(), literal(), main(), mutex_field_table() (+12 more)
+Cohesion: 0.08
+Nodes (25): constant_name(), cross_check(), deprecation_table(), descriptor_table(), enum_table(), literal(), main(), mutex_field_table() (+17 more)
 
 ### Community 85 - "scorer_pickle.rs"
 Cohesion: 0.03
 Nodes (60): a_frame_closes_at_the_first_save_past_the_target(), a_written_scorer_reads_back_and_scores_alike(), APPEND, APPENDS, B, BINBYTES, BINFLOAT, BINGET (+52 more)
 
 ### Community 86 - "germline_filter.rs"
-Cohesion: 0.06
-Nodes (61): ANNOTATION, baseline(), binomial_log_probability(), both_corners_normalise_rather_than_refusing(), compute_minor_allele_fraction(), EPSILON, FILTER_NAME, germline_error_probabilities() (+53 more)
+Cohesion: 0.08
+Nodes (43): ANNOTATION, baseline(), binomial_log_probability(), both_corners_normalise_rather_than_refusing(), compute_minor_allele_fraction(), EPSILON, FILTER_NAME, germline_error_probabilities() (+35 more)
 
 ### Community 87 - "pathseq_filter.rs"
-Cohesion: 0.08
-Nodes (40): a_mate_suffix_goes_and_only_a_mate_suffix(), ADAPTERS, cleared(), clip_low_quality(), do_filter(), dust(), dust_masks_a_poly_a(), filter_duplicate_sequences() (+32 more)
+Cohesion: 0.07
+Nodes (41): a_mate_suffix_goes_and_only_a_mate_suffix(), ADAPTERS, cleared(), clip_low_quality(), do_filter(), dust(), dust_masks_a_poly_a(), filter_duplicate_sequences() (+33 more)
+
+### Community 88 - "runners/funcotator.rs"
+Cohesion: 0.07
+Nodes (37): annotation_map(), AnnotationPairs, create_factories(), custom_severities(), engine_thrown(), extract_tar_gz(), factory_settings(), FactorySettings (+29 more)
 
 ### Community 89 - "src/overhang_fixing_manager.rs"
 Cohesion: 0.08
 Nodes (28): arguments(), compare(), contig_of(), fix_split(), is_clipping(), is_left_overhang(), is_right_overhang(), JavaPriorityQueue (+20 more)
 
 ### Community 90 - "src/add_flow_base_quality.rs"
-Cohesion: 0.08
-Nodes (45): add_base_quality(), add_base_quality_to_record(), add_flow_base_quality_with(), BASE_QUALITY_ATTRIBUTE, calc_flow_order_length(), convert_error_prob_to_phred(), convert_phred_to_string(), crate::flow_based_read::FlowReadError (+37 more)
+Cohesion: 0.10
+Nodes (24): add_base_quality(), add_base_quality_to_record(), add_flow_base_quality_with(), BASE_QUALITY_ATTRIBUTE, convert_error_prob_to_phred(), convert_phred_to_string(), crate::flow_based_read::FlowReadError, DEFAULT_MAX_QUALITY_SCORE (+16 more)
 
 ### Community 91 - "tests/count_variants.rs"
 Cohesion: 0.08
 Nodes (33): a_record_is_matched_by_its_span_and_not_by_its_position(), count(), CountVariantsError, CouldNotCreateOutputFile, IntervalsWithoutRandomAccess, interval(), intervals_without_an_index_are_refused_before_any_record(), no_intervals_needs_no_index() (+25 more)
 
 ### Community 92 - "JavaRandom"
-Cohesion: 0.08
-Nodes (38): ADDEND, GATK_RANDOM_SEED, JavaRandom, MASK, MULTIPLIER, add_genotyping_annotations(), annotate(), annotation_failure() (+30 more)
+Cohesion: 0.12
+Nodes (32): add_genotyping_annotations(), annotate(), annotation_failure(), annotation_should_be_skipped_for_hom_ref_sites(), annotation_value_vector(), AnnotationEngine, Arguments, assign_no_calls_annotation_excluded() (+24 more)
 
 ### Community 93 - "src/clip_reads.rs"
 Cohesion: 0.09
@@ -1419,8 +1423,8 @@ Cohesion: 0.06
 Nodes (42): CATALOGUE, resolves(), COMMAND_MATCHES_PREFIX, DELETION_COST, DEPRECATED_TOOLS, distance(), HELP_SIMILARITY_FLOOR, INSERTION_COST (+34 more)
 
 ### Community 95 - "CallState"
-Cohesion: 0.04
-Nodes (69): Annotation, CallState, GtFiltered, HetRefVar1, HetRefVar2, HetRefVar3, HetVar1Var2, HetVar1Var3 (+61 more)
+Cohesion: 0.05
+Nodes (43): CallState, GtFiltered, HetRefVar1, HetRefVar2, HetRefVar3, HetVar1Var2, HetVar1Var3, HetVar3Var4 (+35 more)
 
 ### Community 96 - "variant_annotator_engine.rs"
 Cohesion: 0.06
@@ -1431,40 +1435,40 @@ Cohesion: 0.09
 Nodes (20): at(), cigar_is_okay_to_merge(), DanglingChainMergeHelper, longest_suffix_match(), MAX_CIGAR_COMPLEXITY, ReadThreadingGraph, reference_bases(), remove_trailing_deletions() (+12 more)
 
 ### Community 98 - "gcnv_ploidy.rs"
-Cohesion: 0.09
-Nodes (44): Cohort, Event, Call, Draw, Step, Files, floats_are_written_as_python_writes_them(), json_floats() (+36 more)
+Cohesion: 0.13
+Nodes (31): Cohort, Event, Call, Draw, Step, Files, floats_are_written_as_python_writes_them(), json_floats() (+23 more)
 
 ### Community 99 - "subprocess"
-Cohesion: 0.06
-Nodes (29): main(), step(), main(), poisson(), compare(), compile_steady(), container_overhead(), empty_as_root() (+21 more)
+Cohesion: 0.09
+Nodes (23): main(), poisson(), compare(), compile_steady(), container_overhead(), empty_as_root(), finish(), fmt_share() (+15 more)
 
 ### Community 100 - "mutect_engine.rs"
-Cohesion: 0.08
-Nodes (35): log10_to_log(), a_model_with_no_data_still_has_priors(), a_prior_of_one_makes_the_error_impossible_except_at_minus_infinity(), DEFAULT_INITIAL_POSTERIOR_THRESHOLD, default_log_indel_prior(), default_log_prior_of_variant_versus_artifact(), default_log_snv_prior(), digamma() (+27 more)
+Cohesion: 0.06
+Nodes (49): a_model_with_no_data_still_has_priors(), a_prior_of_one_makes_the_error_impossible_except_at_minus_infinity(), DEFAULT_INITIAL_POSTERIOR_THRESHOLD, default_log_indel_prior(), default_log_prior_of_variant_versus_artifact(), default_log_snv_prior(), digamma(), EPSILON (+41 more)
 
 ### Community 101 - "reblock_gvcf.rs"
 Cohesion: 0.12
 Nodes (34): ReferenceBase, a_bracketed_list_loses_its_brackets_and_spaces(), a_reducible_list_is_remapped_with_the_reference_and_a_reduced_one_without(), allele_list(), allele_specific_empty_value(), alleles_of_genotype_index(), Arguments, AS_RAW_QUAL_APPROX_KEY (+26 more)
 
-### Community 102 - "src/strand_bias.rs"
-Cohesion: 0.08
-Nodes (38): Genotype, annotate_table(), calculate_sor(), contingency_table(), FISHER_STRAND_KEY, fisher_strand_value(), FisherStrand, format_three_decimals() (+30 more)
+### Community 102 - "tests/strand_bias.rs"
+Cohesion: 0.23
+Nodes (13): allele(), balanced(), case(), every_annotation_answers_as_the_reference_answers(), every_statistic_is_bit_identical_to_the_reference(), every_table_matches_the_reference(), golden(), monomorphic() (+5 more)
 
 ### Community 103 - "src/apply_filters.rs"
 Cohesion: 0.10
-Nodes (35): a_filter_can_fire_without_being_named(), a_record_with_no_per_allele_filter_is_a_refusal(), allele(), apply_filters(), ApplyError, NoFilterStringForAllele, RaggedLists, AS_FILTER_STATUS_KEY (+27 more)
+Nodes (36): a_filter_can_fire_without_being_named(), a_record_with_no_per_allele_filter_is_a_refusal(), allele(), apply_filters(), ApplyError, NoFilterStringForAllele, RaggedLists, AS_FILTER_STATUS_KEY (+28 more)
 
 ### Community 104 - "src/gatk_report.rs"
-Cohesion: 0.11
-Nodes (25): a_null_is_four_characters_whatever_the_column_is(), a_row_is_two_spaces_between_columns_and_padding_inside_them(), apply_format(), compare_values(), every_table_is_followed_by_a_blank_line(), format_scientific(), format_value(), is_right_align() (+17 more)
+Cohesion: 0.07
+Nodes (37): a_null_is_four_characters_whatever_the_column_is(), a_row_is_two_spaces_between_columns_and_padding_inside_them(), Alignment, Left, Right, apply_format(), Column, compare_values() (+29 more)
 
 ### Community 105 - "src/post_process_reads_for_rsem.rs"
-Cohesion: 0.08
-Nodes (45): a_failing_primary_takes_its_secondary_alignments_with_it(), a_missing_first_of_pair_throws_out_of_the_guard_that_checks_for_it(), a_secondary_pair_is_matched_by_its_mate_positions(), a_single_element_cigar_that_is_not_m_is_refused(), default_read_filter(), DEFAULT_READ_FILTERS, FIRST, group_secondary_reads() (+37 more)
+Cohesion: 0.10
+Nodes (34): a_failing_primary_takes_its_secondary_alignments_with_it(), a_missing_first_of_pair_throws_out_of_the_guard_that_checks_for_it(), a_secondary_pair_is_matched_by_its_mate_positions(), a_single_element_cigar_that_is_not_m_is_refused(), default_read_filter(), DEFAULT_READ_FILTERS, FIRST, group_secondary_reads() (+26 more)
 
 ### Community 106 - "gatk_corpus_as_corpus"
-Cohesion: 0.10
-Nodes (25): every_run_replays_as_the_reference_ran_it(), files_under(), golden(), sorted_summary(), unescape(), without_the_time(), every_run_replays_as_the_reference_ran_it(), GOLDEN (+17 more)
+Cohesion: 0.11
+Nodes (19): every_run_replays_as_the_reference_ran_it(), GOLDEN, every_run_replays_as_the_reference_ran_it(), GOLDEN, crc32(), replay(), under(), unescape() (+11 more)
 
 ### Community 107 - "RecalibrationTables"
 Cohesion: 0.09
@@ -1472,11 +1476,11 @@ Nodes (29): a_negative_key_is_checked_by_nothing(), an_empty_table_has_no_leaves
 
 ### Community 108 - "src/create_read_count_panel_of_normals.rs"
 Cohesion: 0.07
-Nodes (53): write_hdf5(), Arguments, breeze_dot(), breeze_gramian_times(), correct_gc_bias(), CORRELATION_DECAY_RATE_PER_BIN, Decomposition, decomposition_from_gramian() (+45 more)
+Nodes (49): Arguments, breeze_dot(), breeze_gramian_times(), correct_gc_bias(), CORRELATION_DECAY_RATE_PER_BIN, Decomposition, decomposition_from_gramian(), DEFAULT_EXTREME_OUTLIER_TRUNCATION_PERCENTILE (+41 more)
 
 ### Community 109 - "sv_collapser.rs"
-Cohesion: 0.09
-Nodes (44): AltAlleleSummary, CommonSubtype, MostSpecificSubtype, breakend_allele(), call(), carrier_count(), CLUSTER_MEMBER_IDS_KEY, collapse() (+36 more)
+Cohesion: 0.08
+Nodes (45): SvCallRecord, AltAlleleSummary, CommonSubtype, MostSpecificSubtype, breakend_allele(), call(), carrier_count(), CLUSTER_MEMBER_IDS_KEY (+37 more)
 
 ### Community 110 - "Failed"
 Cohesion: 0.11
@@ -1484,11 +1488,11 @@ Nodes (60): ALIGNMENT_MQ_THRESHOLD, allele(), anchor(), annotated_call(), annota
 
 ### Community 111 - "StratifyError"
 Cohesion: 0.07
-Nodes (42): apply(), CallRecord, check_columns(), COLUMN_NAMES, count_any_track_overlap(), DEFAULT_STRATUM, Engine, Interval (+34 more)
+Nodes (41): apply(), CallRecord, check_columns(), COLUMN_NAMES, count_any_track_overlap(), Engine, Interval, matches_breakpoint_overlap() (+33 more)
 
 ### Community 112 - "bfc.rs"
-Cohesion: 0.10
-Nodes (44): bfc_ec1(), bfc_ec1dir(), bfc_ec_best_island(), bfc_ec_first_kmer(), bfc_ec_greedy_k(), BFC_EC_HIST, BFC_EC_HIST_HIGH, bfc_ec_kcov() (+36 more)
+Cohesion: 0.11
+Nodes (43): bfc_ec1(), bfc_ec1dir(), bfc_ec_best_island(), bfc_ec_first_kmer(), bfc_ec_greedy_k(), BFC_EC_HIST, BFC_EC_HIST_HIGH, bfc_ec_kcov() (+35 more)
 
 ### Community 113 - "tests/flow_pairhmm_align_reads_to_haplotypes.rs"
 Cohesion: 0.08
@@ -1496,23 +1500,23 @@ Nodes (36): ALIGNMENT_UNCERTAINTY, BUFFER_SIZE_LIMIT, buffers(), COMMON_PROB_VAL
 
 ### Community 114 - "tests/extract_variant_annotations.rs"
 Cohesion: 0.09
-Nodes (36): check_resource_labels(), label_column(), snp_column(), sorted_annotation_names(), sorted_labels(), a_filtered_record_is_dropped(), a_label_comes_only_from_a_true_tag(), a_run_that_extracts_nothing_still_writes_a_vcf() (+28 more)
+Nodes (32): label_column(), snp_column(), sorted_annotation_names(), a_filtered_record_is_dropped(), a_label_comes_only_from_a_true_tag(), a_run_that_extracts_nothing_still_writes_a_vcf(), an_allele_specific_annotation_switches_the_whole_run(), an_unlabeled_row_goes_to_a_separate_file() (+24 more)
 
 ### Community 115 - "gatk-fermilite/src/lib.rs"
-Cohesion: 0.08
-Nodes (34): main(), take(), take_u32(), assemble(), CAbort, Contig, FML_COMMIT, FmlError (+26 more)
+Cohesion: 0.07
+Nodes (36): main(), take(), take_u32(), assemble(), CAbort, Contig, FML_COMMIT, FmlError (+28 more)
 
 ### Community 116 - "tests/ramped_haplotype_caller.rs"
 Cohesion: 0.07
 Nodes (35): bam_index_path(), compare_haplotypes(), compare_reads(), entry_name(), Haplotype, HAPLOTYPE_HEADER, haplotype_table(), Interval (+27 more)
 
 ### Community 117 - "src/mutect_hard_filters.rs"
-Cohesion: 0.07
-Nodes (41): a_negative_median_read_position_is_never_an_artifact(), an_allele_with_no_data_passes_every_threshold(), base_quality_artifacts(), clustered_events_is_artifact(), DEFAULT_MAX_N_RATIO, DEFAULT_MIN_AF, DEFAULT_MIN_UNIQUE_ALT_READS, duplicated_alt_read_artifacts() (+33 more)
+Cohesion: 0.05
+Nodes (51): a_negative_median_read_position_is_never_an_artifact(), an_allele_with_no_data_passes_every_threshold(), base_quality_artifacts(), clustered_events_is_artifact(), DEFAULT_MAX_N_RATIO, DEFAULT_MIN_AF, DEFAULT_MIN_UNIQUE_ALT_READS, duplicated_alt_read_artifacts() (+43 more)
 
 ### Community 118 - "src/qual_quantizer.rs"
-Cohesion: 0.11
-Nodes (20): a_leaf_reads_its_error_rate_off_its_fixed_quality(), a_quantized_quality_of_zero_is_reachable(), calculate_quantization_levels(), error_prob_to_qual(), intervals_to_map(), MAX_SAM_QUAL_SCORE, merge_lowest_penalty_intervals(), MIN_USABLE_Q_SCORE (+12 more)
+Cohesion: 0.10
+Nodes (23): a_leaf_reads_its_error_rate_off_its_fixed_quality(), a_quantized_quality_of_zero_is_reachable(), bound_qual(), calculate_quantization_levels(), error_prob_to_qual(), intervals_to_map(), log10(), MAX_SAM_QUAL_SCORE (+15 more)
 
 ### Community 119 - "DragstrError"
 Cohesion: 0.08
@@ -1527,7 +1531,7 @@ Cohesion: 0.07
 Nodes (33): check_module(), count_variants(), Counts, EvalError, ModuleNotFound, Novelty, novelty(), Known (+25 more)
 
 ### Community 122 - "org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ReadThreadingGraph"
-Cohesion: 0.08
+Cohesion: 0.13
 Nodes (7): AdaptiveChainPrunerDump, Case, Read, Case, ChainPrunerDump, Read, GatkConfigDump
 
 ### Community 123 - "JavaHashMap"
@@ -1535,8 +1539,8 @@ Cohesion: 0.09
 Nodes (28): JavaHashMap, add_reference_accession(), build(), build_accession_to_tax_id(), build_taxonomic_tree(), CatalogFormat, GenBank, RefSeq (+20 more)
 
 ### Community 124 - "pair_hmm.rs"
-Cohesion: 0.10
-Nodes (47): qual_to_error_prob(), qual_to_prob(), approximate_log10_sum_log10(), Cell, DELETION_TO_DELETION, fast_round(), HmmRead, INDEL_TO_MATCH (+39 more)
+Cohesion: 0.09
+Nodes (42): qual_to_error_prob(), qual_to_prob(), avx2(), avx512(), Cell, DELETION_TO_DELETION, fast_round(), HmmRead (+34 more)
 
 ### Community 125 - "src/split_n_cigar_reads.rs"
 Cohesion: 0.09
@@ -1551,16 +1555,16 @@ Cohesion: 0.10
 Nodes (25): CanonicalLinkage, carriers(), Cluster, ClusteringType, MaxClique, SingleLinkage, CnvLinkage, contig_length() (+17 more)
 
 ### Community 128 - "sv_contig_alignments.rs"
-Cohesion: 0.04
-Nodes (55): parse_cigar(), Formatter, AlignedContig, ALIGNMENT_LOW_READ_UNIQUENESS_THRESHOLD, ALIGNMENT_MQ_THRESHOLD, ALIGNMENT_MQ_THRESHOLD_FOR_SPEED_BOOST, alignment_order(), AlignmentInterval (+47 more)
+Cohesion: 0.05
+Nodes (42): AlignedContig, ALIGNMENT_LOW_READ_UNIQUENESS_THRESHOLD, ALIGNMENT_MQ_THRESHOLD, ALIGNMENT_MQ_THRESHOLD_FOR_SPEED_BOOST, alignment_order(), AlignmentInterval, better_non_canonical_mapping(), Cigar (+34 more)
 
 ### Community 129 - "flow_likelihood_engine.rs"
 Cohesion: 0.09
 Nodes (28): log10_dynamic_read_qual_threshold(), ALIGNMENT_UNCERTAINTY, base_array_to_key_space(), first_usable_flow_order(), FLOW_SIZE, FlowEngineArguments, FlowEngineError, Likelihoods (+20 more)
 
 ### Community 130 - "ReadPileup"
-Cohesion: 0.12
-Nodes (8): attribute(), flow_order(), resolve(), MAX_SAM_QUAL_SCORE, read_group_of(), ReadPileup<'a>, sample_name(), SAMTOOLS_OVERLAP_LOW_CONFIDENCE
+Cohesion: 0.13
+Nodes (6): fix_pair_overlapping_qualities(), MAX_SAM_QUAL_SCORE, read_group_of(), ReadPileup<'a>, sample_name(), SAMTOOLS_OVERLAP_LOW_CONFIDENCE
 
 ### Community 131 - "f2j_arpack.rs"
 Cohesion: 0.08
@@ -1571,24 +1575,24 @@ Cohesion: 0.07
 Nodes (31): fasta_header(), gfa_edge(), GFA_HEADER, gfa_path(), KMER_SIZE, MIN_THIN_OBS_DEFAULT, parse_gfa_path(), parse_traversal_name() (+23 more)
 
 ### Community 133 - "local_assembler_engine.rs"
-Cohesion: 0.06
-Nodes (47): add_sub_path(), Assembly, assembly_read(), AssemblyRead, capacity_is_the_first_legal_size_above_the_load(), complement(), compute_capacity(), contig_end_index() (+39 more)
+Cohesion: 0.07
+Nodes (42): add_sub_path(), Assembly, assembly_read(), AssemblyRead, capacity_is_the_first_legal_size_above_the_load(), compute_capacity(), contig_end_index(), ContigEnd (+34 more)
 
 ### Community 134 - "kernels.rs"
 Cohesion: 0.10
-Nodes (46): batch_norm(), BatchNorm, block(), block_sum(), conv2d(), conv2d_on_device(), conv2d_on_host(), ConvWeights (+38 more)
+Nodes (30): block(), block_sum(), conv2d(), conv2d_on_device(), conv2d_on_host(), ConvWeights, fused(), GEMM_BLOCK (+22 more)
 
 ### Community 135 - "SwParameters"
-Cohesion: 0.07
-Nodes (36): align(), ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, calculate_cigar(), calculate_matrix(), exact_substring_takes_the_last_occurrence_for_softclip(), indel_strategy_skips_the_substring_search(), last_index_of(), make_element() (+28 more)
+Cohesion: 0.06
+Nodes (45): align(), ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, calculate_cigar(), calculate_matrix(), exact_substring_takes_the_last_occurrence_for_softclip(), indel_strategy_skips_the_substring_search(), last_index_of(), make_element() (+37 more)
 
 ### Community 136 - "pileup_based_alleles.rs"
-Cohesion: 0.09
-Nodes (36): READ_INDEX_NOT_FOUND, add_given_alleles(), print(), allele_hash(), ByteKey, compare_haplotypes(), Counts, ElementSummary (+28 more)
+Cohesion: 0.10
+Nodes (32): add_given_alleles(), allele_hash(), ByteKey, compare_haplotypes(), Counts, ElementSummary, EventKey, fails_assembly_filters() (+24 more)
 
 ### Community 137 - "src/normal_artifact_filter.rs"
 Cohesion: 0.09
-Nodes (30): a_missing_annotation_answers_one_zero_per_alternate_allele(), a_missing_median_base_quality_is_a_refusal_and_not_the_imputed_thirty(), a_tumour_with_no_depth_falls_through_the_ratio_gate(), at(), at_f64(), calculate_error_probability(), DEFAULT_NORMAL_P_VALUE_THRESHOLD, FILTER_NAME (+22 more)
+Nodes (31): AlleleDepthTooShort, a_missing_annotation_answers_one_zero_per_alternate_allele(), a_missing_median_base_quality_is_a_refusal_and_not_the_imputed_thirty(), a_tumour_with_no_depth_falls_through_the_ratio_gate(), at(), at_f64(), calculate_error_probability(), DEFAULT_NORMAL_P_VALUE_THRESHOLD (+23 more)
 
 ### Community 138 - "record.py"
 Cohesion: 0.21
@@ -1599,88 +1603,92 @@ Cohesion: 0.07
 Nodes (32): BASE_COUNT_ORDER, base_counts(), BASE_QUALITY_MAX, BASE_QUALITY_MIN, check_base_quality(), CoverageError, BadByte, MutuallyExclusive (+24 more)
 
 ### Community 140 - "Definition"
-Cohesion: 0.09
-Nodes (13): collect(), create_argument_definitions(), Definition, Error, FileSource, Filesystem, load_arguments_file(), load_collection_list_file() (+5 more)
+Cohesion: 0.10
+Nodes (13): collect(), Definition, Error, FileSource, Filesystem, load_arguments_file(), load_collection_list_file(), looks_like_an_option() (+5 more)
 
 ### Community 141 - "PileupSummary"
 Cohesion: 0.07
 Nodes (40): binary_search_find_zero(), binomial_probability(), calculate_contamination(), calculate_error_rate(), calculate_minor_allele_fraction(), CONTAMINATION_INITIAL_GUESSES, ContaminationModel, genotype_likelihoods() (+32 more)
 
 ### Community 142 - "src/filter_intervals.rs"
-Cohesion: 0.07
-Nodes (41): count_passing(), DEFAULT_EXTREME_MAXIMUM_PERCENTILE, DEFAULT_EXTREME_MINIMUM_PERCENTILE, DEFAULT_EXTREME_PERCENTAGE, DEFAULT_LOW_COUNT_PERCENTAGE, DEFAULT_LOW_COUNT_THRESHOLD, DEFAULT_MAXIMUM_GC_CONTENT, DEFAULT_MAXIMUM_MAPPABILITY (+33 more)
+Cohesion: 0.11
+Nodes (22): count_passing(), DEFAULT_EXTREME_MAXIMUM_PERCENTILE, DEFAULT_EXTREME_MINIMUM_PERCENTILE, DEFAULT_EXTREME_PERCENTAGE, DEFAULT_LOW_COUNT_PERCENTAGE, DEFAULT_LOW_COUNT_THRESHOLD, DEFAULT_MAXIMUM_GC_CONTENT, DEFAULT_MAXIMUM_MAPPABILITY (+14 more)
 
 ### Community 143 - "tests/variant_annotator.rs"
-Cohesion: 0.09
-Nodes (33): ALT_FIELD, annotate(), annotates(), Annotation, AnnotatorError, UnknownResource, Arity, PerAllele (+25 more)
+Cohesion: 0.18
+Nodes (16): a_comparison_adds_a_bare_flag(), a_per_allele_field_cannot_cross_to_a_different_alternate(), an_unknown_tag_is_refused(), arity(), every_annotation_matches_the_golden(), golden(), measured(), records() (+8 more)
 
 ### Community 144 - "tests/update_vcf_sequence_dictionary.rs"
 Cohesion: 0.10
 Nodes (36): a_record_with_no_id_is_quoted_as_a_dot(), best_available_dictionary(), check_replace(), check_variant(), dictionary(), DRIVING_VARIANTS_NAME, every_record_before_the_refusal_is_already_written(), the_end_is_what_is_checked_and_an_end_attribute_moves_it() (+28 more)
 
+### Community 145 - "CRAMIssue8768DetectorDump.java"
+Cohesion: 0.08
+Nodes (3): CRAMIssue8768DetectorDump, IntervalArgumentsDump, SequenceDictionaryValidationDump
+
 ### Community 146 - "src/gene_expression_evaluation.rs"
-Cohesion: 0.09
-Nodes (36): alignment_intervals(), BaseData, count(), CountError, MissingMateCigar, MissingMateQuality, NoLabel, UnpairedRead (+28 more)
+Cohesion: 0.18
+Nodes (16): BaseData, Coverage, descendants(), FeatureLabel, Id, Name, GffFeature, GroupingFeature (+8 more)
 
 ### Community 147 - "src/print_read_counts.rs"
-Cohesion: 0.09
-Nodes (30): BUFFER_CHARS, CNV_READ_GROUP_ID, COLUMN_HEADER, CountsFile, decode_depth(), depth_header_samples(), DepthEvidence, DepthFile (+22 more)
+Cohesion: 0.17
+Nodes (16): BUFFER_CHARS, CNV_READ_GROUP_ID, COLUMN_HEADER, CountsFile, decode_depth(), depth_header_samples(), DepthEvidence, DepthFile (+8 more)
 
 ### Community 148 - "sv_call_record.rs"
-Cohesion: 0.09
-Nodes (43): a_breakend_needs_both_chr2_and_end2(), a_deletion_takes_its_length_from_end_and_its_strands_from_its_type(), a_strands_field_is_checked_character_by_character(), ALGORITHMS_ATTRIBUTE, an_insertion_ends_where_it_starts_and_needs_its_length(), as_int(), as_string(), as_string_list() (+35 more)
+Cohesion: 0.10
+Nodes (42): a_breakend_needs_both_chr2_and_end2(), a_deletion_takes_its_length_from_end_and_its_strands_from_its_type(), a_strands_field_is_checked_character_by_character(), ALGORITHMS_ATTRIBUTE, an_insertion_ends_where_it_starts_and_needs_its_length(), as_int(), as_string(), as_string_list() (+34 more)
 
 ### Community 149 - "permutect_dataset.rs"
 Cohesion: 0.08
-Nodes (32): add_datum(), BAD_QUAL_THRESHOLD, CAPACITY, COMMON_POPAF_THRESHOLD, DatasetArguments, DatasetEngine, DatasetError, Limitation (+24 more)
+Nodes (33): add_datum(), BAD_QUAL_THRESHOLD, bounded_next_int(), CAPACITY, COMMON_POPAF_THRESHOLD, DatasetArguments, DatasetEngine, DatasetError (+25 more)
 
 ### Community 150 - "src/haplotype_caller.rs"
-Cohesion: 0.07
-Nodes (25): Priors, haplotype_caller_assembler(), ANNOTATIONS, Case, from_bits(), REF, run(), START (+17 more)
+Cohesion: 0.04
+Nodes (50): Priors, TrimmerArguments, LikelihoodEngineArguments, every_composition_counts_and_prints_what_the_reference_does(), golden(), rows(), AlleleLikelihoodWriter, parse_simple_interval() (+42 more)
 
 ### Community 151 - "joint_germline_cnv.rs"
-Cohesion: 0.12
-Nodes (24): alleles_from_copy_number(), ALLOSOMAL_CONTIGS, del_allele(), depth_only_record(), dup_allele(), engine_error(), has_extended(), is_hom_ref() (+16 more)
+Cohesion: 0.11
+Nodes (25): alleles_from_copy_number(), ALLOSOMAL_CONTIGS, del_allele(), depth_only_record(), dup_allele(), engine_error(), has_extended(), is_hom_ref() (+17 more)
 
 ### Community 152 - "src/base_recalibration_engine.rs"
-Cohesion: 0.10
-Nodes (31): a_block_reaches_one_base_before_it_and_one_after_it(), a_flat_baq_array_leaves_the_marks_alone(), BaseRecalibrationEngine, calculate_fractional_error_array(), calculate_is_snp_or_indel(), calculate_skip_array(), collapse_quality_score_table_to_read_group_table(), DEFAULT_INSERTION_DELETION_QUAL (+23 more)
+Cohesion: 0.09
+Nodes (32): a_block_reaches_one_base_before_it_and_one_after_it(), a_flat_baq_array_leaves_the_marks_alone(), BaseRecalibrationEngine, calculate_fractional_error_array(), calculate_is_snp_or_indel(), calculate_skip_array(), collapse_quality_score_table_to_read_group_table(), DEFAULT_INSERTION_DELETION_QUAL (+24 more)
 
 ### Community 153 - "JexlError"
-Cohesion: 0.12
-Nodes (41): arithmetic(), compare(), compare_java_strings(), Context, create_expression(), evaluate(), format_double(), format_float() (+33 more)
+Cohesion: 0.16
+Nodes (34): arithmetic(), compare(), compare_java_strings(), Context, evaluate(), format_double(), format_float(), is_floating_point_number() (+26 more)
 
 ### Community 154 - "T"
 Cohesion: 0.14
 Nodes (11): compute_capacity(), Hopscotch, Hopscotch<T>, HopscotchFailed, it_grows_and_holds_everything_once(), Key, legal_size_above(), LEGAL_SIZES (+3 more)
 
 ### Community 155 - "src/sv_cluster.rs"
-Cohesion: 0.09
-Nodes (33): Algorithm, MaxClique, SingleLinkage, CallRecord, cluster(), cluster_indices(), cluster_together_with(), ClusteringParameters (+25 more)
+Cohesion: 0.10
+Nodes (30): Algorithm, MaxClique, SingleLinkage, CallRecord, cluster(), cluster_indices(), cluster_together_with(), ClusteringParameters (+22 more)
 
 ### Community 156 - "tests/validate_basic_somatic_short_mutations.rs"
 Cohesion: 0.09
 Nodes (34): ToolError, Counter, NullResult, Validation, allele(), arguments(), CASE, CONTIG_LENGTH (+26 more)
 
 ### Community 157 - "runners_variant_recalibrator.rs"
-Cohesion: 0.20
-Nodes (15): add_datum(), add_variant_datum(), allele_of_mode(), attribute(), bases(), DatumContext, is_indel_like(), is_polymorphic_in_samples() (+7 more)
+Cohesion: 0.17
+Nodes (17): add_datum(), add_variant_datum(), allele_of_mode(), attribute(), bases(), DatumContext, default_vqslod_tranches(), is_indel_like() (+9 more)
 
 ### Community 158 - "AssemblyRegionDump"
-Cohesion: 0.05
-Nodes (10): AssemblyRegionDump, Args, AssemblyRegionIteratorDump, InMemoryShard, ProbeTraversal, org.broadinstitute.hellbender.engine.AssemblyRegionEvaluator, AssemblyRegionTrimmerDump, IntervalArgumentsDump (+2 more)
+Cohesion: 0.07
+Nodes (8): AssemblyRegionDump, Args, AssemblyRegionIteratorDump, InMemoryShard, ProbeTraversal, org.broadinstitute.hellbender.engine.AssemblyRegionEvaluator, AssemblyRegionTrimmerDump, EventMapDump
 
 ### Community 159 - "ClipError"
-Cohesion: 0.12
-Nodes (39): alignment_start_shift(), calculate_cigar(), clip_cigar(), count_ref_bases_and_clips(), is_sw_failure(), revert_soft_clips(), SW_PAD, clip_low_qual_ends() (+31 more)
+Cohesion: 0.16
+Nodes (33): alignment_start_shift(), clip_low_qual_ends(), ClipError, BadCoordinates, CannotSoftClip, Cigar, IndexOutOfBounds, ClippingOp (+25 more)
 
 ### Community 160 - "kernels.metal"
 Cohesion: 0.10
 Nodes (41): clz64(), conv2d_fused(), ConvShape, batch, bias_last, block, first, height (+33 more)
 
 ### Community 161 - "tests/validate_variants.rs"
-Cohesion: 0.12
-Nodes (20): Arguments, CONCRETE_TYPES, OrderCheck, Record, rendered(), types_to_apply(), validate_record(), ValidationError (+12 more)
+Cohesion: 0.13
+Nodes (19): Arguments, CONCRETE_TYPES, OrderCheck, Record, rendered(), types_to_apply(), validate_record(), ValidationError (+11 more)
 
 ### Community 162 - "tests/variant_getters.rs"
 Cohesion: 0.10
@@ -1688,27 +1696,27 @@ Nodes (26): oa_contig(), OA_SEPARATOR, OA_TAG, oa_value(), ORIGINAL_CONTIG_MISMA
 
 ### Community 163 - "gatk-barclay/src/lib.rs"
 Cohesion: 0.07
-Nodes (36): a_half_rounds_to_even(), Annotation, ARGUMENT_FILE_COMMENT, ARGUMENTS_FILE_FULLNAME, convert_default_value_to_string(), EXCEPTION, EXPANSION_FILE_EXTENSIONS, HashEntry (+28 more)
+Nodes (33): a_half_rounds_to_even(), Annotation, ARGUMENT_FILE_COMMENT, ARGUMENTS_FILE_FULLNAME, convert_default_value_to_string(), EXCEPTION, EXPANSION_FILE_EXTENSIONS, HashEntry (+25 more)
 
 ### Community 164 - "src/concordance.rs"
 Cohesion: 0.06
 Nodes (31): ConcordanceState, FalseNegative, FalsePositive, FilteredFalseNegative, FilteredTrueNegative, TruePositive, a_filtered_eval_record_alone_leaves_no_trace(), agreement_needs_the_same_count_but_only_truths_first_alternate() (+23 more)
 
 ### Community 165 - "JunctionTrees"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (20): java_double_bits(), java_double_compare(), add_edge_to_tracked(), DEFAULT_MINIMUM_WEIGHT_FOR_JT_BRANCH, DEFAULT_OUTGOING_JT_EVIDENCE_THRESHOLD, enqueue_next_pivotal_edge(), find_best_haplotypes(), JtPath (+12 more)
 
 ### Community 166 - "mag.rs"
-Cohesion: 0.15
-Nodes (43): backtrace(), c_abs(), cov_at(), L_DIFF_COEF, mag_g_pop_open(), mag_g_pop_simple(), mag_g_simplify_bubble(), mag_v_pop_open() (+35 more)
+Cohesion: 0.13
+Nodes (48): backtrace(), c_abs(), cov_at(), L_DIFF_COEF, mag_g_pop_open(), mag_g_pop_simple(), mag_g_simplify_bubble(), mag_v_pop_open() (+40 more)
 
 ### Community 167 - "isolation_forest.rs"
-Cohesion: 0.08
-Nodes (31): a_column_with_nothing_in_it_is_refused(), average_path_length(), build_tree(), Builder, EPSILON, EULER_GAMMA, FEATURE_THRESHOLD, fit() (+23 more)
+Cohesion: 0.11
+Nodes (28): a_column_with_nothing_in_it_is_refused(), average_path_length(), EPSILON, EULER_GAMMA, FEATURE_THRESHOLD, fit(), Forest, Hyperparameters (+20 more)
 
 ### Community 168 - "read_metadata.rs"
-Cohesion: 0.06
-Nodes (35): HashOrderError, BucketTreeified, a_median_is_the_first_bin_at_or_over_the_fraction(), a_search_over_nothing_lands_at_zero(), aligned_bases(), binary_search_floats(), Cdf, DUPLICATE (+27 more)
+Cohesion: 0.07
+Nodes (33): HashOrderError, BucketTreeified, a_median_is_the_first_bin_at_or_over_the_fraction(), a_search_over_nothing_lands_at_zero(), aligned_bases(), binary_search_floats(), Cdf, DUPLICATE (+25 more)
 
 ### Community 169 - "os"
 Cohesion: 0.10
@@ -1718,17 +1726,17 @@ Nodes (14): annotations(), cigar_of(), contig_sequence(), genotypes(), main(), R
 Cohesion: 0.11
 Nodes (3): AlleleFrequencyQCDump, RPlotsDump, VariantEvalDump
 
-### Community 171 - "filter_stats.rs"
-Cohesion: 0.29
-Nodes (14): a_division_by_zero_is_written_as_zero_or_as_a_very_large_number(), a_name_that_needs_quoting_gets_it(), a_negative_rounds_the_other_way(), every_file_matches_the_golden_byte_for_byte(), expected(), golden(), ours(), pairs() (+6 more)
+### Community 171 - "filtering_stats.rs"
+Cohesion: 0.13
+Nodes (30): round_to_n_decimal_places(), rounding_adds_the_ulp_before_it_rounds(), a_name_that_needs_quoting_gets_it(), column(), COLUMNS, FDR_METADATA_TAG, FilterStats, metadata() (+22 more)
 
 ### Community 172 - "tests/fasta_alternate_reference_maker.rs"
-Cohesion: 0.20
-Nodes (16): a_hom_var_spanning_deletion_is_refused_by_the_writer(), allele(), arguments(), both_argument_checks_match_the_golden(), DEFAULT_LINE_WIDTH, escape(), every_written_reference_matches_the_golden(), FASTA (+8 more)
+Cohesion: 0.07
+Nodes (34): GenotyperDebugFile, chain_string(), run(), ShiftError, BadOffsetList, Reference, Writer, ShiftOutputs (+26 more)
 
 ### Community 173 - "src/recalibration_report.rs"
-Cohesion: 0.08
-Nodes (48): QuantizationInfo, generate_argument_table(), generate_quantization_table(), generate_report_tables(), output_recalibration_report(), the_additional_covariates_share_one_table(), the_argument_table_has_seventeen_rows_and_an_untyped_value_column(), a_non_standard_covariate_list_is_refused_with_both_lists() (+40 more)
+Cohesion: 0.12
+Nodes (35): a_non_standard_covariate_list_is_refused_with_both_lists(), a_null_argument_is_an_absence_and_not_four_characters(), ARGUMENT_COLUMN_NAME, ARGUMENT_VALUE_COLUMN_NAME, as_double(), as_long(), cell(), COVARIATE_NAME_COLUMN_NAME (+27 more)
 
 ### Community 174 - "tests/threshold_calculator.rs"
 Cohesion: 0.09
@@ -1739,8 +1747,8 @@ Cohesion: 0.10
 Nodes (30): a_single_input_is_not_compared(), an_unknown_contig_fails_at_the_first_comparison(), as_records(), compare(), Contig, cross_validate(), dictionary_of(), GroupedByOverlap (+22 more)
 
 ### Community 176 - "Counting"
-Cohesion: 0.12
-Nodes (11): Counting, Node, And, Leaf, Not, Or, parse(), every_composition_counts_and_prints_what_the_reference_does() (+3 more)
+Cohesion: 0.13
+Nodes (9): Counting, Node, And, Leaf, Not, Or, parse(), ReadFilter (+1 more)
 
 ### Community 177 - "SomaticClusteringLearnDump"
 Cohesion: 0.11
@@ -1751,12 +1759,12 @@ Cohesion: 0.11
 Nodes (33): a_contig_the_dictionary_does_not_hold_is_a_different_refusal(), a_missing_nm_leaves_the_field_empty(), a_read_with_no_nm_comes_back_with_no_nm(), a_read_with_no_oa_is_returned_as_it_was(), an_nm_that_is_there_is_written_out(), an_oa_it_cannot_parse_is_the_reference_s_user_exception(), coordinate_compare(), DEFAULT_MATE_TOO_DISTANT_THRESHOLD (+25 more)
 
 ### Community 179 - "AlleleLikelihoods"
-Cohesion: 0.06
-Nodes (51): annotate(), annotate_with_event_maps(), AssemblyComplexity, Complexity, ComplexityError, NoCarrier, NoReference, NullPointer (+43 more)
+Cohesion: 0.05
+Nodes (47): annotate(), annotate_with_event_maps(), AssemblyComplexity, Complexity, ComplexityError, NoCarrier, NoReference, NullPointer (+39 more)
 
 ### Community 180 - "src/per_allele.rs"
-Cohesion: 0.06
-Nodes (27): annotate(), BaseQuality, FragmentLength, hard_clips(), is_usable_read(), info_annotation_for!, MAPPING_QUALITY_UNAVAILABLE, MappingQuality (+19 more)
+Cohesion: 0.08
+Nodes (15): annotate(), BaseQuality, FragmentLength, hard_clips(), is_usable_read(), info_annotation_for!, MAPPING_QUALITY_UNAVAILABLE, MappingQuality (+7 more)
 
 ### Community 181 - "ActivityProfile"
 Cohesion: 0.08
@@ -1784,19 +1792,19 @@ Nodes (56): bad_name_message(), baf_sites(), BLOCK_COMPRESSED, consumes_referenc
 
 ### Community 187 - "src/index_feature_file.rs"
 Cohesion: 0.07
-Nodes (23): codec_for(), block_map(), BlockMap, build(), build_tabix(), check_output(), default_output(), GVCF_FILE_EXTENSION (+15 more)
+Nodes (22): block_map(), BlockMap, build(), build_tabix(), check_output(), default_output(), GVCF_FILE_EXTENSION, index_kind() (+14 more)
 
 ### Community 188 - "src/allele_specific_strand_bias.rs"
-Cohesion: 0.10
-Nodes (35): a_count_mismatch_is_refused_rather_than_padded(), alleles(), annotate_direct(), annotate_raw_data(), AS_FISHER_STRAND_KEY, AS_SB_TABLE_KEY, AS_STRAND_ODDS_RATIO_KEY, AsStrandBias (+27 more)
+Cohesion: 0.06
+Nodes (60): a_count_mismatch_is_refused_rather_than_padded(), alleles(), annotate_direct(), annotate_raw_data(), AS_FISHER_STRAND_KEY, AS_SB_TABLE_KEY, AS_STRAND_ODDS_RATIO_KEY, AsStrandBias (+52 more)
 
 ### Community 189 - "engine_assembly.rs"
-Cohesion: 0.09
-Nodes (26): annotated(), answers(), case(), every_row_matches_the_golden(), genotypes(), golden(), non_ref(), printed() (+18 more)
+Cohesion: 0.04
+Nodes (51): accumulate_data(), AccumulateError, NoTumorLogOdds, Record, AccumulationAllele, action_after_pass(), action_for_pass(), AfterPassAction (+43 more)
 
 ### Community 190 - "copy_number_mcmc.rs"
-Cohesion: 0.08
-Nodes (32): beta_cumulative(), beta_log_density(), beta_sample(), brent(), brent_solve(), commons_mean(), commons_variance(), DataOrder (+24 more)
+Cohesion: 0.09
+Nodes (30): beta_cumulative(), beta_log_density(), beta_sample(), brent(), brent_solve(), DataOrder, Sequential, Shuffled (+22 more)
 
 ### Community 191 - "src/pair_hmm_likelihood_engine.rs"
 Cohesion: 0.08
@@ -1807,20 +1815,20 @@ Cohesion: 0.11
 Nodes (7): DELETION_BASE, DELETION_QUAL, Direction, Next, Prev, is_on_genome(), PileupElement<'a>
 
 ### Community 193 - "misc.rs"
-Cohesion: 0.09
-Nodes (27): seq_nt6_signed(), seq_revcomp6(), seq_reverse(), fml_fmi_gen(), is_rev_same(), MAG_MIN_NSR_COEF, move_backward(), mr_insert_multi_aux() (+19 more)
+Cohesion: 0.11
+Nodes (21): move_backward(), mr_insert_multi_aux(), Mrope, NIL, RLE_AUXTAB, rle_count(), rle_dec1(), rle_enc1() (+13 more)
 
 ### Community 194 - "src/add_flow_snv_quality.rs"
 Cohesion: 0.08
-Nodes (32): raw_probs(), add_base_quality(), add_flow_snv_quality_with(), add_snv_quality_to_record(), AltProbs, attr_name_for_non_called_base(), convert_error_prob_to_phred(), crate::flow_based_read::FlowReadError (+24 more)
+Nodes (35): extract_error_prob_bands(), raw_probs(), RawProbs, add_base_quality(), add_flow_snv_quality_with(), add_snv_quality_to_record(), AltProbs, attr_name_for_non_called_base() (+27 more)
 
 ### Community 195 - "tests/ground_truth_scorer.rs"
 Cohesion: 0.08
 Nodes (15): keeps_row(), a_read_that_is_not_flow_based_is_refused(), an_empty_csv_still_carries_its_header(), csv(), excluding_the_zero_flows_empties_a_row_rather_than_dropping_it(), golden(), omitting_the_zeros_keeps_the_origin(), percentile_rows() (+7 more)
 
 ### Community 196 - "tests/filter_alignment_artifacts.rs"
-Cohesion: 0.10
-Nodes (33): Alignment, ALIGNMENT_ARTIFACT_FILTER_NAME, decide(), Decision, find_joint_alignments(), joint_alignment_score(), might_support_deletion(), might_support_insertion() (+25 more)
+Cohesion: 0.11
+Nodes (32): Alignment, ALIGNMENT_ARTIFACT_FILTER_NAME, decide(), Decision, find_joint_alignments(), joint_alignment_score(), might_support_deletion(), might_support_insertion() (+24 more)
 
 ### Community 197 - "tests/ase_read_counter.rs"
 Cohesion: 0.10
@@ -1831,12 +1839,12 @@ Cohesion: 0.10
 Nodes (23): buffer(), build(), Context, conv2d_fused(), CONV_OUTPUTS_PER_DISPATCH, device_name(), f32_ops(), f64_ops() (+15 more)
 
 ### Community 199 - "readsdatasource"
-Cohesion: 0.13
-Nodes (15): describe(), every_query_returns_the_records_the_reference_returns(), field(), golden(), parse_interval(), configuration(), every_output_file_is_byte_identical(), field() (+7 more)
+Cohesion: 0.08
+Nodes (25): describe(), every_query_returns_the_records_the_reference_returns(), field(), golden(), parse_interval(), configuration(), every_apply_call_matches_the_reference(), field() (+17 more)
 
-### Community 200 - "argparse"
-Cohesion: 0.14
-Nodes (13): main(), read_golden(), render(), rust_string(), unescape(), branch_name(), classify(), main() (+5 more)
+### Community 200 - "pathlib"
+Cohesion: 0.10
+Nodes (15): Task 1: Close the ratchet's back door, load_floors(), main(), measure(), ratio(), self_test(), sources(), branch_name() (+7 more)
 
 ### Community 201 - "src/contamination_tables.rs"
 Cohesion: 0.10
@@ -1844,7 +1852,7 @@ Nodes (29): a_backwards_segment_is_the_intervals_refusal_and_not_the_tables(), a
 
 ### Community 202 - "java_hash.rs"
 Cohesion: 0.12
-Nodes (14): a_crowded_bucket_is_refused(), a_default_map_orders_small_integers_by_value(), a_removal_leaves_the_larger_table(), hash_map_hash(), hash_set_order(), JavaHashMap<K, ()>, JavaHashMap<K, V>, MIN_TREEIFY_CAPACITY (+6 more)
+Nodes (15): a_crowded_bucket_is_refused(), a_default_map_orders_small_integers_by_value(), a_removal_leaves_the_larger_table(), hash_map_hash(), hash_set_order(), JavaHashMap<K, ()>, JavaHashMap<K, V>, MIN_TREEIFY_CAPACITY (+7 more)
 
 ### Community 203 - "src/collect_f1r2_counts.rs"
 Cohesion: 0.09
@@ -1863,24 +1871,24 @@ Cohesion: 0.11
 Nodes (34): base64_says_what_java_says(), Block, block(), check_braces(), Component, Path, QueryParameter, constant() (+26 more)
 
 ### Community 207 - "src/structural_variant_discoverer.rs"
-Cohesion: 0.09
-Nodes (31): annotate_with_cnv_calls(), annotated_record(), check_sort_order(), CnvCall, discover(), DiscoveryArguments, evidence_annotations(), filter_merged_variant_list() (+23 more)
+Cohesion: 0.08
+Nodes (33): annotate_with_cnv_calls(), annotated_record(), canonical_chromosomes(), check_sort_order(), CnvCall, discover(), DiscoveryArguments, evidence_annotations() (+25 more)
 
 ### Community 208 - "SvError"
-Cohesion: 0.13
-Nodes (22): canonical_chromosomes(), Dictionary, SvError, Distances, forward_strand_representation(), infer_breakpoints(), infer_homology(), infer_inserted_sequence() (+14 more)
+Cohesion: 0.11
+Nodes (25): Distances, extract_cigar_for_tandup_expansion(), forward_strand_representation(), infer_breakpoints(), infer_homology(), infer_inserted_sequence(), Inference, inverted_duplication() (+17 more)
 
 ### Community 209 - "PanelArpackDump.java"
 Cohesion: 0.08
 Nodes (3): CreateReadCountPanelOfNormalsDump, PanelArpackDump, PanelRankDump
 
 ### Community 210 - ".samLine"
-Cohesion: 0.10
-Nodes (8): 362 suites, The move to GATK 4.7.0.0, measured before anything moves, What this says about the move, DownsampleByDuplicateSetDump, Read, FlowPairHMMAlignReadsToHaplotypesDump, GroundTruthScorerDump, PrintReadsDump
+Cohesion: 0.08
+Nodes (9): 362 suites, The move to GATK 4.7.0.0, measured before anything moves, What this says about the move, AddCommentsToBamDump, DownsampleByDuplicateSetDump, Read, GroundTruthReadsBuilderDump, GroundTruthScorerDump (+1 more)
 
-### Community 211 - "src/interval_arguments.rs"
-Cohesion: 0.06
-Nodes (47): contig_index(), contig_length(), file_argument_class(), file_argument_message(), IntervalArgumentError, EmptyIntersection, ExcludedEverything, File (+39 more)
+### Community 211 - "tests/compare_interval_lists.rs"
+Cohesion: 0.08
+Nodes (26): ALL, Case, CASES, dictionary(), every_command_line_resolves_as_the_reference_resolves_it(), field(), INTERSECTION, OVERLAPPING (+18 more)
 
 ### Community 212 - "tests/funcotate_segments.rs"
 Cohesion: 0.09
@@ -1904,7 +1912,7 @@ Nodes (29): Arguments, Element, OutputFormat, Bed, StatePerBase, Run, sample_ref
 
 ### Community 217 - "gcnv_segments.rs"
 Cohesion: 0.10
-Nodes (37): column(), constrained_path_logp(), first_argmax(), float_rows(), forward_backward(), ForwardBackward, header_sample_name(), Hmm (+29 more)
+Nodes (35): column(), constrained_path_logp(), first_argmax(), float_rows(), forward_backward(), ForwardBackward, header_sample_name(), Hmm (+27 more)
 
 ### Community 218 - "mark_duplicates_spark.rs"
 Cohesion: 0.15
@@ -1915,8 +1923,8 @@ Cohesion: 0.10
 Nodes (29): Header, hts_str2dbl(), hts_str2int(), InfoEntry, InfoValue, Floats, Integers, Nothing (+21 more)
 
 ### Community 220 - "select_variants_samples.rs"
-Cohesion: 0.20
-Nodes (25): filter_collection_by_expressions(), the_filter_keeps_the_source_order_and_compiles_before_it_looks(), an_expression_reaches_further_than_it_reads(), an_uncompilable_expression_is_the_pattern_compilers_refusal(), every_expression_matches_what_the_reference_matched(), every_selection_is_the_reference_s(), EXPRESSIONS, genotypes() (+17 more)
+Cohesion: 0.12
+Nodes (30): create_sample_name_inclusion_list(), filter(), SampleSelectionError, AllExcluded, BadPattern, SamplesNotInHeader, SortedSet, an_expression_reaches_further_than_it_reads() (+22 more)
 
 ### Community 221 - "src/sv_annotate.rs"
 Cohesion: 0.07
@@ -1928,7 +1936,7 @@ Nodes (39): jobs, measure, merge, oracle-image, shard, name, needs, runs-on (+31
 
 ### Community 223 - "write_records_with"
 Cohesion: 0.07
-Nodes (36): fix(), fix_misencoded_base_quality_reads(), fix_misencoded_base_quality_reads_with(), fixed_records_to_bam(), ILLUMINA_ENCODING_FIX_VALUE, MisencodedError, RunResult, TOOL_NAME (+28 more)
+Nodes (32): a_contig_the_reads_do_not_declare_is_an_error_and_not_an_empty_answer(), by_full_scan(), CONTIG_LENGTH, fixture(), header(), interval(), mapped(), the_indexed_query_returns_what_a_full_scan_returns() (+24 more)
 
 ### Community 224 - "tests/variant_recalibrator.rs"
 Cohesion: 0.13
@@ -1942,17 +1950,17 @@ Nodes (28): a_secondary_read_is_skipped_in_the_file_that_has_it(), compare_base_
 Cohesion: 0.11
 Nodes (22): AfCalcError, IllegalArgument, IllegalState, AfCalculationResult, AlleleFrequencyCalculator, approximate_diploid_likelihoods(), CONVERGENCE, EPSILON (+14 more)
 
-### Community 227 - "src/add_original_alignment_tags.rs"
-Cohesion: 0.17
-Nodes (16): add_original_alignment_tags(), add_original_alignment_tags_with(), add_tags(), MATE_CONTIG_TAG, mate_contig_value(), MATE_UNMAPPED, OA_SEPARATOR, ORIGINAL_ALIGNMENT_TAG (+8 more)
+### Community 227 - "src/transfer_read_tags.rs"
+Cohesion: 0.09
+Nodes (30): add_original_alignment_tags(), add_original_alignment_tags_with(), add_tags(), MATE_CONTIG_TAG, mate_contig_value(), MATE_UNMAPPED, OA_SEPARATOR, ORIGINAL_ALIGNMENT_TAG (+22 more)
 
-### Community 228 - "tests/fasta_reference_maker.rs"
-Cohesion: 0.11
-Nodes (21): GenotyperDebugFile, a_line_width_of_zero_is_refused(), arguments(), check(), escape(), every_written_reference_matches_the_golden(), FASTA, golden() (+13 more)
+### Community 228 - "tests/add_flow_base_quality.rs"
+Cohesion: 0.19
+Nodes (19): calc_flow_order_length(), a_flow_order_of_cycle_one_leaves_the_slice(), attribute(), both_ends_of_the_read_are_overridden(), every_read_of_every_run_matches_the_golden(), field(), flow_order(), golden() (+11 more)
 
 ### Community 229 - "normal_artifact_data.rs"
-Cohesion: 0.11
-Nodes (30): apply(), base_counts(), COLUMNS, DEFAULT_ERROR_PROBABILITY, MIN_READ_LENGTH, MINIMUM_DOWNSAMPLE_PROBABILITY, NormalArtifactRecord, Outcome (+22 more)
+Cohesion: 0.26
+Nodes (15): alternate(), an_unknown_normal_sample_produces_a_header_and_nothing_else(), every_table_matches_the_golden(), file(), golden(), matching(), matching_tumor(), normal_reads() (+7 more)
 
 ### Community 230 - "covering.py"
 Cohesion: 0.09
@@ -1964,30 +1972,26 @@ Nodes (4): Hit, Piece, SvEvidenceDump, SvPartitionsDump
 
 ### Community 232 - "src/analyze_covariates.rs"
 Cohesion: 0.11
-Nodes (27): add_to_delta(), analyze_covariates(), AnalyzeCovariatesError, IncompatibleParameters, NoOutput, NoReport, capitalize(), check_consistency() (+19 more)
+Nodes (29): RecalibrationReport, add_to_delta(), analyze_covariates(), AnalyzeCovariatesError, IncompatibleParameters, NoOutput, NoReport, capitalize() (+21 more)
 
-### Community 233 - "SimpleInterval"
-Cohesion: 0.04
-Nodes (7): Case, REF, run(), START, ActivityProfileDump, AlleleMappingDump, DragstrDump
-
-### Community 234 - "VariantContext"
-Cohesion: 0.05
-Nodes (23): attribute_as_string(), attribute_to_string(), filtration_record(), info_as_double(), java_variant_context_string(), java_variant_context_string_decoded(), ploidy_of(), PloidyTable (+15 more)
+### Community 234 - "Record"
+Cohesion: 0.14
+Nodes (8): filtration_record(), SelectTracks, sv_concordance_output(), SvConcordanceItem, vcf_declarations(), vcf_records(), VcfDeclarations, Record
 
 ### Community 235 - "heterozygosity_and_mq.rs"
 Cohesion: 0.13
-Nodes (29): allele(), alternate(), call_for(), cohort(), cohort_case(), every_cohort_annotation_answers_as_the_reference_answers(), every_genotype_count_is_bit_identical_to_the_reference(), every_mapping_quality_answers_as_the_reference_answers() (+21 more)
+Nodes (28): allele(), alternate(), call_for(), cohort(), cohort_case(), every_genotype_count_is_bit_identical_to_the_reference(), every_mapping_quality_answers_as_the_reference_answers(), every_repeat_measurement_matches_the_reference() (+20 more)
 
 ### Community 236 - "heterozygosity.rs"
-Cohesion: 0.13
-Nodes (31): a_cohort_in_equilibrium_has_a_p_value_of_about_one(), allele_pair(), approximate_diploid_log10_likelihoods_from_gq(), calculate_eh(), calculate_ic(), compute_diploid_genotype_counts(), every_sample_heterozygous_saturates(), exact_test() (+23 more)
+Cohesion: 0.09
+Nodes (42): a_cohort_in_equilibrium_has_a_p_value_of_about_one(), allele_pair(), approximate_diploid_log10_likelihoods_from_gq(), calculate_eh(), calculate_ic(), compute_diploid_genotype_counts(), every_sample_heterozygous_saturates(), exact_test() (+34 more)
 
 ### Community 237 - "src/bqsr_transformer.rs"
 Cohesion: 0.11
 Nodes (26): a_null_datum_contributes_nothing_rather_than_a_zero_delta(), bounded_integer_qual(), BqsrError, Covariate, NoReadGroupDatum, ReadGroupNotInTable, BqsrReadTransformer, BqsrReadTransformer<'a> (+18 more)
 
 ### Community 238 - "LongHopscotchSet"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (13): a_legal_size_is_strictly_above_the_request(), FNV64_DEFAULT_SEED, fnv_long64(), Hopscotch, Failed, is_unused(), legal_size_above(), legal_size_below() (+5 more)
 
 ### Community 239 - "src/sa_tag.rs"
@@ -1999,24 +2003,24 @@ Cohesion: 0.14
 Nodes (23): a_panel_of_one_sample_has_no_eigensamples(), a_surviving_zero_is_imputed_to_its_intervals_median(), an_input_whose_intervals_do_not_match_is_refused(), every_panel_keeps_the_intervals_the_golden_kept(), field(), fixture(), flag(), fractional_medians() (+15 more)
 
 ### Community 241 - "src/extract_variant_annotations.rs"
-Cohesion: 0.06
-Nodes (50): ALLELE_SPECIFIC_PREFIX, allele_specific_variant_type(), ALLELES_ALT_PATH, ALLELES_REF_PATH, alternate_alleles(), ANNOTATIONS_HDF5_SUFFIX, Arguments, biallelic_type() (+42 more)
+Cohesion: 0.07
+Nodes (43): ALLELE_SPECIFIC_PREFIX, allele_specific_variant_type(), ALLELES_ALT_PATH, ALLELES_REF_PATH, alternate_alleles(), ANNOTATIONS_HDF5_SUFFIX, Arguments, biallelic_type() (+35 more)
 
 ### Community 242 - "haplotype_bam_writer.rs"
 Cohesion: 0.09
 Nodes (22): BEST_HAPLOTYPE_MQ, HAPLOTYPE_READ_GROUP_ID, HAPLOTYPE_SAMPLE_TAG, HaplotypeBamWriter, HaplotypeKey, ORIGINAL_SOFTCLIP_TAGS, OTHER_MQ, render() (+14 more)
 
 ### Community 243 - "src/split_reads.rs"
-Cohesion: 0.12
-Nodes (26): a_missing_library_is_null_from_the_header_and_unknown_from_a_read(), a_read_with_no_read_group_is_the_reference_s_null_pointer(), file_name(), header(), key_for_read(), keys_from_header(), no_splitters_at_all_is_one_empty_key(), NoReadGroup (+18 more)
+Cohesion: 0.13
+Nodes (25): a_missing_library_is_null_from_the_header_and_unknown_from_a_read(), a_read_with_no_read_group_is_the_reference_s_null_pointer(), file_name(), header(), key_for_read(), keys_from_header(), no_splitters_at_all_is_one_empty_key(), NoReadGroup (+17 more)
 
 ### Community 244 - "src/pedigree.rs"
 Cohesion: 0.14
 Nodes (33): a_half_called_genotype_is_mixed_and_counts_as_called(), a_missing_depth_is_minus_one(), ALLELE_COUNT_KEY, alternate(), CALL_RATE_THRESHOLD, called_chromosome_count_for(), context_has_trio_gqs(), depth() (+25 more)
 
 ### Community 245 - "src/rank_sum.rs"
-Cohesion: 0.11
-Nodes (18): annotate(), BASE_QUAL_RANK_SUM_KEY, BaseQualityRankSumTest, CLIPPING_RANK_SUM_KEY, ClippingRankSumTest, format_three_decimals(), hard_clips(), INVALID_ELEMENT_FROM_READ (+10 more)
+Cohesion: 0.10
+Nodes (20): annotate(), BASE_QUAL_RANK_SUM_KEY, BaseQualityRankSumTest, CLIPPING_RANK_SUM_KEY, ClippingRankSumTest, format_decimals(), format_three_decimals(), hard_clips() (+12 more)
 
 ### Community 246 - "numpy_random.rs"
 Cohesion: 0.10
@@ -2028,19 +2032,19 @@ Nodes (29): output_name(), reader_error_chain(), a_counts_file_keeps_its_records
 
 ### Community 248 - "The tools that run their arithmetic in Python"
 Cohesion: 0.06
-Nodes (33): DetermineGermlineContigPloidy against the frozen reference, Out of the library's reach, What is proven, and where, What runs where, What the numbers are, PostprocessGermlineCNVCalls against the frozen reference, Reproducing, The three outputs (+25 more)
+Nodes (34): DetermineGermlineContigPloidy against the frozen reference, Out of the library's reach, What is proven, and where, What runs where, What the numbers are, PostprocessGermlineCNVCalls against the frozen reference, Reproducing, The three outputs (+26 more)
 
 ### Community 250 - "tests/set_nm_md_and_uq_tags.rs"
 Cohesion: 0.25
 Nodes (13): a_queryname_sorted_input_is_refused(), expected_tags(), fixture(), golden(), reference(), row(), run(), sam() (+5 more)
 
 ### Community 251 - "tests/bqsr_transformer.rs"
-Cohesion: 0.09
-Nodes (21): bits(), build_tables(), datum(), every_recalibrated_read_is_the_reference(), golden(), quantization_info(), read(), rows() (+13 more)
+Cohesion: 0.10
+Nodes (22): QuantizationInfo, bits(), build_tables(), datum(), every_recalibrated_read_is_the_reference(), golden(), quantization_info(), read() (+14 more)
 
 ### Community 252 - "tests/funcotator_data_source_downloader.rs"
-Cohesion: 0.10
-Nodes (20): clean_expected_sha256(), expected_sha256(), is_dest_file_valid(), output_location(), validate_integrity(), a_mismatch_names_an_upper_case_sum_against_a_lower_case_one(), an_empty_checksum_file_is_a_refusal(), an_existing_destination_is_refused_until_overwrite() (+12 more)
+Cohesion: 0.11
+Nodes (4): print_hex_binary(), paths(), the_computed_checksum_is_upper_case_hex(), the_reference_is_part_of_the_version_and_not_of_the_name()
 
 ### Community 253 - "tests/flow_feature_mapper.rs"
 Cohesion: 0.15
@@ -2051,20 +2055,20 @@ Cohesion: 0.12
 Nodes (30): a_base_outside_the_flow_order_trips_the_period_guard(), a_flow_key_counts_runs_against_a_cycling_order(), allele_length(), annotate(), base_array_to_key(), C_CSS_CS, C_CSS_NS, C_CSS_PCS (+22 more)
 
 ### Community 255 - "genomics_db_import"
-Cohesion: 0.13
-Nodes (23): assert_compressed_and_indexed(), assert_index_exists(), check_uri(), create_workspace(), genomics_db_import(), header_length(), is_tiledb_directory(), limitation() (+15 more)
+Cohesion: 0.07
+Nodes (34): CountsFile, create_read_count_panel_of_normals(), creation_failure(), dictionary_text(), read_counts(), assert_compressed_and_indexed(), assert_index_exists(), check_uri() (+26 more)
 
 ### Community 256 - "tests/brent_optimizer.rs"
 Cohesion: 0.11
 Nodes (27): better(), check_interval(), GOLDEN_SECTION, maximize(), minimize(), number(), optimize(), OptimizerError (+19 more)
 
 ### Community 257 - "Histogram"
-Cohesion: 0.11
-Nodes (12): a_value_just_below_a_bin_edge_stays_in_the_upper_bin(), an_empty_histogram_has_no_median_and_prints_as_nan(), BIN_EPSILON, CompressedDataList, format_fixed(), Histogram, HistogramError, MismatchedBinSize (+4 more)
+Cohesion: 0.17
+Nodes (10): a_value_just_below_a_bin_edge_stays_in_the_upper_bin(), an_empty_histogram_has_no_median_and_prints_as_nan(), BIN_EPSILON, Histogram, HistogramError, MismatchedBinSize, NonPositiveCount, ValueTooExtreme (+2 more)
 
 ### Community 258 - "Genotype"
-Cohesion: 0.13
-Nodes (33): AssignmentMethod, BestMatchToOriginal, DoNotAssignGenotypes, SetToNoCall, SetToNoCallNoAnnotations, UsePlsToAssign, best_match_to_original(), Genotype (+25 more)
+Cohesion: 0.07
+Nodes (58): a_triploid_site_with_four_alleles_has_twenty_genotypes(), allele_counts_of(), allele_counts_to_index(), binomial(), genotype_count(), GenotypeIndexError, OddLengthCounts, TooManyGenotypes (+50 more)
 
 ### Community 259 - "Parameterized"
 Cohesion: 0.07
@@ -2075,20 +2079,20 @@ Cohesion: 0.06
 Nodes (32): compare_funcotations(), java_string_compare(), Severities, TranscriptSelectionMode, All, BestEffect, Canonical, VariantClassification (+24 more)
 
 ### Community 261 - "src/haplotype_based_variant_recaller.rs"
-Cohesion: 0.16
-Nodes (18): compare_double(), compute_likelihoods(), DEFAULT_INDEL_QUAL, DYNAMIC_TABLE, EngineRead, EngineResult, EngineSettings, HAPLOTYPE_NAME_PREFIX (+10 more)
+Cohesion: 0.11
+Nodes (26): CigarElement, compare_double(), compute_likelihoods(), DEFAULT_INDEL_QUAL, DYNAMIC_TABLE, EngineRead, EngineResult, EngineSettings (+18 more)
 
 ### Community 262 - "NovelAdjacency"
-Cohesion: 0.14
-Nodes (13): Complication, InterChromosome, IntraChrRefOrderSwap, IntraChrStrandSwitch, InvertedDuplication, SimpleInsDel, SmallDupImprecise, SmallDupPrecise (+5 more)
+Cohesion: 0.13
+Nodes (14): SvError, Complication, InterChromosome, IntraChrRefOrderSwap, IntraChrStrandSwitch, InvertedDuplication, SimpleInsDel, SmallDupImprecise (+6 more)
 
 ### Community 263 - "src/somatic_clustering_model.rs"
-Cohesion: 0.06
-Nodes (43): ANNOTATION, at(), clamp_contamination(), contamination_error_probabilities(), ContaminationError, IndexOutOfRange, NonFiniteSum, DEFAULT_CONTAMINATION (+35 more)
+Cohesion: 0.10
+Nodes (23): log_one_third(), a_short_array_is_a_refusal_and_a_symbolic_length_is_negative(), binomial_probability(), indel_length(), INITIAL_HIGH_AF_WEIGHT, MAX_BINOMIAL_CLUSTERS, MAX_FRACTION_OF_BACKGROUND_TO_SPLIT_OFF, MAX_INDEL_SIZE_IN_PRIOR_MAP (+15 more)
 
 ### Community 264 - "MultiFeatureWalkerDump"
 Cohesion: 0.09
-Nodes (6): ConvertCountsToDepthFileDump, GtfToBedDump, Input, MultiFeatureWalkerDump, PrintReadCountsDump, SplitCRAMDump
+Nodes (7): ConvertCountsToDepthFileDump, GtfToBedDump, Input, MultiFeatureWalkerDump, Input, PrintSVEvidenceDump, SplitCRAMDump
 
 ### Community 265 - "tests/add_original_alignment_tags.rs"
 Cohesion: 0.32
@@ -2099,20 +2103,20 @@ Cohesion: 0.12
 Nodes (20): a_breakend_downgrades_its_lof_and_produces_two_segments(), every_annotation_matches_the_golden(), golden(), Measured, measured(), non_coding(), refusal(), rendered() (+12 more)
 
 ### Community 267 - "tests/sv_concordance.rs"
-Cohesion: 0.13
-Nodes (26): AlleleCounts, count_alleles(), a_higher_reciprocal_overlap_breaks_one_match(), a_multiallelic_cnv_is_scored_on_copy_state_instead(), a_truth_records_allele_counts_are_copied_or_recounted(), common(), concordance(), concordance_is_computed_on_the_common_samples_only() (+18 more)
+Cohesion: 0.14
+Nodes (25): AlleleCounts, count_alleles(), a_higher_reciprocal_overlap_breaks_one_match(), a_multiallelic_cnv_is_scored_on_copy_state_instead(), a_truth_records_allele_counts_are_copied_or_recounted(), common(), concordance(), concordance_is_computed_on_the_common_samples_only() (+17 more)
 
 ### Community 268 - "tests/gene_expression_evaluation.rs"
 Cohesion: 0.12
-Nodes (24): an_integral_count_is_written_with_its_decimal(), an_unstranded_feature_emits_one_row(), attributes(), BAM, blocks(), defaults(), equal_multimapping_admits_the_read_ignore_discards(), every_count_table_matches_the_golden() (+16 more)
+Nodes (23): an_integral_count_is_written_with_its_decimal(), an_unstranded_feature_emits_one_row(), BAM, blocks(), defaults(), equal_multimapping_admits_the_read_ignore_discards(), every_count_table_matches_the_golden(), features() (+15 more)
 
 ### Community 269 - "src/convert_counts_to_depth_file.rs"
 Cohesion: 0.09
 Nodes (18): BlockError, Deflate, Tabix, check_output(), COLUMN_HEADER, Counts, DEPTH_TABIX, header_error_chain() (+10 more)
 
 ### Community 270 - "tests/fragment_counts.rs"
-Cohesion: 0.23
-Nodes (14): alternate(), composition(), every_fragment_depth_matches_the_reference(), every_fragment_matches_the_reference(), every_grouped_likelihood_is_bit_identical_to_the_reference(), every_orientation_count_matches_the_reference(), golden(), read() (+6 more)
+Cohesion: 0.11
+Nodes (25): F1R2_KEY, F2R1_KEY, fragment_allele_depths(), FRAGMENT_ALLELE_DEPTHS_KEY, FragmentCountError, AlleleNotInMatrix, AllelesNotASubset, is_usable_read() (+17 more)
 
 ### Community 271 - "split_biallelics.rs"
 Cohesion: 0.15
@@ -2120,7 +2124,7 @@ Nodes (33): chromosome_counts(), split_variant_context_to_biallelics(), a_record
 
 ### Community 272 - "combine_gvcfs.rs"
 Cohesion: 0.15
-Nodes (15): Arguments, Context, copy_of_range(), Failure, Runtime, User, intermediate_stop_sites(), Reference (+7 more)
+Nodes (14): Arguments, Context, copy_of_range(), Failure, Runtime, User, intermediate_stop_sites(), Reference (+6 more)
 
 ### Community 273 - "src/family_priors.rs"
 Cohesion: 0.11
@@ -2135,16 +2139,16 @@ Cohesion: 0.10
 Nodes (18): ANY_OTHER_EXCEPTION_EXIT_VALUE, BANNER, COMMANDLINE_EXCEPTION, COMMANDLINE_EXCEPTION_EXIT_VALUE, decorated_exception_message(), OUT_OF_MEMORY_EXIT_VALUE, PICARD_TOOL_EXCEPTION, PORT_FAILURE (+10 more)
 
 ### Community 276 - "pathseq_score.rs"
-Cohesion: 0.10
-Nodes (30): matches_less_deletions_of(), a_split_keeps_inner_empties_and_a_cigar_refuses_a_bare_operator(), AlignmentHit, alternate_hits(), collect_as_map_order(), compute_tax_scores(), entry(), Input (+22 more)
+Cohesion: 0.13
+Nodes (28): matches_less_deletions_of(), a_split_keeps_inner_empties_and_a_cigar_refuses_a_bare_operator(), AlignmentHit, alternate_hits(), collect_as_map_order(), compute_tax_scores(), entry(), java_double() (+20 more)
 
 ### Community 277 - "splitting_index.rs"
 Cohesion: 0.11
 Nodes (22): assert_granularity(), assert_is_bam(), bai_companion(), BAI_EXTENSION, DEFAULT_GRANULARITY, GRANULARITY_MESSAGE, make_file_pointer(), offsets() (+14 more)
 
-### Community 278 - "mapping_quality.rs"
-Cohesion: 0.11
-Nodes (19): an_empty_denominator_is_written_out_as_nan(), MAPPING_QUALITY_UNAVAILABLE, MAPPING_QUALITY_ZERO_KEY, MappingQualityZero, NUM_LIST_ENTRIES, parse_raw_data_string(), raw_annotation_string(), raw_mapping_quality_data() (+11 more)
+### Community 278 - "Interval"
+Cohesion: 0.18
+Nodes (19): bin(), DEFAULT_BIN_LENGTH, DEFAULT_PADDING, each_run_of_one_contig_is_fetched_once_and_the_n_filter_holds(), filter_bins_containing_only_ns(), generate_bins(), is_n(), pad_intervals() (+11 more)
 
 ### Community 279 - "src/calculate_mixing_fractions.rs"
 Cohesion: 0.12
@@ -2159,39 +2163,39 @@ Cohesion: 0.09
 Nodes (22): EventType, BaseDeletion, BaseInsertion, BaseSubstitution, .VALUES, event_index(), constant(), event_from() (+14 more)
 
 ### Community 282 - "sequence_dictionary.rs"
-Cohesion: 0.13
-Nodes (29): common_contigs(), compare(), Compatibility, CommonSubset, DifferentIndices, Identical, NoCommonContigs, NonCanonicalHumanOrder (+21 more)
+Cohesion: 0.22
+Nodes (20): common_contigs(), compare(), DictionaryRefusal, Incompatible, LexicographicallySorted, disequal_common_contig(), equivalent(), find() (+12 more)
 
 ### Community 283 - "annotated_variant"
-Cohesion: 0.06
-Nodes (65): Adjacencies, adjacencies(), adjacencies_of(), adjacencies_of_contigs(), Alignment, annotate_from_evidence(), annotated_variant(), associated_distance_on_read() (+57 more)
+Cohesion: 0.09
+Nodes (48): Adjacencies, adjacencies(), adjacencies_of(), adjacencies_of_contigs(), Alignment, associated_distance_on_read(), Chimera, cigar_text() (+40 more)
 
 ### Community 284 - "tests/sv_stratify.rs"
 Cohesion: 0.18
 Nodes (20): parse_integer_maybe_null(), an_insertion_ignores_both_thresholds(), defaults(), engine(), every_written_record_matches_the_golden(), golden(), only_minus_one_is_a_null_bound(), produced() (+12 more)
 
 ### Community 285 - "src/allele_specific_rank_sum.rs"
-Cohesion: 0.10
-Nodes (35): a_dropped_alternate_leaves_the_combined_raw_string(), a_site_with_no_reference_read_produces_only_delimiters(), ALLELE_SPECIFIC_RAW_DELIM, ALLELE_SPECIFIC_REDUCED_DELIM, alleles(), annotate_raw_data(), AS_BASE_QUAL_RANK_SUM_KEY, AS_MAP_QUAL_RANK_SUM_KEY (+27 more)
+Cohesion: 0.14
+Nodes (28): a_dropped_alternate_leaves_the_combined_raw_string(), a_site_with_no_reference_read_produces_only_delimiters(), ALLELE_SPECIFIC_RAW_DELIM, ALLELE_SPECIFIC_REDUCED_DELIM, alleles(), AS_BASE_QUAL_RANK_SUM_KEY, AS_MAP_QUAL_RANK_SUM_KEY, AS_RAW_BASE_QUAL_RANK_SUM_KEY (+20 more)
 
 ### Community 286 - "tandem_repeat.rs"
 Cohesion: 0.09
 Nodes (21): a_deletion_of_one_unit_is_counted_against_the_context(), a_partial_trailing_repeat_is_not_a_repeat(), an_empty_string_gives_a_unit_of_one_zero_byte(), is_indel(), REPEAT_UNIT_KEY, REPEATS_PER_ALLELE_KEY, STR_PRESENT_KEY, TandemRepeat (+13 more)
 
-### Community 287 - "genotypes_in_canonical_order"
-Cohesion: 0.15
-Nodes (25): a_triploid_site_with_four_alleles_has_twenty_genotypes(), allele_counts_of(), allele_counts_to_index(), binomial(), genotype_count(), GenotypeIndexError, OddLengthCounts, TooManyGenotypes (+17 more)
+### Community 287 - "tests/contamination_filter.rs"
+Cohesion: 0.10
+Nodes (22): ANNOTATION, at(), clamp_contamination(), contamination_error_probabilities(), ContaminationError, IndexOutOfRange, NonFiniteSum, DEFAULT_CONTAMINATION (+14 more)
 
 ### Community 288 - "variant_context_utils.rs"
-Cohesion: 0.14
-Nodes (25): VALIDATABLE_TYPES, a_narrow_window_stops_short_and_says_nothing(), Alignment, Complete, NotAttempted, WindowExhausted, deletion(), has_het_non_ref() (+17 more)
+Cohesion: 0.12
+Nodes (29): VALIDATABLE_TYPES, a_narrow_window_stops_short_and_says_nothing(), Alignment, Complete, NotAttempted, WindowExhausted, deletion(), has_het_non_ref() (+21 more)
 
 ### Community 289 - "AlignmentContext"
 Cohesion: 0.03
-Nodes (68): AlignmentStateMachine, AlignmentStateMachine<'a>, MalformedRead, EndsWithDeletion, StartsWithDeletion, compare_locatables(), interval_loci(), overlapping() (+60 more)
+Nodes (72): AlignmentStateMachine, AlignmentStateMachine<'a>, MalformedRead, EndsWithDeletion, StartsWithDeletion, REGION_LOCUS_OPTIONS, WalkerError, ReadState (+64 more)
 
 ### Community 290 - "Output"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (14): LargeLongHopscotchSet, a_fixed_int_is_four_bytes_most_significant_first(), a_string_takes_the_ascii_shape_only_above_one_character(), a_varint_costs_five_bytes_for_a_negative_value(), hex_of(), Output, kmer_set_file(), taxonomy_database_file() (+6 more)
 
 ### Community 291 - "tests/print_reads_header.rs"
@@ -2207,7 +2211,7 @@ Cohesion: 0.16
 Nodes (19): read_zip(), CONTINUATION, copy_chunk(), DATASPACE, DATATYPE, Hdf5Reader, LAYOUT, link() (+11 more)
 
 ### Community 294 - "src/merge_vcfs.rs"
-Cohesion: 0.17
+Cohesion: 0.20
 Nodes (11): COMMENT_KEY, contig_indices(), contig_lines(), is_compatible(), merge(), MergeError, DifferentSamples, IncompatibleContigs (+3 more)
 
 ### Community 295 - "spark_metrics.rs"
@@ -2215,40 +2219,40 @@ Cohesion: 0.13
 Nodes (23): base_distribution_by_cycle(), FAILS_VENDOR_QUALITY, insert_size(), insert_size_orientation(), insert_size_widths(), InsertSizeArguments, InsertSizeUnit, MATE_REVERSE (+15 more)
 
 ### Community 296 - "File Structure"
-Cohesion: 0.07
-Nodes (25): Commenting gatk-rs to the standard: implementation plan, Execution handoff, File Structure, Global Constraints, Self-review, Task 10: The annotation interface and the counting family, Task 11: Rank sums, medians and strand bias, Task 12: The allele-specific family (+17 more)
+Cohesion: 0.10
+Nodes (19): Commenting gatk-rs to the standard: implementation plan, Execution handoff, File Structure, Global Constraints, Self-review, Task 10: The annotation interface and the counting family, Task 11: Rank sums, medians and strand bias, Task 12: The allele-specific family (+11 more)
 
 ### Community 298 - "tests/collect_read_counts.rs"
 Cohesion: 0.20
 Nodes (10): a_read_is_counted_by_its_start_alone(), every_table_matches_the_golden(), file(), golden(), interval(), reads(), SEQUENCES, sequences() (+2 more)
 
 ### Community 299 - "tests/depth_per_allele.rs"
-Cohesion: 0.12
-Nodes (21): allele_depths(), ALLELE_FRACTION_KEY, allele_fractions(), allele_hash_code(), informative_depth(), marginalisation_order(), normalize_sum_to_one(), reference_context_is_ignored() (+13 more)
+Cohesion: 0.11
+Nodes (22): allele_depths(), ALLELE_FRACTION_KEY, allele_fractions(), allele_hash_code(), informative_depth(), marginalisation_order(), normalize_sum_to_one(), reference_context_is_ignored() (+14 more)
 
 ### Community 300 - "BetaBinomialError"
 Cohesion: 0.11
 Nodes (18): a_count_past_the_total_is_negative_infinity_and_a_negative_one_is_a_refusal(), BetaBinomialDistribution, BetaBinomialError, AlphaNotPositive, Beta, BetaNotPositive, Combinatorics, SuccessesNegative (+10 more)
 
 ### Community 301 - "tests/vcf_comparator.rs"
-Cohesion: 0.13
-Nodes (26): every_run_matches_the_golden_in_the_dumps_order(), golden(), Run, scratch(), section(), unescape(), write_bam(), write_reference() (+18 more)
+Cohesion: 0.15
+Nodes (18): compare(), without_passing_filters(), CASES, dictionary(), every_pair_compares_as_the_reference_compares_it(), field(), unescape(), a_complaint_is_raised_at_the_next_record_or_after_the_traversal() (+10 more)
 
 ### Community 302 - "tests/clip_reads.rs"
 Cohesion: 0.33
 Nodes (12): a_deletion_moves_the_read_and_an_insertion_does_not(), a_run_with_no_reference_is_refused_by_the_argument_parser(), Configuration, configuration(), every_output_file_is_byte_identical(), field(), golden(), install() (+4 more)
 
 ### Community 303 - "ground_truth_reads_builder_traverse"
-Cohesion: 0.14
-Nodes (16): end_polyt_softclipped(), end_softclipped(), first_op(), ground_truth_reads_builder(), ground_truth_reads_builder_traverse(), last_op(), reference_haplotype(), reverse() (+8 more)
+Cohesion: 0.15
+Nodes (15): end_polyt_softclipped(), end_softclipped(), first_op(), ground_truth_reads_builder_traverse(), last_op(), reference_haplotype(), reverse(), score() (+7 more)
 
 ### Community 304 - "Well19937c"
-Cohesion: 0.09
-Nodes (17): score_allele_counts(), select_allele_biased_evidence(), target_allele_counts(), natural(), next_permutation(), PermutationError, NotStrictlyPositive, SizeExceedsN (+9 more)
+Cohesion: 0.07
+Nodes (25): score_allele_counts(), select_allele_biased_evidence(), target_allele_counts(), natural(), next_permutation(), PermutationError, NotStrictlyPositive, SizeExceedsN (+17 more)
 
-### Community 305 - "tests/accumulate_data.rs"
+### Community 305 - "src/validate_basic_somatic_short_mutations.rs"
 Cohesion: 0.09
-Nodes (28): accumulate_data(), AccumulateError, NoTumorLogOdds, Record, AccumulationAllele, action_after_pass(), action_for_pass(), AfterPassAction (+20 more)
+Nodes (15): Applied, Arguments, count_towards_summary(), DEFAULT_MAX_VALIDATION_NORMAL_COUNT, DEFAULT_MIN_BQ_CUTOFF, DEFAULT_MIN_POWER, HEADER_LINES, Judgment (+7 more)
 
 ### Community 306 - "sample_db.rs"
 Cohesion: 0.12
@@ -2259,8 +2263,8 @@ Cohesion: 0.14
 Nodes (24): a_nan_is_the_global_maximum(), a_persistence_can_be_negative_zero(), a_plateau_is_a_minimum_at_its_left_end(), Component, create_component(), double_compare_is_not_the_ordinary_one(), EmptyData, extend_component() (+16 more)
 
 ### Community 308 - "reference_confidence_model.rs"
-Cohesion: 0.14
-Nodes (25): log10(), qual_to_prob_log10(), aligned_one_to_one(), BASE_QUAL_THRESHOLD, baseline_mismatch_qualities(), calculate_ref_confidence(), cigar_modified_offset(), GAP_CHARACTER (+17 more)
+Cohesion: 0.16
+Nodes (25): approximate_log10_sum_log10(), PileupElement, aligned_one_to_one(), BASE_QUAL_THRESHOLD, baseline_mismatch_qualities(), calculate_ref_confidence(), cigar_modified_offset(), GAP_CHARACTER (+17 more)
 
 ### Community 309 - "AnnotatedInterval"
 Cohesion: 0.14
@@ -2275,12 +2279,12 @@ Cohesion: 0.14
 Nodes (21): add_allele_counts(), Allele, apply(), calculate_posterior_probs(), CalledGenotype, DEFAULT_PLOIDY, DEFAULT_PRIOR, dirichlet_multinomial() (+13 more)
 
 ### Community 312 - "src/cram_issue_8768.rs"
-Cohesion: 0.12
-Nodes (23): analyse(), analyse_with(), AnalyseError, Duplicate, Stats, Analysis, ContainerMeta, ContainerStats (+15 more)
+Cohesion: 0.08
+Nodes (43): analyse(), analyse_with(), AnalyseError, Duplicate, Stats, Analysis, ContainerMeta, ContainerStats (+35 more)
 
 ### Community 313 - "dump_tabix_index"
-Cohesion: 0.16
-Nodes (14): bin_range(), Cursor, Cursor<'a>, dump_tabix_index(), hex(), read_contig_names(), TabixError, ContigNameLength (+6 more)
+Cohesion: 0.13
+Nodes (22): bin_range(), Cursor, Cursor<'a>, dump_tabix_index(), hex(), read_contig_names(), TabixError, ContigNameLength (+14 more)
 
 ### Community 314 - "Interval"
 Cohesion: 0.18
@@ -2299,8 +2303,8 @@ Cohesion: 0.23
 Nodes (10): IoError, definitions(), every_tag_and_every_expansion_is_read_the_way_the_reference_reads_it(), Fixtures, golden(), only_a_collection_expands(), render_error(), REPORTED (+2 more)
 
 ### Community 318 - "hashmap"
-Cohesion: 0.13
-Nodes (12): correct_reads(), GOOD_QUAL, INDEL_MISMATCHES, INDEL_SPAN, best(), main(), Entry, layers_against_the_reference() (+4 more)
+Cohesion: 0.20
+Nodes (8): best(), main(), Entry, layers_against_the_reference(), next_entry(), report_tensor(), take_u32(), take_u64()
 
 ### Community 319 - "src/filter_variant_tranches.rs"
 Cohesion: 0.10
@@ -2315,12 +2319,12 @@ Cohesion: 0.15
 Nodes (20): Arguments, assert_same_dictionary(), check_and_reorder(), checked_order(), COMMENT_KEY, comparator_of(), compare(), dictionary() (+12 more)
 
 ### Community 322 - "Evaluator"
-Cohesion: 0.07
-Nodes (27): I, S, Cell, CountVariants, Evaluator, CompOverlap, CountVariants, GenotypeFilterSummary (+19 more)
+Cohesion: 0.10
+Nodes (24): CountVariants, Evaluator, CompOverlap, CountVariants, GenotypeFilterSummary, IndelLengthHistogram, IndelSummary, MetricsCollection (+16 more)
 
-### Community 323 - "tempfile"
+### Community 323 - "argparse"
 Cohesion: 0.09
-Nodes (26): check(), config_files(), main(), rust_sources(), scan(), self_test(), transcendentals(), check() (+18 more)
+Nodes (16): update_args_dict_from_saved_model(), answer(), main(), run_side(), both_sides(), fuzz(), main(), merge() (+8 more)
 
 ### Community 324 - "tests/calibrate_dragstr_model.rs"
 Cohesion: 0.11
@@ -2331,12 +2335,12 @@ Cohesion: 0.21
 Nodes (17): a_block_compressed_input_gets_the_reference_tabix_index(), a_block_compressed_input_refuses_an_output_that_is_not_a_tbi(), a_stream_that_is_not_block_compressed_is_not_a_user_error(), an_unsorted_file_is_refused_by_the_ordering_check(), bytes(), DIR, every_index_matches_the_golden(), golden() (+9 more)
 
 ### Community 326 - "calculate_contamination_tool.rs"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (21): DEFAULT_HIGH_COVERAGE_RATIO_THRESHOLD, DEFAULT_LOW_COVERAGE_RATIO_THRESHOLD, filter_sites_by_coverage(), mean(), MIN_COVERAGE, Output, run(), run_from_command_line() (+13 more)
 
-### Community 327 - "src/haplotype_caller.rs"
-Cohesion: 0.11
-Nodes (19): LikelihoodEngineArguments, AlleleLikelihoodWriter, parse_simple_interval(), BamoutArguments, call_variants(), call_variants_into(), close_bamout(), genotyping_engine_for() (+11 more)
+### Community 327 - "src/variant_annotator.rs"
+Cohesion: 0.16
+Nodes (17): ALT_FIELD, annotate(), annotates(), Annotation, AnnotatorError, UnknownResource, Arity, PerAllele (+9 more)
 
 ### Community 328 - "op"
 Cohesion: 0.08
@@ -2351,7 +2355,7 @@ Cohesion: 0.15
 Nodes (14): ASIZE, ASIZE1, block_type(), ilog2(), ilog2_32(), log_table_256(), Rld, rld_delta_enc1() (+6 more)
 
 ### Community 331 - "src/annotate_vcf_with_expected_allele_fraction.rs"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (22): a_sample_missing_from_the_table_is_a_null_unboxing(), a_sample_named_twice_is_a_duplicate_key(), a_zebra_only_het_is_paired_with_alphas_fraction(), AF_EXP, AF_EXP_HEADER_LINE, annotation(), expected_allele_fraction(), ExpectedAlleleFractionError (+14 more)
 
 ### Community 332 - "allele_specific_filtering_with"
@@ -2371,44 +2375,44 @@ Cohesion: 0.11
 Nodes (25): a_name_parses_only_with_five_or_seven_fields(), best(), better(), close_enough(), handle_fragments(), handle_fragments_with_end(), handle_pairs(), java_parse_int() (+17 more)
 
 ### Community 336 - "cluster_links"
-Cohesion: 0.12
-Nodes (18): annotate_with_links(), cluster_evidence(), cluster_links(), CrossingChecker, density_filter(), intersect(), IntervalMap, intervals_and_links() (+10 more)
+Cohesion: 0.11
+Nodes (20): an_overlap_search_takes_one_right_end_per_left_end(), annotate_with_links(), cluster_evidence(), cluster_links(), CrossingChecker, density_filter(), intersect(), IntervalMap (+12 more)
 
 ### Community 337 - "tests/filter_intervals.rs"
 Cohesion: 0.12
 Nodes (17): a_solitary_survivor_is_removed_and_the_run_refused(), annotation_run(), contigs(), count_run(), COUNTS_ONE, COUNTS_TWO, file(), GC (+9 more)
 
 ### Community 338 - "tests/add_comments_to_bam.rs"
-Cohesion: 0.22
-Nodes (14): add_comments(), is_refused_by_name(), a_newline_is_refused_by_the_tool_and_by_the_parser_before_it(), a_tab_survives_inside_a_comment(), bytes(), every_rewritten_file_matches_the_golden(), golden(), PATH (+6 more)
+Cohesion: 0.12
+Nodes (19): add_comments(), CommentError, ContainsNewline, NotBlockCompressed, SamNotSupported, Unreadable, is_refused_by_name(), a_newline_is_refused_by_the_tool_and_by_the_parser_before_it() (+11 more)
 
 ### Community 339 - "apply_vqsr_allele_specific.rs"
 Cohesion: 0.14
 Nodes (14): AllelicRecalRecord, a_mixed_site_is_left_unfiltered_and_carries_no_site_level_score(), a_spanning_deletion_is_padded_without_a_lookup(), an_allele_of_the_other_mode_is_padded_rather_than_skipped(), an_allele_with_no_recal_record_has_a_refusal_of_its_own(), every_written_record_matches_the_golden_byte_for_byte(), golden(), input() (+6 more)
 
 ### Community 340 - "variant_recalibrator_model.rs"
-Cohesion: 0.12
-Nodes (23): BAD_INPUT, COVARIANCE_REGULARIZATION_EPSILON, EPSILON, GATK_EXCEPTION, ILLEGAL_ARGUMENT, java_double_string(), java_max(), java_min() (+15 more)
+Cohesion: 0.06
+Nodes (51): a_stream_sum_is_compensated(), AttributeValue, Absent, Many, One, BAD_INPUT, close(), COVARIANCE_REGULARIZATION_EPSILON (+43 more)
 
 ### Community 341 - "noodles_reader.rs"
 Cohesion: 0.09
 Nodes (17): goldens(), info_strings(), is_base64(), Kind, Bai, Bgzf, Vcf, KNOWN (+9 more)
 
 ### Community 342 - "with_header"
-Cohesion: 0.17
-Nodes (9): every_filter_matches_the_reference_decision_for_decision(), golden(), no_ported_filter_is_missing_from_the_golden(), configuration(), every_traversal_hands_apply_what_the_reference_hands_it(), field(), golden(), strings() (+1 more)
+Cohesion: 0.13
+Nodes (12): by_name(), every_ported_name_resolves(), every_filter_matches_the_reference_decision_for_decision(), golden(), no_ported_filter_is_missing_from_the_golden(), ADDITIONAL_READ_FILTERS, count(), DEFAULT_MINIMUM_MAPPING_QUALITY (+4 more)
 
 ### Community 343 - "src/allele_pseudo_depth.rs"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (17): a_null_matrix_and_a_single_allele_both_emit_nothing(), AllelePseudoDepth, an_empty_evidence_call_zeroes_the_memo_for_every_later_call(), ARRAY_SEPARATOR, keeping_the_prior_leaves_the_memo_alone(), log_10(), matrix(), normalize_sum_to_one() (+9 more)
 
 ### Community 344 - "value"
-Cohesion: 0.11
+Cohesion: 0.12
 Nodes (16): a_cycle_is_read_once(), definitions(), every_expansion_is_the_one_the_reference_performs(), Fixtures, golden(), render_error(), the_files_arguments_come_first_either_way(), a_double_dash_ends_the_options() (+8 more)
 
 ### Community 345 - "TrimmerError"
-Cohesion: 0.16
-Nodes (23): AssemblyRegionTrimmer, intersect(), interval(), merge_with_contiguous(), no_variation(), RepeatUnits, result(), span_with() (+15 more)
+Cohesion: 0.17
+Nodes (22): AssemblyRegionTrimmer, intersect(), interval(), merge_with_contiguous(), no_variation(), RepeatUnits, result(), span_with() (+14 more)
 
 ### Community 346 - "khash.rs"
 Cohesion: 0.11
@@ -2430,17 +2434,17 @@ Nodes (14): Allele, gc_content(), genome_change(), is_base_indel(), is_deletion(
 Cohesion: 0.19
 Nodes (15): Factory, Gencode, Gene, is_basic(), is_five_prime_flank(), is_mane(), is_segment_variant(), is_three_prime_flank() (+7 more)
 
-### Community 351 - "filtering_engine.rs"
+### Community 351 - "pair_hmm_port.rs"
 Cohesion: 0.13
-Nodes (19): a_bare_record_is_answered_only_by_the_per_site_filters(), annotated(), answer_for(), answers(), EngineAnswer, EngineArguments, EngineError, Filter (+11 more)
+Nodes (7): a_mismatch_is_divided_by_three(), bits(), every_likelihood_matches_the_golden(), golden(), likelihood(), Pair, PAIRS
 
 ### Community 352 - "tests/add_flow_snv_quality.rs"
-Cohesion: 0.16
-Nodes (20): get_snvq(), a_flow_order_of_cycle_one_dies_in_the_normalisation(), attr(), cycle(), every_quality_and_attribute_matches_the_golden(), field(), flow_order(), golden() (+12 more)
+Cohesion: 0.20
+Nodes (19): a_flow_order_of_cycle_one_dies_in_the_normalisation(), attr(), cycle(), every_quality_and_attribute_matches_the_golden(), field(), flow_order(), golden(), key() (+11 more)
 
 ### Community 353 - "tests/model_segments.rs"
-Cohesion: 0.09
-Nodes (30): AllelicCount, DEFAULT_GENOTYPING_BASE_ERROR_RATE, DEFAULT_GENOTYPING_HOMOZYGOUS_LOG_RATIO_THRESHOLD, DEFAULT_MINIMUM_TOTAL_ALLELE_COUNT_CASE, filter_by_overlap(), filter_by_total_count(), genotype_hets(), homozygous_log_ratio() (+22 more)
+Cohesion: 0.15
+Nodes (16): segments_from_changepoints(), a_floor_above_every_total_leaves_no_het(), allelic_counts(), changepoints(), field(), golden(), mismatched_copy_ratio_intervals_are_refused(), points() (+8 more)
 
 ### Community 354 - "tests/analyze_saturation_mutagenesis.rs"
 Cohesion: 0.08
@@ -2451,8 +2455,8 @@ Cohesion: 0.14
 Nodes (21): bootstrap_refusal(), compare_outputs(), files_under(), GOLDEN, Kind, Denoised, Modeled, Qc (+13 more)
 
 ### Community 356 - "allele_filtering.rs"
-Cohesion: 0.18
-Nodes (15): allele_hash(), AlleleFilterArguments, connected_sets(), equal_up_to_hmer_change(), event_label(), EventKey, filter_alleles(), Filtered (+7 more)
+Cohesion: 0.13
+Nodes (18): i32, JavaHashCode, allele_hash(), AlleleFilterArguments, connected_sets(), equal_up_to_hmer_change(), event_label(), EventKey (+10 more)
 
 ### Community 357 - "src/call_copy_ratio_segments.rs"
 Cohesion: 0.20
@@ -2463,8 +2467,8 @@ Cohesion: 0.10
 Nodes (23): a_comma_list_is_joined_back_with_its_commas(), a_tuple_field_keeps_each_row_the_same_length(), BCF_FLOAT_MISSING, BCF_INT32_MISSING, callset_json(), CELLS_PER_TILE, delta_encode(), fragment_files() (+15 more)
 
 ### Community 359 - "variant_eval_engine.rs"
-Cohesion: 0.09
-Nodes (38): a_ratio_or_a_percent_of_nothing_is_na(), ALL, attribute(), attribute_double_list(), attribute_int(), attribute_string(), bases_are_repeated(), degeneracy_states() (+30 more)
+Cohesion: 0.11
+Nodes (20): a_ratio_or_a_percent_of_nothing_is_na(), ALL, base_index(), bases(), bases_are_repeated(), EVALUATOR_NAMES, formatted_percent(), formatted_ratio() (+12 more)
 
 ### Community 360 - "src/variant_recalibrator.rs"
 Cohesion: 0.16
@@ -2474,41 +2478,41 @@ Nodes (29): calls_at_truth(), compare_double(), compare_lod(), Datum, empty_tran
 Cohesion: 0.14
 Nodes (21): a_lower_median_mapping_quality_lets_the_low_quality_block_through(), a_second_sample_is_only_reached_through_the_alt_table_branch(), alt_base(), check(), collect(), context(), entries(), every_context_is_present_and_the_reference_order_is_the_maps() (+13 more)
 
-### Community 362 - "tests/allele_specific_rank_sum.rs"
-Cohesion: 0.19
-Nodes (20): allele(), alternate(), annotation(), combine_alleles(), combine_case(), compressed_values(), every_allele_specific_answer_matches_the_reference(), every_bin_matches_the_reference() (+12 more)
+### Community 362 - "likelihood_annotations.rs"
+Cohesion: 0.26
+Nodes (16): allele(), Case, cases(), count_ns_matches_the_reference(), coverage_matches_the_reference(), golden(), likelihoods(), mapping_quality_zero_matches_the_reference() (+8 more)
 
 ### Community 363 - "runners/multi_variant.rs"
 Cohesion: 0.12
-Nodes (9): Driving, DrivingVariants, feature_inputs(), open(), open_from(), open_unchecked(), Spanned, thrown() (+1 more)
+Nodes (8): Driving, DrivingVariants, open(), open_from(), open_unchecked(), Spanned, thrown(), FeatureInput
 
 ### Community 364 - "panel_rank.rs"
 Cohesion: 0.16
 Nodes (21): solver_mode(), SolverMode, DistributedArpack, LocalArpack, LocalLapack, a_full_rank_panel_gets_its_request(), answer(), every_panel_writes_the_eigensamples_the_reference_writes() (+13 more)
 
 ### Community 366 - "src/dragen_genotypes.rs"
-Cohesion: 0.13
-Nodes (21): apply_adjustment(), BQD_FIXED_ERROR_RATE, bqd_for_strand(), BQD_HOMOPOLYMER_PHRED_ADJUSTMENT_FACTOR, bqd_likelihoods(), critical_values(), DragenRead, DragenSample (+13 more)
+Cohesion: 0.05
+Nodes (37): apply_adjustment(), BQD_FIXED_ERROR_RATE, bqd_for_strand(), BQD_HOMOPOLYMER_PHRED_ADJUSTMENT_FACTOR, bqd_likelihoods(), critical_values(), DragenRead, DragenSample (+29 more)
 
 ### Community 367 - "interval_iterators.rs"
 Cohesion: 0.15
 Nodes (18): an_uncovered_locus_is_emitted_with_an_empty_pileup(), CHR1, CHR2, context_case(), count(), error(), every_locus_matches_the_reference(), every_manufactured_context_matches_the_reference() (+10 more)
 
 ### Community 368 - "Run"
-Cohesion: 0.15
-Nodes (5): Census, Disjoint, Unpaired, percent_field(), Run
+Cohesion: 0.18
+Nodes (3): percent_field(), Run, Settings
 
 ### Community 369 - "Funcotations"
 Cohesion: 0.23
 Nodes (13): AlleleFrequencySource, Exac, Gnomad, clinvar_filter(), exac_max_maf(), Funcotations, gnomad_all_frequencies_filtered(), gnomad_datasets_present() (+5 more)
 
 ### Community 370 - "src/get_sample_name.rs"
-Cohesion: 0.24
-Nodes (14): a_read_group_with_no_sample_writes_the_word_null(), a_space_becomes_a_plus_and_not_a_percent_twenty(), get_sample_name(), GetSampleNameError, NoHeaderOrReadGroups, NoSampleNames, header(), no_read_groups_is_the_second_refusal() (+6 more)
+Cohesion: 0.16
+Nodes (22): a_read_group_with_no_sample_writes_the_word_null(), a_space_becomes_a_plus_and_not_a_percent_twenty(), get_sample_name(), GetSampleNameError, NoHeaderOrReadGroups, NoSampleNames, header(), no_read_groups_is_the_second_refusal() (+14 more)
 
 ### Community 371 - "gnarly_engine.rs"
-Cohesion: 0.22
-Nodes (18): allele_specific_qual_sum(), AS_REDUCIBLE, attribute(), attribute_int(), attribute_int_list(), DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING, finalize_raw_mq(), GnarlyEngine (+10 more)
+Cohesion: 0.23
+Nodes (19): allele_specific_qual_sum(), AS_REDUCIBLE, attribute(), attribute_int(), attribute_int_list(), DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING, finalize_raw_mq(), GnarlyEngine (+11 more)
 
 ### Community 372 - "src/remove_nearby_indels.rs"
 Cohesion: 0.16
@@ -2523,19 +2527,19 @@ Cohesion: 0.21
 Nodes (18): a_record_matching_two_strata_is_refused_outright(), an_empty_stratification_configuration_is_refused(), an_unmatched_record_is_not_clustered_at_all(), clustering(), each_stratum_clusters_with_its_own_thresholds(), every_cluster_matches_the_golden(), golden(), measured() (+10 more)
 
 ### Community 375 - "tests/allele_specific_strand_bias.rs"
-Cohesion: 0.16
-Nodes (19): allele(), alleles_for(), alternate(), annotation_for(), combine_alleles(), composition(), every_combination_and_finalisation_matches_the_reference(), every_direct_answer_matches_the_reference() (+11 more)
+Cohesion: 0.09
+Nodes (39): allele(), alternate(), annotation(), combine_alleles(), combine_case(), compressed_values(), every_allele_specific_answer_matches_the_reference(), every_bin_matches_the_reference() (+31 more)
 
 ### Community 376 - "src/create_somatic_panel_of_normals.rs"
 Cohesion: 0.14
 Nodes (18): ARTIFACT_ALPHA, ARTIFACT_BETA, ARTIFACT_PRIOR, BetaShape, build_panel(), DEFAULT_MAX_GERMLINE_PROBABILITY, DEFAULT_MIN_SAMPLE_COUNT, fit_beta() (+10 more)
 
 ### Community 377 - "tests/check_reference_compatibility.rs"
-Cohesion: 0.14
-Nodes (12): check_input(), bam_input(), golden(), missing(), pair_against(), reference(), refusal(), the_md5_path_matches_the_golden() (+4 more)
+Cohesion: 0.17
+Nodes (12): bam_input(), golden(), missing(), pair_against(), reference(), refusal(), the_md5_path_matches_the_golden(), the_name_and_length_path_matches_the_golden() (+4 more)
 
 ### Community 379 - "mutect_error_probabilities.rs"
-Cohesion: 0.15
+Cohesion: 0.18
 Nodes (22): base_pair_resolution_wins_over_the_grid(), combined(), CONTIG_LENGTH, every_run_matches_the_golden(), golden(), scratch(), section(), the_same_file_twice_is_refused() (+14 more)
 
 ### Community 380 - "python_tools_end_to_end.rs"
@@ -2547,32 +2551,32 @@ Cohesion: 0.09
 Nodes (14): downsample_one_group(), LevelingDownsampler, LevelingDownsampler<T>, mutect_downsample(), positional_downsample(), positional_downsample_with(), ReservoirDownsampler, ReservoirDownsampler<'a, T> (+6 more)
 
 ### Community 382 - "src/tsv_table.rs"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (19): a_double_keeps_its_point_and_the_short_form_is_dead_code(), a_hand_written_comment_is_not_metadata(), a_metadata_value_with_a_tab_quotes_the_whole_comment_line(), a_missing_column_is_a_different_class_from_a_bad_row(), a_row_of_the_wrong_width_names_the_line_and_the_counts(), a_tab_and_a_quote_force_quotes_and_a_comma_does_not(), COLUMN_SEPARATOR, COMMENT_PREFIX (+11 more)
 
 ### Community 383 - "src/compare_references.rs"
-Cohesion: 0.16
-Nodes (20): analyse(), build(), compare_all(), md5_of(), Md5Mode, AlwaysRecalculate, RecalculateIfMissing, UseDict (+12 more)
+Cohesion: 0.11
+Nodes (27): analyse(), build(), compare_all(), md5_of(), Md5Mode, AlwaysRecalculate, RecalculateIfMissing, UseDict (+19 more)
 
 ### Community 384 - "src/funcotator_data_source_downloader.rs"
-Cohesion: 0.08
-Nodes (31): Arguments, base_url(), checksum_path(), data_source_version_string(), DATA_SOURCES_BUCKET_PATH, DATA_SOURCES_NAME_PREFIX, data_sources_path(), DataSourceKind (+23 more)
+Cohesion: 0.13
+Nodes (21): base_url(), checksum_path(), data_source_version_string(), DATA_SOURCES_BUCKET_PATH, DATA_SOURCES_NAME_PREFIX, data_sources_path(), DataSourceKind, Germline (+13 more)
 
 ### Community 385 - "src/grouped_sv_cluster.rs"
-Cohesion: 0.16
-Nodes (16): check_columns(), Cluster, COLUMN_NAMES, Engines, GroupedError, ColumnCount, GroupCountMismatch, GroupNotFound (+8 more)
+Cohesion: 0.15
+Nodes (17): check_columns(), Cluster, COLUMN_NAMES, Engines, GroupedError, ColumnCount, GroupCountMismatch, GroupNotFound (+9 more)
 
-### Community 386 - "tests/methylation_type_caller.rs"
-Cohesion: 0.39
-Nodes (10): a_site_near_the_contig_end_gets_a_shorter_context(), configuration(), every_comparable_run_is_the_reference(), golden(), install(), reference_bases(), rows(), run() (+2 more)
+### Community 386 - "germline_probability.rs"
+Cohesion: 0.23
+Nodes (18): an_infinite_normal_log_odds_is_refused(), both_corners_normalise_rather_than_refusing(), every_probability_matches_the_golden(), expected(), golden(), HET_VS_SOMATIC, HOM_ALT_VS_SOMATIC, label() (+10 more)
 
 ### Community 387 - "nv_score_variants/mod.rs"
-Cohesion: 0.20
-Nodes (21): read_fasta(), a_score_prints_as_percent_three_f_does(), Arguments, Batch, create_output_vcf(), encode_batch(), encode_for_comparison(), Encoder (+13 more)
+Cohesion: 0.19
+Nodes (22): read_fasta(), a_score_prints_as_percent_three_f_does(), Arguments, Batch, create_output_vcf(), encode_batch(), encode_for_comparison(), Encoder (+14 more)
 
 ### Community 388 - "write"
-Cohesion: 0.25
-Nodes (8): Forest, first_tree(), later_tree(), little_doubles(), little_ints(), node_bytes(), write(), Writer
+Cohesion: 0.28
+Nodes (6): first_tree(), later_tree(), little_doubles(), little_ints(), write(), Writer
 
 ### Community 389 - "scorer_pickle_template.rs"
 Cohesion: 0.08
@@ -2588,27 +2592,27 @@ Nodes (19): passes_default_read_filters(), ContigRead, a_coordinate_sorted_input
 
 ### Community 392 - "SvRecordError"
 Cohesion: 0.08
-Nodes (22): SvRecordError, ComplexIntervalFormat, ComplexIntervalOffDictionary, ComplexIntervalType, ComplexIntervalUnparseable, ContigNotInDictionary, EndPrecedesStart, EndStrand (+14 more)
+Nodes (23): SvRecordError, ComplexIntervalFormat, ComplexIntervalOffDictionary, ComplexIntervalType, ComplexIntervalUnparseable, ContigNotInDictionary, EndPrecedesStart, EndStrand (+15 more)
 
 ### Community 393 - "GenomicsDBQueryDump"
-Cohesion: 0.11
-Nodes (15): An unspecified iteration order that reaches the output, The table, not just the order, What this costs, What was done instead, Why this is awkward, Pointers that reach the output, What that means for the port, What the suite holds instead (+7 more)
+Cohesion: 0.08
+Nodes (20): An unspecified iteration order that reaches the output, The table, not just the order, What this costs, What was done instead, Why this is awkward, Pointers that reach the output, What that means for the port, What the suite holds instead (+12 more)
 
 ### Community 394 - "select_variants_filters.rs"
-Cohesion: 0.21
+Cohesion: 0.19
 Nodes (18): a_sites_only_variant_survives_exclude_non_variants(), an_expression_over_a_per_allele_annotation_is_a_refusal(), every_genotype_name_selects_what_the_reference_selected(), every_run_writes_the_records_the_reference_wrote(), exclude_non_variants_runs_after_the_subset(), GENOTYPE_RUNS, golden(), input() (+10 more)
 
 ### Community 395 - "bwa_aligner.rs"
-Cohesion: 0.15
-Nodes (14): align(), align_for_pathseq(), alignments(), apply_alignment(), ContigAligner, ContigAlignment, fasta_from_image(), host_filter() (+6 more)
+Cohesion: 0.16
+Nodes (13): align(), align_for_pathseq(), alignments(), apply_alignment(), ContigAligner, fasta_from_image(), host_filter(), image_contigs() (+5 more)
 
 ### Community 396 - "btreeset"
 Cohesion: 0.14
 Nodes (16): base_value(), build(), get_mask(), Kmer, KmerError, EmptySet, EvenKmerSize, InvalidMaskIndex (+8 more)
 
 ### Community 397 - "tests/allele_frequency_qc.rs"
-Cohesion: 0.17
-Nodes (13): complains(), a_filtered_variant_changes_nothing(), an_uncalled_comparison_site_contributes_a_square(), bins(), field(), golden(), one_variant_is_not_a_degenerate_case(), the_bin_ladder_is_fixed() (+5 more)
+Cohesion: 0.16
+Nodes (14): chi_squared_statistic(), complains(), a_filtered_variant_changes_nothing(), an_uncalled_comparison_site_contributes_a_square(), bins(), field(), golden(), one_variant_is_not_a_degenerate_case() (+6 more)
 
 ### Community 398 - "tests/evaluate_info_field_concordance.rs"
 Cohesion: 0.15
@@ -2623,15 +2627,15 @@ Cohesion: 0.11
 Nodes (12): join(), carry(), compare_to_exact(), DecimalFormat, DEPTH_FORMAT, exact_decimal(), FRACTION_FORMAT, render() (+4 more)
 
 ### Community 401 - "ValueClass"
-Cohesion: 0.13
-Nodes (20): ValueClass, Boolean, Byte, Checked, Constructed, Double, Float, Integer (+12 more)
+Cohesion: 0.10
+Nodes (21): java_long(), ValueClass, Boolean, Byte, Checked, Constructed, Double, Enum (+13 more)
 
-### Community 402 - "os"
-Cohesion: 0.12
-Nodes (12): update_args_dict_from_saved_model(), bgzf_payload(), main(), measure(), render(), run(), verdict(), bgzf() (+4 more)
+### Community 402 - "re"
+Cohesion: 0.07
+Nodes (24): json_i64(), attribute_json(), value_json(), check(), main(), self_test(), strip_comments(), main() (+16 more)
 
 ### Community 403 - "tests/assembly_region_iterator.rs"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (18): a_shard_merges_at_zero_padding(), ARGS, CHR1, CHR2, every_shard_matches_the_reference(), every_traversal_matches_the_reference(), every_validation_matches_the_reference(), golden() (+10 more)
 
 ### Community 404 - "tests/calculate_genotype_posteriors.rs"
@@ -2639,8 +2643,8 @@ Cohesion: 0.22
 Nodes (19): gls_to_pls(), a_site_nothing_covers_gets_a_flat_prior(), alleles(), Called, every_prior_and_recalled_genotype_matches_the_golden(), golden(), info(), measured() (+11 more)
 
 ### Community 405 - "assembly_based_caller_utils.rs"
-Cohesion: 0.15
-Nodes (25): adjust_quals_of_overlapping_paired_fragments(), clean_overlapping_read_pairs(), clean_overlapping_read_pairs_with_indels(), finalize_region(), FinalizeArguments, FinalizeError, Clip, IndexOutOfBounds (+17 more)
+Cohesion: 0.19
+Nodes (21): adjust_quals_of_overlapping_paired_fragments(), clean_overlapping_read_pairs(), clean_overlapping_read_pairs_with_indels(), finalize_region(), FinalizeArguments, FinalizeError, Clip, IndexOutOfBounds (+13 more)
 
 ### Community 406 - "src/gather_vcfs.rs"
 Cohesion: 0.15
@@ -2659,16 +2663,16 @@ Cohesion: 0.17
 Nodes (3): Contig, PathSeqBuildReferenceTaxonomyDump, PathSeqTaxonomyKryoDump
 
 ### Community 411 - "tests/gnarly_genotyper.rs"
-Cohesion: 0.09
-Nodes (16): has_snp_allele(), site_prior(), a_called_site_loses_its_non_ref(), a_site_under_its_floor_is_dropped_or_stubbed(), a_spanning_deletion_is_not_a_snp(), attribute(), every_case_is_dropped_stubbed_or_called(), golden() (+8 more)
+Cohesion: 0.08
+Nodes (18): has_snp_allele(), phred_quality(), quality_by_depth(), site_prior(), a_called_site_loses_its_non_ref(), a_site_under_its_floor_is_dropped_or_stubbed(), a_spanning_deletion_is_not_a_snp(), attribute() (+10 more)
 
-### Community 412 - "tests/cram_issue_8768.rs"
+### Community 412 - "arithmetic.py"
+Cohesion: 0.22
+Nodes (10): build_scratch(), check(), config_files(), main(), profile_violations(), rust_sources(), scan(), self_test() (+2 more)
+
+### Community 413 - "Data"
 Cohesion: 0.20
-Nodes (20): a_foreign_cram_leaves_a_report_with_no_body(), an_empty_cram_averages_over_nothing_and_prints_nan(), an_unmapped_container_is_counted_but_never_recorded(), code(), containers(), CRAM_VERSION, dictionary(), encode_base64() (+12 more)
-
-### Community 413 - "Thrown"
-Cohesion: 0.26
-Nodes (15): absolute_path(), bad_input(), can_read_file(), nucleotide(), read_allelic_counts(), read_copy_ratios(), read_interval_collection(), read_interval_spans() (+7 more)
+Nodes (13): Data, Alt, Float, Int, Multi, Str, field_data(), Lut (+5 more)
 
 ### Community 414 - "src/multi_feature_walker.rs"
 Cohesion: 0.21
@@ -2683,8 +2687,8 @@ Cohesion: 0.17
 Nodes (19): a_read_one_base_long_is_never_counted(), an_input_declaring_bam_depth_leaves_two_lines_in_the_header(), annotate(), BAM_DEPTH, bam_depth(), BAM_DEPTH_HEADER_LINE, counts_towards_depth(), DUPLICATE (+11 more)
 
 ### Community 417 - "src/check_reference_compatibility.rs"
-Cohesion: 0.09
-Nodes (24): Compatibility, Compatible, CompatibleSubset, NotCompatible, DictionaryCompatibility, Identical, Other, Superset (+16 more)
+Cohesion: 0.10
+Nodes (21): check_input(), Compatibility, Compatible, CompatibleSubset, NotCompatible, DictionaryCompatibility, Identical, Other (+13 more)
 
 ### Community 418 - "src/ground_truth_reads_builder.rs"
 Cohesion: 0.09
@@ -2703,15 +2707,15 @@ Cohesion: 0.08
 Nodes (24): AfScale, Linear, Logarithmic, StratKind, AlleleCount, AlleleFrequency, CompFeatureInput, Contig (+16 more)
 
 ### Community 422 - "src/vcf_to_interval_list.rs"
-Cohesion: 0.13
-Nodes (25): convert(), ConvertError, NullDictionary, Vcf, dictionary(), end_of(), IdMethod, ConcatAll (+17 more)
+Cohesion: 0.17
+Nodes (17): convert(), ConvertError, NullDictionary, Vcf, dictionary(), end_of(), IdMethod, ConcatAll (+9 more)
 
 ### Community 423 - "ploidy_trace/sitecustomize.py"
 Cohesion: 0.12
 Nodes (14): describe(), Hook, exec_module(), patch(), create(), bits(), describe_nodes(), emit() (+6 more)
 
 ### Community 425 - ".trim"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (11): Haplotype, HaplotypeAlignment, HaplotypeCigarError, Builder, ReadLength, HaplotypeTrimError, Alignment, Allele (+3 more)
 
 ### Community 426 - "tests/create_somatic_panel_of_normals.rs"
@@ -2726,33 +2730,33 @@ Nodes (14): a_read_passing_the_site_inside_a_deletion_counts_towards_the_total_a
 Cohesion: 0.15
 Nodes (21): ar_hetvar_filter(), ar_homvar_filter(), clinsig(), compound_het_variants(), matching_filters(), Variant, VariantKey, a_lone_het_in_an_autosomal_recessive_gene_is_not_compound() (+13 more)
 
-### Community 429 - "count_reads_and_bases.rs"
-Cohesion: 0.10
-Nodes (25): a_contig_the_reads_do_not_declare_is_an_error_and_not_an_empty_answer(), by_full_scan(), CONTIG_LENGTH, fixture(), header(), interval(), mapped(), the_indexed_query_returns_what_a_full_scan_returns() (+17 more)
+### Community 429 - "h5py_scores.rs"
+Cohesion: 0.14
+Nodes (11): DIMENSION, END_OF_FILE, LAYOUT_SIZE, MAXIMUM_DIMENSION, METADATA, TEMPLATE, what_is_written_reads_back_through_the_reader_of_the_reference_files(), write() (+3 more)
 
 ### Community 430 - "tests/pedigree.rs"
 Cohesion: 0.20
 Nodes (16): alleles_for(), alternate(), de_novo_context(), every_de_novo_call_matches_the_reference(), every_genotype_type_matches_the_reference(), every_mendelian_violation_matches_the_reference(), every_singleton_call_matches_the_reference(), genotype() (+8 more)
 
 ### Community 431 - "argument_collections.rs"
-Cohesion: 0.19
-Nodes (19): ClassDecl, FieldDecl, Argument, BothAnnotations, Collection, UninitialisedCollection, a_subclass_is_registered_before_the_class_it_extends(), both_annotations() (+11 more)
+Cohesion: 0.18
+Nodes (20): ClassDecl, create_argument_definitions(), FieldDecl, Argument, BothAnnotations, Collection, UninitialisedCollection, a_subclass_is_registered_before_the_class_it_extends() (+12 more)
 
 ### Community 432 - "multi_variant_walker.rs"
 Cohesion: 0.14
 Nodes (16): escape(), every_run_matches_the_golden_row_for_row(), expected(), golden(), mine(), Probe, OnStart, Overlap (+8 more)
 
 ### Community 433 - "gpu.rs"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (13): cpu(), main(), Random, Read, seconds(), bases(), device_ran(), operands() (+5 more)
 
-### Community 434 - "DragenGenotypesDump"
-Cohesion: 0.15
-Nodes (8): indel_prior(), IndelPriorError, Lookup, Params, DragstrReferenceAnalyzer, StrLookupError, DragenGenotypesDump, Read
+### Community 434 - "run"
+Cohesion: 0.26
+Nodes (5): Disk, JavaWriter, output_header(), Run, run()
 
 ### Community 435 - "src/variant_filtration.rs"
-Cohesion: 0.22
-Nodes (21): Expression, a_genotype_without_gq_reads_it_as_minus_one_not_missing(), an_empty_set_is_pass_or_a_dot(), are_clustered_snps(), Arguments, CLUSTERED_SNP_FILTER_NAME, Context, FILTER_DELIMITER (+13 more)
+Cohesion: 0.23
+Nodes (20): a_genotype_without_gq_reads_it_as_minus_one_not_missing(), an_empty_set_is_pass_or_a_dot(), are_clustered_snps(), Arguments, CLUSTERED_SNP_FILTER_NAME, Context, FILTER_DELIMITER, filter_one() (+12 more)
 
 ### Community 436 - "tests/overhang_fixing_manager.rs"
 Cohesion: 0.24
@@ -2775,23 +2779,23 @@ Cohesion: 0.10
 Nodes (20): AfterPass, AfterFirstPass, Nothing, Refused, PassApply, FirstPassApply, Refused, SecondPassApply (+12 more)
 
 ### Community 441 - "revert_base_quality_scores.rs"
-Cohesion: 0.19
-Nodes (16): a_character_outside_the_printable_range_is_htsjdks_error_not_the_tools(), a_present_tag_replaces_the_qualities(), absent_and_empty_both_abort_the_run(), fastq_to_phred(), original_base_qualities(), original_base_qualities_tag(), read_with(), revert() (+8 more)
+Cohesion: 0.12
+Nodes (25): a_character_outside_the_printable_range_is_htsjdks_error_not_the_tools(), a_present_tag_replaces_the_qualities(), absent_and_empty_both_abort_the_run(), fastq_to_phred(), original_base_qualities(), original_base_qualities_tag(), read_with(), revert() (+17 more)
 
 ### Community 442 - "select_variants_subset.rs"
-Cohesion: 0.18
-Nodes (21): create_sample_name_inclusion_list(), SortedSet, subset_record(), unseeded_double(), a_filtered_genotype_is_invisible_to_the_chromosome_counts(), compare(), every_subset_is_the_reference_s(), golden() (+13 more)
+Cohesion: 0.24
+Nodes (19): subset_record(), SubsetArguments, unseeded_double(), a_filtered_genotype_is_invisible_to_the_chromosome_counts(), every_subset_is_the_reference_s(), golden(), input(), join() (+11 more)
 
 ### Community 443 - "VariantContext"
-Cohesion: 0.18
-Nodes (22): apply_one(), Arguments, attribute_double(), base_index(), bases(), Feature, indel_lengths(), is_biallelic() (+14 more)
+Cohesion: 0.17
+Nodes (29): apply_one(), Arguments, attribute(), attribute_double(), attribute_double_list(), attribute_int(), attribute_string(), degeneracy_states() (+21 more)
 
 ### Community 444 - "src/variants_to_table.rs"
 Cohesion: 0.24
 Nodes (20): add(), Arguments, attribute(), calls_of(), count(), extract_fields(), find(), genotype_string() (+12 more)
 
 ### Community 445 - "concordance_annotated_vcfs.rs"
-Cohesion: 0.20
+Cohesion: 0.17
 Nodes (15): a_filtered_false_negative_is_ffn_in_both_files_and_keeps_its_filter(), DICTIONARY, every_file_holds_what_the_routing_says_it_does(), golden(), identified(), input(), one_step_writes_two_different_records(), only_the_first_file_is_written_against_the_truth_header() (+7 more)
 
 ### Community 446 - "ReadThreadingAssemblerDump"
@@ -2803,8 +2807,8 @@ Cohesion: 0.09
 Nodes (22): ci, suites_per_job, $why, $comment, default_java_props, htsget_server, image, platform (+14 more)
 
 ### Community 448 - "variant_overlap.rs"
-Cohesion: 0.36
-Nodes (12): a_filtered_source_or_a_different_alternate_is_no_match(), a_matching_snp_takes_the_id_and_the_flag(), a_split_pair_and_an_untrimmed_source_meet_in_the_minimal_representation(), a_suffix_that_eats_an_allele_throws(), an_existing_id_is_appended_to_unless_it_holds_the_rsid(), annotate(), Event, event() (+4 more)
+Cohesion: 0.21
+Nodes (14): a_filtered_source_or_a_different_alternate_is_no_match(), a_matching_snp_takes_the_id_and_the_flag(), a_split_pair_and_an_untrimmed_source_meet_in_the_minimal_representation(), a_suffix_that_eats_an_allele_throws(), an_existing_id_is_appended_to_unless_it_holds_the_rsid(), annotate(), Event, event() (+6 more)
 
 ### Community 449 - "tests/mt_low_heteroplasmy.rs"
 Cohesion: 0.22
@@ -2818,9 +2822,9 @@ Nodes (16): BedFeature, a_missing_score_is_one(), an_interval_with_no_acgt_is_na
 Cohesion: 0.33
 Nodes (9): field(), find(), golden(), the_counts_are_the_reference_ones(), the_declarations_carry_what_a_parser_and_a_usage_need(), the_parse_decisions_follow_from_the_declarations(), the_two_archetypes_do_not_mirror_each_other(), the_type_is_the_underlying_fields() (+1 more)
 
-### Community 452 - "annotations.rs"
-Cohesion: 0.23
-Nodes (16): allele(), build(), chromosome_counts_matches_the_reference(), combine_cases(), every_combine_matches_the_reference(), filtered(), fixtures(), golden() (+8 more)
+### Community 452 - "tests/post_process_reads_for_rsem.rs"
+Cohesion: 0.26
+Nodes (11): a_coordinate_sorted_input_is_refused(), fixture_for(), golden(), install(), of_run(), rows(), run(), the_filter_chain_is_a_single_filter() (+3 more)
 
 ### Community 453 - "tests/original_alignment.rs"
 Cohesion: 0.17
@@ -2832,15 +2836,15 @@ Nodes (13): ConcordanceRecord, apply(), CENTERS_KEY, concordant(), genotype_for(
 
 ### Community 455 - "src/calibrate_dragstr_model.rs"
 Cohesion: 0.07
-Nodes (47): binary_search(), BLOCKS, Case, Cases, collect(), column_header(), COLUMN_SEPARATOR, COLUMN_WIDTH (+39 more)
+Nodes (45): binary_search(), BLOCKS, Case, Cases, collect(), column_header(), COLUMN_SEPARATOR, COLUMN_WIDTH (+37 more)
 
 ### Community 456 - "Hdf5File"
-Cohesion: 0.20
-Nodes (13): a_file_starts_with_the_signature(), Data, Doubles, Strings, Group, Hdf5File, lookup3(), lookup3_matches_the_published_vectors() (+5 more)
+Cohesion: 0.15
+Nodes (17): write_hdf5(), Interval, write_chunked_matrix(), write_intervals(), a_file_starts_with_the_signature(), Data, Doubles, Strings (+9 more)
 
 ### Community 457 - "src/count_false_positives.rs"
 Cohesion: 0.15
-Nodes (14): COLUMNS, count(), CountFalsePositivesError, CouldNotOpenOutput, Counts, everything_that_is_not_an_indel_is_a_snp(), false_positive_rate(), table() (+6 more)
+Nodes (14): COLUMNS, count(), CountFalsePositivesError, CouldNotOpenOutput, Counts, everything_that_is_not_an_indel_is_a_snp(), false_positive_rate(), id_from_path() (+6 more)
 
 ### Community 458 - "src/filter_funcotations.rs"
 Cohesion: 0.09
@@ -2855,19 +2859,19 @@ Cohesion: 0.16
 Nodes (16): add_allele_filters(), apply(), Arguments, cutoff_for(), decode_as_filters(), depths_by_alternate(), encode_as_filters(), FILTER_NAME (+8 more)
 
 ### Community 462 - "select_variants_output.rs"
-Cohesion: 0.18
-Nodes (18): OutputArguments, SampleArguments, SubsetArguments, a_trimmed_record_overtakes_the_one_that_followed_it(), dropping_an_annotation_reaches_the_recomputed_one(), every_run_writes_in_the_reference_s_order(), golden(), input() (+10 more)
+Cohesion: 0.20
+Nodes (16): OutputArguments, SampleArguments, a_trimmed_record_overtakes_the_one_that_followed_it(), dropping_an_annotation_reaches_the_recomputed_one(), every_run_writes_in_the_reference_s_order(), golden(), input(), lines() (+8 more)
 
 ### Community 463 - "src/split_vcfs.rs"
 Cohesion: 0.16
 Nodes (16): biallelic_type(), record_type(), RecordType, Indel, Mixed, Mnp, NoVariation, Snp (+8 more)
 
-### Community 464 - "src/transfer_read_tags.rs"
+### Community 464 - "glibc_libm.rs"
 Cohesion: 0.21
-Nodes (14): a_byte_array_tag_is_decoded_rather_than_printed(), a_missing_tag_names_the_unmapped_read(), an_integer_tag_arrives_as_a_string(), and_a_float_through_javas_tostring(), attribute_as_string(), format_java_float(), is_query_name_sorted(), read() (+6 more)
+Nodes (15): logp_complement(), logsumexp_double_complement(), np_logaddexp(), py_min(), against_numpy(), exp_is_glibcs(), exp_special_case(), expm1() (+7 more)
 
 ### Community 465 - "haplotype_caller_engine.rs"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (15): ActiveRegionEvaluator, ActivityState, ActivityType, HighQualitySoftClips, None, AVERAGE_HQ_SOFTCLIPS_HQ_BASES_THRESHOLD, count_high_quality_soft_clips(), gls_of() (+7 more)
 
 ### Community 466 - "tests/variants_to_table.rs"
@@ -2883,8 +2887,8 @@ Cohesion: 0.20
 Nodes (16): a_record_with_no_alternate_is_filtered(), an_existing_allele_filter_is_unioned(), an_ordinary_vcf_throws_once_anything_is_filtered(), cutoffs(), every_cutoff_matches_the_golden(), every_filtered_vcf_matches_the_golden(), expected(), golden() (+8 more)
 
 ### Community 469 - "tests/reference_block_concordance.rs"
-Cohesion: 0.19
-Nodes (13): a_multi_sample_record_is_refused_after_the_filter(), blocks(), every_histogram_matches_the_golden(), golden(), histogram(), masked(), refusal(), run() (+5 more)
+Cohesion: 0.17
+Nodes (14): write_histogram(), a_multi_sample_record_is_refused_after_the_filter(), blocks(), every_histogram_matches_the_golden(), golden(), histogram(), masked(), refusal() (+6 more)
 
 ### Community 470 - "tests/convert_counts_to_depth_file.rs"
 Cohesion: 0.21
@@ -2894,41 +2898,41 @@ Nodes (11): a_header_without_a_sample_is_refused_by_the_reader(), converted(), e
 Cohesion: 0.22
 Nodes (15): a_false_negative_never_gains_centers(), a_false_positive_is_rebuilt_from_scratch(), a_filtered_true_negative_writes_nothing(), an_eval_without_ad_leaves_the_genotype_without_one(), data_lines(), DICTIONARY, every_merged_vcf_matches_the_golden(), expected() (+7 more)
 
-### Community 472 - "interval"
-Cohesion: 0.08
-Nodes (23): configuration(), every_apply_call_matches_the_reference(), field(), golden(), unescape(), patterns, update-types, patterns (+15 more)
+### Community 472 - "updates"
+Cohesion: 0.14
+Nodes (13): patterns, update-types, patterns, cargo, github-actions, dependency-name, updates, directory (+5 more)
 
-### Community 473 - "PowerError"
-Cohesion: 0.09
-Nodes (28): calculate_min_count_for_signal(), calculate_power(), MINIMUM_NUM_READS_FOR_SIGNAL_COUNT, P_VALUE_FOR_NOISE, PowerError, Allele, Distribution, NegativeTotalCount (+20 more)
+### Community 473 - "tests/somatic_validation_power.rs"
+Cohesion: 0.42
+Nodes (10): calculate_min_count_for_signal(), agrees(), ALLOWANCE, bits(), distribution(), every_row_matches_the_golden(), golden(), hex() (+2 more)
 
 ### Community 474 - "src/left_align_and_trim_variants.rs"
 Cohesion: 0.18
 Nodes (15): SplitError, Alignment, GenotypeIndex, a_new_contig_is_not_bounded_at_all(), a_skipped_indel_still_bounds_the_next_record(), aligning_one_record_relaxes_the_bound_on_the_next(), Arguments, bases() (+7 more)
 
 ### Community 475 - "tests/sa_tag.rs"
-Cohesion: 0.24
+Cohesion: 0.22
 Nodes (13): CONTIG_LENGTH, every_family_is_the_reference(), every_parse_is_the_reference(), every_refusal_is_the_reference(), every_unit_is_the_reference(), golden(), group_input(), header() (+5 more)
 
 ### Community 476 - "src/allele_frequency_qc.rs"
-Cohesion: 0.14
-Nodes (19): bins_from_report(), CALLED, chi_squared_statistic(), DEFAULT_ALLOWED_VARIANCE, DEFAULT_THRESHOLD, degrees_of_freedom(), java_chi_squared_statistic(), METRIC_CLASS (+11 more)
+Cohesion: 0.15
+Nodes (18): bins_from_report(), CALLED, DEFAULT_ALLOWED_VARIANCE, DEFAULT_THRESHOLD, degrees_of_freedom(), java_chi_squared_statistic(), METRIC_CLASS, METRIC_TYPE (+10 more)
 
 ### Community 477 - "AsmError"
-Cohesion: 0.15
-Nodes (11): amplicon(), AsmError, Internal, User, at(), CodonTracker, Interval, .NULL (+3 more)
+Cohesion: 0.25
+Nodes (7): amplicon(), AsmError, Internal, User, combine_coverage(), Interval, .NULL
 
 ### Community 478 - "src/evaluate_info_field_concordance.rs"
 Cohesion: 0.12
 Nodes (12): a_record_whose_key_is_absent_is_counted_but_contributes_nothing(), both_refusals_carry_the_references_words(), Bucket, check_keys(), COLUMNS, Concordance, EvaluateInfoFieldConcordanceError, MissingEvalKey (+4 more)
 
 ### Community 479 - "tests/gather_bam_files.rs"
-Cohesion: 0.21
-Nodes (11): a_record_can_reference_a_read_group_the_header_never_declares(), bytes(), every_block_copied_output_matches_the_golden(), gathered(), golden(), row(), sam(), shards() (+3 more)
+Cohesion: 0.17
+Nodes (14): is_bam_file(), use_block_copying(), a_record_can_reference_a_read_group_the_header_never_declares(), bytes(), every_block_copied_output_matches_the_golden(), gathered(), golden(), one_sam_sends_the_whole_run_down_the_other_path() (+6 more)
 
 ### Community 480 - "src/learn_read_orientation_model.rs"
-Cohesion: 0.08
-Nodes (34): add_into(), allele_fraction_shape(), alt_f1r2_fraction_shape(), ALT_PSEUDOCOUNT, AltHistogram, AltSite, BALANCED_F1R2_PRIOR, BALANCED_HET_PSEUDOCOUNT (+26 more)
+Cohesion: 0.09
+Nodes (32): add_into(), allele_fraction_shape(), alt_f1r2_fraction_shape(), ALT_PSEUDOCOUNT, AltHistogram, AltSite, BALANCED_F1R2_PRIOR, BALANCED_HET_PSEUDOCOUNT (+24 more)
 
 ### Community 481 - "tests/transfer_read_tags.rs"
 Cohesion: 0.20
@@ -2938,28 +2942,32 @@ Nodes (18): TransferError, AlignedNotQueryNameSorted, AttributeEmpty, NoReadTags
 Cohesion: 0.22
 Nodes (5): KBestHaplotypeDump, Read, Case, Read, SeqGraphDump
 
+### Community 485 - "src/model_segments.rs"
+Cohesion: 0.25
+Nodes (13): AllelicCount, DEFAULT_GENOTYPING_BASE_ERROR_RATE, DEFAULT_GENOTYPING_HOMOZYGOUS_LOG_RATIO_THRESHOLD, DEFAULT_MINIMUM_TOTAL_ALLELE_COUNT_CASE, filter_by_overlap(), filter_by_total_count(), genotype_hets(), homozygous_log_ratio() (+5 more)
+
 ### Community 486 - "variant_bridge.rs"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (10): allele_index(), Bridged, engine_allele(), engine_genotype(), from_engine(), rendered(), to_engine(), vcf_allele() (+2 more)
 
 ### Community 487 - "tests/call_copy_ratio_segments.rs"
 Cohesion: 0.17
 Nodes (12): a_segment_exactly_on_a_bound_is_neutral(), an_empty_copy_neutral_set_calls_everything_neutral(), both_argument_refusals_match_the_golden(), called(), every_called_table_matches_the_golden(), file(), golden(), HEADER (+4 more)
 
-### Community 488 - "hashmap"
-Cohesion: 0.16
-Nodes (12): executable(), from_hex(), GOLDEN, past_the_interpreter(), postprocess(), replay(), segments_table(), DIRECTORY_VARIABLE (+4 more)
+### Community 488 - "model.rs"
+Cohesion: 0.14
+Nodes (25): batch_norm(), BatchNorm, max_pool_height(), relu(), Terms, Chain, EvenOdd, BEST_PRACTICES (+17 more)
 
 ### Community 489 - "tests/learn_read_orientation_model.rs"
 Cohesion: 0.15
 Nodes (15): is_canonical_kmer(), validate_context(), a_state_with_a_zero_prior_stays_at_zero(), Case, cases(), depth_and_alt_depth_move_the_answer_separately(), every_value_matches_the_golden(), format() (+7 more)
 
 ### Community 490 - "src/apply_bqsr.rs"
-Cohesion: 0.22
-Nodes (10): ApplyBqsrArguments, apply_bqsr(), apply_bqsr_with(), ApplyBqsrError, Reads, Report, Transform, recalibrate() (+2 more)
+Cohesion: 0.13
+Nodes (20): ApplyBqsrArguments, apply_bqsr(), apply_bqsr_with(), ApplyBqsrError, Reads, Report, Transform, recalibrate() (+12 more)
 
 ### Community 491 - "panel_arpack.rs"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (10): number_of_eigensamples(), arpack_gives_the_reference_eigenvalues_to_the_bit(), CASES, counts(), eigen(), golden(), hex(), no_filters() (+2 more)
 
 ### Community 492 - "tests/build_bam_index.rs"
@@ -2979,7 +2987,7 @@ Cohesion: 0.18
 Nodes (12): a_tool_default_counts_as_selected(), golden(), measured_parser(), result(), rows(), the_ownership_table_is_the_goldens(), the_trim_answers_the_goldens_command_lines(), golden() (+4 more)
 
 ### Community 497 - "Node"
-Cohesion: 0.30
+Cohesion: 0.28
 Nodes (10): Node, And, Binary, Empty, Identifier, Literal, Negate, Not (+2 more)
 
 ### Community 498 - "src/mann_whitney.rs"
@@ -2995,8 +3003,8 @@ Cohesion: 0.21
 Nodes (15): a_filtered_eval_record_is_labelled_by_what_truth_has(), a_filtered_truth_record_never_reaches_the_iterator(), concordant(), DICTIONARY, dropping_filtered_records_on_both_sides_removes_two_states(), every_run_matches_the_golden_step_for_step(), expected(), golden() (+7 more)
 
 ### Community 501 - "merge_annotated_regions_by_annotation.rs"
-Cohesion: 0.15
-Nodes (14): CollectionError, ContigNotInDictionary, NoLocatableColumns, NoRecords, write_without_header(), dictionary(), every_run_writes_what_the_reference_writes(), golden() (+6 more)
+Cohesion: 0.27
+Nodes (10): write_without_header(), dictionary(), every_run_writes_what_the_reference_writes(), golden(), refusal(), run(), SEGMENTS, the_two_refusals_are_the_tools_own_argument_checks() (+2 more)
 
 ### Community 502 - "downsample_with"
 Cohesion: 0.15
@@ -3007,15 +3015,15 @@ Cohesion: 0.17
 Nodes (13): allele_frequency(), DEFAULT_MAX_POPULATION_AF, DEFAULT_MIN_POPULATION_AF, DEFAULT_MINIMUM_MAPPING_QUALITY, default_read_filter(), DEFAULT_READ_FILTERS, first_double(), is_biallelic_snp() (+5 more)
 
 ### Community 504 - "src/gnarly_genotyper.rs"
-Cohesion: 0.08
-Nodes (30): AC_ADJUSTED_KEY, ALLELE_COUNT_MISMATCH_MESSAGE, ALLELE_SPECIFIC_PREFIX, AS_QUAL_APPROX_KEY, called_alternates(), clears_the_floor(), DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING, finalize_mq() (+22 more)
+Cohesion: 0.09
+Nodes (28): AC_ADJUSTED_KEY, ALLELE_COUNT_MISMATCH_MESSAGE, ALLELE_SPECIFIC_PREFIX, AS_QUAL_APPROX_KEY, called_alternates(), clears_the_floor(), DEFAULT_STANDARD_CONFIDENCE_FOR_CALLING, finalize_mq() (+20 more)
 
 ### Community 505 - "Engine"
-Cohesion: 0.21
-Nodes (7): distinct_states(), Engine, EvalError, is_filtered(), make_stratifier(), ReferenceBases, SiteContext
+Cohesion: 0.25
+Nodes (4): Engine, is_filtered(), ReferenceBases, SiteContext
 
 ### Community 506 - "tests/concordance.rs"
-Cohesion: 0.19
+Cohesion: 0.22
 Nodes (14): a_filtered_eval_record_alone_leaves_no_trace(), an_empty_callset_reports_zero_rather_than_nan(), an_mnp_and_a_symbolic_record_share_the_indel_row(), DICTIONARY, every_table_matches_the_golden_byte_for_byte(), expected(), golden(), Record (+6 more)
 
 ### Community 507 - "tests/left_align_and_trim_variants.rs"
@@ -3023,7 +3031,7 @@ Cohesion: 0.20
 Nodes (13): a_skipped_indel_is_written_untouched(), aligning_one_record_relaxes_the_bound_on_the_next(), arguments(), every_run_writes_the_records_the_reference_wrote(), golden(), input(), input_of(), reference() (+5 more)
 
 ### Community 508 - "tests/sv_cluster.rs"
-Cohesion: 0.22
+Cohesion: 0.24
 Nodes (14): defaults(), enable_cnv_is_only_observable_under_max_clique(), every_cluster_matches_the_golden(), golden(), measured(), omitting_the_members_removes_the_only_evidence(), overlap_and_size_similarity_are_separate_tests(), proximity_alone_never_suffices() (+6 more)
 
 ### Community 509 - "dashboard/generate.py"
@@ -3043,16 +3051,16 @@ Cohesion: 0.26
 Nodes (13): a_filtered_eval_record_is_labelled_by_what_truth_has(), compare(), concordance(), concordant(), dictionary(), dropping_filtered_records_on_both_sides_removes_two_states(), eval_only(), one_disagreement_puts_the_two_sides_out_of_step() (+5 more)
 
 ### Community 515 - "gatk_report_reader.rs"
-Cohesion: 0.24
-Nodes (14): word_starts(), data_type_pattern(), every_parsed_report_is_the_reference(), golden(), hand_written(), java_class(), rows(), source() (+6 more)
+Cohesion: 0.22
+Nodes (15): split_fixed_width(), word_starts(), data_type_pattern(), every_parsed_report_is_the_reference(), golden(), hand_written(), java_class(), rows() (+7 more)
 
 ### Community 516 - "kernel_segmentation.rs"
 Cohesion: 0.19
 Nodes (15): EPS, get_exponent(), hypot(), scalb(), SingularValueDecomposition, TINY, bits(), changepoint_case() (+7 more)
 
-### Community 517 - "Record"
-Cohesion: 0.19
-Nodes (10): annotate(), closeness(), copy_numbers_match(), eval_state(), Genotype, genotype_distance(), min_distance(), Record (+2 more)
+### Community 517 - "comments_only.py"
+Cohesion: 0.20
+Nodes (6): base_text(), git(), main(), python_code(), rust_code(), without_docstrings()
 
 ### Community 518 - "Span"
 Cohesion: 0.19
@@ -3067,16 +3075,16 @@ Cohesion: 0.14
 Nodes (18): an_exponent_off_the_main_path_is_not_answered(), C2, C3, C4, C5, exact_fma(), exact_powers_stay_exact(), EXP_TABLE (+10 more)
 
 ### Community 521 - "src/reference_block_concordance.rs"
-Cohesion: 0.21
-Nodes (10): accumulate(), Block, Histograms, intersection_length(), key_of(), MultiSample, overlaps(), pair_key() (+2 more)
+Cohesion: 0.22
+Nodes (9): accumulate(), Block, Histograms, intersection_length(), key_of(), MultiSample, overlaps(), pair_key() (+1 more)
 
 ### Community 522 - "src/site_depth_to_baf.rs"
 Cohesion: 0.14
 Nodes (20): Arguments, BafError, AlternateNotAcgt, LocusMismatch, ReferenceNotAcgt, SitesExhausted, BafEvidence, calc_baf() (+12 more)
 
 ### Community 523 - "Graph"
-Cohesion: 0.22
-Nodes (8): a_bubble_expands_into_both_of_its_paths(), an_overlap_search_takes_one_right_end_per_left_end(), Connection, Contig, Graph, graph_of(), two_contigs_with_nothing_else_to_join_become_one(), Walk
+Cohesion: 0.25
+Nodes (7): a_bubble_expands_into_both_of_its_paths(), Connection, Contig, Graph, graph_of(), two_contigs_with_nothing_else_to_join_become_one(), Walk
 
 ### Community 524 - "apply_vqsr_tranches.rs"
 Cohesion: 0.26
@@ -3124,19 +3132,19 @@ Nodes (12): Block, blocks(), blocks_before_failure(), is_block_compressed(), Ref
 
 ### Community 536 - "tests/validate_variants.rs"
 Cohesion: 0.19
-Nodes (12): a_refusal_can_be_turned_into_nothing(), every_run_refuses_what_the_reference_refused(), file(), golden(), outcome(), refusal(), rows(), RUNS (+4 more)
+Nodes (13): a_refusal_can_be_turned_into_nothing(), every_run_refuses_what_the_reference_refused(), excluding_a_type_puts_ref_back_in_the_set(), file(), golden(), outcome(), refusal(), rows() (+5 more)
 
 ### Community 537 - "tests/annotate_vcf_with_bam_depth.rs"
 Cohesion: 0.23
 Nodes (13): a_one_base_read_and_a_partial_cover_are_both_zero(), as_read(), every_depth_matches_the_golden(), golden(), reads(), rows(), the_annotation_overwrites_what_the_record_carried(), the_output_header_declares_bam_depth_twice() (+5 more)
 
 ### Community 538 - "train_and_write"
-Cohesion: 0.15
-Nodes (14): default_vqslod_tranches(), double_argument(), int_argument(), LoadedModel, Outputs, read_feature_vcf(), recal_file(), Settings (+6 more)
+Cohesion: 0.27
+Nodes (8): LoadedModel, Outputs, recal_file(), settings_as(), thrown(), train_and_write(), visualization_script(), write_model()
 
 ### Community 539 - "super"
-Cohesion: 0.12
-Nodes (15): count_bases(), count_reads(), FlagStatus, format_percent(), no_reads_is_a_nan_percentage_and_not_a_failure(), round_half_even(), the_rounding_is_half_even_and_not_half_up(), DIMENSION (+7 more)
+Cohesion: 0.24
+Nodes (7): count_bases(), count_reads(), FlagStatus, format_percent(), no_reads_is_a_nan_percentage_and_not_a_failure(), round_half_even(), the_rounding_is_half_even_and_not_half_up()
 
 ### Community 540 - "tests/allele_likelihoods.rs"
 Cohesion: 0.30
@@ -3154,9 +3162,9 @@ Nodes (17): RldIntv, Aux, check_left(), check_left_simple(), copy_nei(), fm6_com
 Cohesion: 0.16
 Nodes (14): category_block(), census_line(), Counts, ReportType, CalledVariant, Evaluable, IgnoredMate, Inconsistent (+6 more)
 
-### Community 544 - "traverse"
-Cohesion: 0.12
-Nodes (14): count_bases(), count_reads(), default_read_filter(), DEFAULT_READ_FILTERS, CountingVariantFilter, CountingVariantFilter<V>, traverse_multiple_pass(), Applied (+6 more)
+### Community 544 - "ReadsDataSource"
+Cohesion: 0.05
+Nodes (44): ReadsDataSource, count_bases(), count_reads(), default_read_filter(), DEFAULT_READ_FILTERS, fix(), fix_misencoded_base_quality_reads(), fix_misencoded_base_quality_reads_with() (+36 more)
 
 ### Community 545 - "GencodeFuncotation"
 Cohesion: 0.14
@@ -3191,12 +3199,12 @@ Cohesion: 0.24
 Nodes (13): a_filtered_genotype_never_matches_and_the_flag_changes_nothing(), every_run_keeps_what_the_reference_kept(), file(), golden(), kept(), names(), rows(), RUNS (+5 more)
 
 ### Community 553 - "jobs"
-Cohesion: 0.11
-Nodes (17): name, needs, runs-on, name, concurrency, cancel-in-progress, group, name (+9 more)
+Cohesion: 0.10
+Nodes (20): concurrency, cancel-in-progress, group, name, runs-on, jobs, gpu, oracle (+12 more)
 
 ### Community 554 - "argument-coverage-t3"
-Cohesion: 0.17
-Nodes (13): name, needs, runs-on, strategy, argument-coverage-t3, oracle, tool, name (+5 more)
+Cohesion: 0.15
+Nodes (14): name, needs, runs-on, strategy, group, index, slug, suites (+6 more)
 
 ### Community 555 - ".main"
 Cohesion: 0.21
@@ -3207,8 +3215,8 @@ Cohesion: 0.16
 Nodes (3): BetaBinomialDump, Body, SomaticValidationPowerDump
 
 ### Community 558 - ".operate"
-Cohesion: 0.33
-Nodes (8): Call, fill_row(), is_deletion(), is_mnv(), is_non_ref(), is_symbolic(), Operator<'a>, str_of()
+Cohesion: 0.22
+Nodes (12): alts_of(), Call, fill_row(), HistogramCount, Float, Int, is_deletion(), is_mnv() (+4 more)
 
 ### Community 559 - "tests/condense_depth_evidence.rs"
 Cohesion: 0.21
@@ -3223,8 +3231,8 @@ Cohesion: 0.32
 Nodes (14): an_unnamed_contig_is_reported_as_an_unsorted_input(), bin(), dictionary(), every_merged_stream_matches_the_golden(), features(), full(), golden(), printed() (+6 more)
 
 ### Community 562 - "tests/count_false_positives.rs"
-Cohesion: 0.20
-Nodes (14): id_from_path(), the_id_strips_one_extension(), every_table_matches_the_golden_byte_for_byte(), golden(), interval(), records(), rows(), Run (+6 more)
+Cohesion: 0.22
+Nodes (14): target_territory(), the_territory_is_the_intervals_bases(), every_table_matches_the_golden_byte_for_byte(), golden(), interval(), records(), rows(), Run (+6 more)
 
 ### Community 563 - "compare_bam"
 Cohesion: 0.26
@@ -3243,20 +3251,20 @@ Cohesion: 0.13
 Nodes (19): Case, cases(), CONTIG_LENGTH, every_traversal_matches_the_reference(), filtered_reads(), forcing_active_moves_no_boundary(), golden(), header() (+11 more)
 
 ### Community 567 - "src/calculate_average_combined_annotations.rs"
-Cohesion: 0.13
-Nodes (20): apply(), attribute_as_double(), average_header_line(), AverageError, MissingCounts, NoAnnotations, counts(), header_with_averages() (+12 more)
+Cohesion: 0.21
+Nodes (10): apply(), attribute_as_double(), average_header_line(), AverageError, MissingCounts, NoAnnotations, counts(), header_with_averages() (+2 more)
 
 ### Community 568 - "Reason"
-Cohesion: 0.11
-Nodes (21): ByteReader, HistogramCount, Float, Int, inflate_one(), known_len(), Len, A (+13 more)
+Cohesion: 0.18
+Nodes (16): ByteReader, known_len(), known_op(), Len, A, Fixed, G, P (+8 more)
 
 ### Community 570 - "src/mt_low_heteroplasmy.rs"
 Cohesion: 0.21
 Nodes (12): alleles_are_artifacts(), Arguments, FILTER_NAME, fractions(), is_not_filtered(), is_site_low_heteroplasmy(), LOW_HET_THRESHOLD, LowHetError (+4 more)
 
 ### Community 571 - "Located"
-Cohesion: 0.16
-Nodes (5): At, GroupedByOverlap<T>, GroupedOnStart<T>, Located, overlap_keeps_the_furthest_end_across_groups()
+Cohesion: 0.11
+Nodes (9): At, GroupedByOverlap<T>, GroupedOnStart<T>, Located, overlap_keeps_the_furthest_end_across_groups(), Driving, Source, Comp (+1 more)
 
 ### Community 572 - "src/print_sv_evidence.rs"
 Cohesion: 0.22
@@ -3278,13 +3286,13 @@ Nodes (14): a_contig_the_dictionary_does_not_know_is_refused_by_the_comparator()
 Cohesion: 0.32
 Nodes (13): a_deleted_locus_prints_nothing_and_counts_nothing(), a_run_without_a_reference_writes_n(), both_optional_columns_match_the_golden(), deleted_element(), escape(), golden(), matched(), read() (+5 more)
 
-### Community 577 - "tests/dragen_genotypes.rs"
-Cohesion: 0.18
-Nodes (9): map_mapping_quality_to_phred_likelihood_score(), gls_to_pls(), bad_bounds(), Case, every_row_matches_the_reference(), hex(), record(), REVERSE (+1 more)
+### Community 577 - "VidField"
+Cohesion: 0.17
+Nodes (9): Elem, Char, Float, Int, element_wise_sum_2d(), header_description(), header_id(), parse_elem() (+1 more)
 
 ### Community 578 - "STATUS.md"
-Cohesion: 0.12
-Nodes (12): How much to trust a single number, The distribution, The predictions, marked, The speed baseline, Where the port is not cheaper, 1. `jmath`'s correctly rounded logarithm (`ModelSegments`, `VariantRecalibrator`), Not targets yet, Out of scope, as S.2 says (+4 more)
+Cohesion: 0.17
+Nodes (8): How much to trust a single number, The distribution, The predictions, marked, The speed baseline, Where the port is not cheaper, gatk-origin tools (191 of 191 started), picard-origin tools (121 of 121 started), Status
 
 ### Community 579 - "TsvTableDump"
 Cohesion: 0.20
@@ -3292,7 +3300,11 @@ Nodes (4): TsvTableDump, TableReader<String[]>, TableReader<String>, TableWriter
 
 ### Community 580 - "Roadmap to 100% byte-identical reproduction"
 Cohesion: 0.12
-Nodes (17): How this is tracked, Milestone C: the runnable command line, Milestone G2: the 151 non-Spark GATK tools, by archetype, Milestone G3: the variant callers (individually multi-month), Milestone H: finish the htsjdk-rs foundation, Milestone P: finish Picard (121 tools), Milestone S: speed, once the bytes are settled, Milestone V: program-level validation and reproducibility (+9 more)
+Nodes (17): GPU.1 What makes a kernel eligible, GPU.2 The targets, in order of tractability, GPU.3 How it is verified, How this is tracked, Milestone C: the runnable command line, Milestone G2: the 151 non-Spark GATK tools, by archetype, Milestone G3: the variant callers (individually multi-month), Milestone GPU: accelerate without losing the byte (+9 more)
+
+### Community 582 - "CompressedDataList"
+Cohesion: 0.19
+Nodes (3): calculate_rank_sum(), CompressedDataList, format_fixed()
 
 ### Community 583 - "trim_alleles.rs"
 Cohesion: 0.33
@@ -3318,9 +3330,9 @@ Nodes (12): aligned_coding_sequence_allele(), aligned_ref_allele(), alternate_se
 Cohesion: 0.12
 Nodes (16): Known, known(), Alt, Dp, DpFormat, End, Filter, Gq (+8 more)
 
-### Community 590 - ".operate"
-Cohesion: 0.12
-Nodes (34): alts_of(), collect_and_extend(), column_length(), concatenate(), Data, Alt, Float, Int (+26 more)
+### Community 590 - "sum_or_mean"
+Cohesion: 0.18
+Nodes (19): collect_and_extend(), column_length(), concatenate(), element_value(), element_wise_sum(), encode_gt(), float_valid(), FormatValue (+11 more)
 
 ### Community 591 - "State"
 Cohesion: 0.12
@@ -3351,7 +3363,7 @@ Cohesion: 0.31
 Nodes (3): Hit, Piece, SvBreakpointFixtures
 
 ### Community 598 - "src/select_variants_header.rs"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (8): CHROMOSOME_COUNT_KEYS, gatk_info_line(), is_compound(), ORIGINAL_AC_KEY, ORIGINAL_AF_KEY, ORIGINAL_AN_KEY, ORIGINAL_DP_KEY, output_header()
 
 ### Community 599 - "picard/check_terminator_block.rs"
@@ -3359,20 +3371,20 @@ Cohesion: 0.23
 Nodes (6): check(), DEFECTIVE_RETURN_CODE, termination_name(), every_file_answers_what_the_reference_answers(), golden(), row()
 
 ### Community 600 - "tests/split_intervals.rs"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (19): check_run(), contigs(), every_probe_iterates_in_the_reference_s_order(), fixture(), golden(), replay(), split(), the_small_taxonomy_is_the_reference_s_file() (+11 more)
 
 ### Community 602 - "dispatcher.rs"
 Cohesion: 0.42
 Nodes (14): a_name_that_does_not_resolve_is_refused_with_the_usage(), a_tool_asked_for_help_answers_with_its_usage(), a_tool_that_is_no_walker_parses(), a_walker_with_no_arguments_is_refused_by_the_parser(), args(), asking_for_the_usage_is_not_an_error(), counted(), field() (+6 more)
 
-### Community 603 - "string_hash_code"
-Cohesion: 0.23
-Nodes (9): a_pair_is_one_group(), a_pair_spans_both_reads(), FragmentError, NoReads, TooManyReads, group_by_read_name(), read(), read_end() (+1 more)
+### Community 603 - "a_mismatch_names_an_upper_case_sum_against_a_lower_case_one"
+Cohesion: 0.24
+Nodes (14): clean_expected_sha256(), expected_sha256(), is_dest_file_valid(), validate_integrity(), a_mismatch_names_an_upper_case_sum_against_a_lower_case_one(), an_empty_checksum_file_is_a_refusal(), an_existing_destination_is_refused_until_overwrite(), checksum_file() (+6 more)
 
-### Community 604 - "readgroup"
-Cohesion: 0.26
-Nodes (7): CONTIG_LENGTH, every_pileup_answers_what_the_reference_answers(), golden(), header(), LOCUS, read(), reads_for()
+### Community 604 - "tests/calculate_average_combined_annotations.rs"
+Cohesion: 0.35
+Nodes (10): a_divisor_of_zero_leaves_the_record_untouched(), a_record_with_no_counts_is_refused_by_its_site(), every_averaged_file_matches_the_golden(), golden(), refusal(), run(), the_header_declares_every_requested_average(), unescape() (+2 more)
 
 ### Community 605 - "tests/base_recalibration_engine.rs"
 Cohesion: 0.24
@@ -3387,8 +3399,8 @@ Cohesion: 0.32
 Nodes (11): a_deletion_that_walks_off_the_front_moves_the_read(), a_single_element_cigar_never_reaches_the_call(), an_indel_with_no_repeat_to_move_into_stays(), an_insertion_that_walks_off_the_front_does_not(), an_unmapped_read_never_reaches_the_call(), left_align(), left_align_indels(), left_align_indels_with() (+3 more)
 
 ### Community 608 - "tests/split_reads.rs"
-Cohesion: 0.38
-Nodes (11): a_null_library_makes_two_files_one_of_them_empty(), Configuration, configuration(), each_file_carries_one_more_program_record_than_the_last(), every_output_file_is_byte_identical(), golden(), install_fixtures(), of_run() (+3 more)
+Cohesion: 0.34
+Nodes (12): OutputFile, a_null_library_makes_two_files_one_of_them_empty(), Configuration, configuration(), each_file_carries_one_more_program_record_than_the_last(), every_output_file_is_byte_identical(), golden(), install_fixtures() (+4 more)
 
 ### Community 609 - "tests/gather_tranches.rs"
 Cohesion: 0.27
@@ -3403,8 +3415,8 @@ Cohesion: 0.18
 Nodes (9): count_suite(), coverage_text(), fixture_summary(), fuzz_text(), gather(), golden_rows(), main(), quarantined() (+1 more)
 
 ### Community 615 - "StandardCovariateList"
-Cohesion: 0.16
-Nodes (7): CovariateKind, Context, Cycle, QualityScore, QualityScoreCovariate, StandardCovariateList, format_key()
+Cohesion: 0.12
+Nodes (17): CovariateKind, Context, Cycle, QualityScore, ReadGroup, StandardCovariateList, generate_argument_table(), generate_quantization_table() (+9 more)
 
 ### Community 616 - "tests/gatk_config.rs"
 Cohesion: 0.18
@@ -3415,28 +3427,28 @@ Cohesion: 0.35
 Nodes (11): a_donor_that_is_not_a_bam_is_not_refused(), every_output_file_is_byte_identical(), field(), golden(), header_for(), of_run(), rows(), shard_for() (+3 more)
 
 ### Community 618 - "tests/flow.rs"
-Cohesion: 0.21
-Nodes (10): allele(), BASES, every_annotation_answers_as_the_reference_answers(), every_flow_key_matches_the_reference(), golden(), java_float(), list(), plain_list() (+2 more)
+Cohesion: 0.22
+Nodes (9): allele(), BASES, every_annotation_answers_as_the_reference_answers(), every_flow_key_matches_the_reference(), golden(), list(), plain_list(), site() (+1 more)
 
 ### Community 619 - "Report"
-Cohesion: 0.17
-Nodes (18): Report, Sorting, DoNotSort, SortByColumn, SortByRow, Table, every_report_is_written_space_for_space(), golden() (+10 more)
+Cohesion: 0.13
+Nodes (24): Report, ReportReadError, Empty, LineTooShort, MissingRow, MissingTable, NoSuchTable, UnknownVersion (+16 more)
 
-### Community 620 - "SequenceRecord"
-Cohesion: 0.07
-Nodes (27): header(), records(), argument(), class_of(), CONTIG_LENGTH, every_argument_resolves_the_way_the_reference_resolves_it(), fixture(), genome_loc_to_string() (+19 more)
+### Community 620 - "readgroup"
+Cohesion: 0.12
+Nodes (13): header(), records(), every_finalization_matches_the_reference(), int_tag(), kept(), phred(), record(), configuration() (+5 more)
 
 ### Community 621 - "FilterResolutionError"
 Cohesion: 0.18
 Nodes (11): duplicated(), FilterResolutionError, DisabledDoesNotExist, DisabledTwice, EnabledAndDisabled, EnabledAndInverted, EnabledTwice, InvertedIsADefault (+3 more)
 
 ### Community 622 - ".new"
-Cohesion: 0.17
-Nodes (15): ArrayDir, Cell, delta_decode(), ExportOptions, handle_ranges(), header_description(), header_id(), Operator (+7 more)
+Cohesion: 0.25
+Nodes (9): ArrayDir, ExportOptions, handle_ranges(), Operator, QueryConfig, scan(), Slot, Workspace (+1 more)
 
 ### Community 623 - ".traverse_all_paths"
-Cohesion: 0.16
-Nodes (9): assemble(), AssemblyError, combine(), TooComplex, Tpc, TransitMap, Traversal, traversal_rc() (+1 more)
+Cohesion: 0.18
+Nodes (8): assemble(), combine(), TooComplex, Tpc, TransitMap, Traversal, traversal_rc(), TraversalSet
 
 ### Community 624 - "src/plugin_ownership.rs"
 Cohesion: 0.12
@@ -3451,7 +3463,7 @@ Cohesion: 0.14
 Nodes (14): InferredType, DelDupContraction, InterChrNoSsWithLeftMateFirstInPartner, InterChrNoSsWithLeftMateSecondInPartner, InterChrStrandSwitch33, InterChrStrandSwitch55, IntraChrRefOrderSwap, IntraChrStrandSwitch33 (+6 more)
 
 ### Community 627 - "tests/compare_references.rs"
-Cohesion: 0.40
+Cohesion: 0.31
 Nodes (12): a_reference_compared_with_itself_produces_no_pair(), a_renaming_pair_is_never_a_superset(), every_table_and_analysis_matches_the_golden(), golden(), printed(), reference(), refusal(), run() (+4 more)
 
 ### Community 628 - "tests/compose_str_table.rs"
@@ -3463,44 +3475,44 @@ Cohesion: 0.37
 Nodes (11): every_exit_matches_the_golden(), every_gathered_file_matches_the_golden(), exit_row(), golden(), input(), Shards, the_empty_shard_sorts_last(), the_two_refusals_raised_outside_the_try_are_thrown() (+3 more)
 
 ### Community 630 - "tests/preprocess_intervals.rs"
-Cohesion: 0.26
+Cohesion: 0.29
 Nodes (9): CONTIG_LENGTH, every_list_matches_the_golden(), golden(), interval(), row(), run(), sequences(), the_parser_bounds_are_the_two_refusals_a_port_can_reach() (+1 more)
 
 ### Community 631 - "tests/remove_nearby_indels.rs"
 Cohesion: 0.36
 Nodes (11): a_mixed_site_pairs_with_nothing(), a_wide_spacing_reaches_past_the_indel_it_discarded(), every_run_keeps_the_records_the_reference_kept(), golden(), input(), kept(), one_base_of_spacing_decides_a_pair(), parse_record() (+3 more)
 
-### Community 632 - "filtering_stats.rs"
-Cohesion: 0.27
-Nodes (14): a_name_that_needs_quoting_gets_it(), column(), COLUMNS, FDR_METADATA_TAG, FilterStats, metadata(), SENSITIVITY_METADATA_TAG, stats() (+6 more)
+### Community 632 - "AsRankSum"
+Cohesion: 0.28
+Nodes (6): annotate_raw_data(), AsRankSum, BaseQuality, MappingQuality, ReadPosition, calculate_raw_data()
 
 ### Community 634 - "TaggedPath"
 Cohesion: 0.16
 Nodes (8): FilterVcf's JAVASCRIPT_FILE: Nashorn's semantics in a Rust engine, Measured, The stand-ins, What is excluded, and why it is a refusal, What the reference does, and the port with it, BarclayTaggedArgumentDump, Args, TaggedPath
 
 ### Community 635 - "dump_layers.py"
-Cohesion: 0.10
-Nodes (12): main(), hook(), record(), write_tensor(), main(), adjacency(), call(), classes() (+4 more)
+Cohesion: 0.07
+Nodes (20): unstamped_bytes(), main(), hook(), record(), write_tensor(), main(), adjacency(), call() (+12 more)
 
 ### Community 636 - "FixMisencodedDump"
 Cohesion: 0.24
 Nodes (6): FixMisencodedDump, Invocation, Quality, ALL_HIGH, LOW_ON_ONE, MISSING_ON_ONE
 
-### Community 637 - "tests/java_regex.rs"
-Cohesion: 0.18
-Nodes (12): a_refusals_index_is_the_reference_s_index(), BOUNDARY, BOUNDARY_MORE, every_pattern_compiles_or_refuses_as_the_reference_does(), every_search_answers_what_the_reference_answered(), golden(), is_boundary(), Row (+4 more)
+### Community 637 - "Het"
+Cohesion: 0.26
+Nodes (10): Het, AllelicCounts, alternate_fraction(), find_segmentation(), genotype_hets(), is_heterozygous(), kernel_value(), Options (+2 more)
 
-### Community 638 - "tests/apply_bqsr.rs"
-Cohesion: 0.37
-Nodes (10): a_filtered_read_is_never_recalibrated_and_never_written(), a_read_group_the_table_does_not_name_aborts_the_run(), Configuration, configuration(), every_output_file_is_byte_identical(), golden(), install_fixtures(), pairs() (+2 more)
+### Community 638 - "thread_independence.py"
+Cohesion: 0.21
+Nodes (5): digest(), in_container(), on_host(), spark_arrays(), tree()
 
 ### Community 639 - "tests/combine_segment_breakpoints.rs"
 Cohesion: 0.24
 Nodes (11): dictionary(), every_run_writes_what_the_reference_writes(), FIRST, golden(), header_lines(), refusal(), run(), SECOND (+3 more)
 
-### Community 640 - "nv_score_variants_gpu.rs"
-Cohesion: 0.26
-Nodes (5): device_ran(), operands(), Random, the_device_convolves_as_the_host_does(), the_device_fuses_and_adds_as_the_host_does()
+### Community 640 - "interval_file.rs"
+Cohesion: 0.29
+Nodes (9): argument(), class_of(), CONTIG_LENGTH, every_argument_resolves_the_way_the_reference_resolves_it(), fixture(), genome_loc_to_string(), golden(), header() (+1 more)
 
 ### Community 641 - "tests/vcf_format_converter.rs"
 Cohesion: 0.37
@@ -3515,8 +3527,8 @@ Cohesion: 0.32
 Nodes (12): assert_dot_eq(), compare_dot_files(), every_run_matches_the_golden_in_the_dumps_order(), golden(), mask_dot(), mask_identities(), Run, scratch() (+4 more)
 
 ### Community 644 - "tagvalue"
-Cohesion: 0.16
-Nodes (9): Arguments, check_sort_order(), fix_nm_md(), fix_record(), fix_uq(), READ_REVERSE_STRAND, READ_UNMAPPED, SetTagsError (+1 more)
+Cohesion: 0.10
+Nodes (16): CONTIG_LENGTH, every_pileup_answers_what_the_reference_answers(), golden(), header(), LOCUS, read(), reads_for(), Arguments (+8 more)
 
 ### Community 645 - "tests/recalibration_tables.rs"
 Cohesion: 0.29
@@ -3531,12 +3543,12 @@ Cohesion: 0.18
 Nodes (12): count(), d(), define(), enumeration(), fail(), hidden(), host(), index() (+4 more)
 
 ### Community 648 - "tests/qual_quantizer.rs"
-Cohesion: 0.29
+Cohesion: 0.27
 Nodes (14): arguments(), bits(), error_prob_to_qual_is_the_reference(), every_interval_of_every_forest_is_the_reference(), every_quantization_map_is_the_reference(), golden(), histogram(), padded() (+6 more)
 
 ### Community 649 - "ReportType"
-Cohesion: 0.13
-Nodes (15): decimal_format(), REPORT_TYPES, ReportType, CalledVariant, Evaluable, IgnoredMate, Inconsistent, LowQuality (+7 more)
+Cohesion: 0.12
+Nodes (13): Census, Disjoint, Unpaired, ReportType, CalledVariant, Evaluable, IgnoredMate, Inconsistent (+5 more)
 
 ### Community 650 - "golden"
 Cohesion: 0.35
@@ -3550,24 +3562,20 @@ Nodes (11): a_missing_file_is_refused_by_its_path(), a_truncated_block_keeps_the
 Cohesion: 0.32
 Nodes (9): a_reference_quality_above_sixty_is_refused_by_the_parser(), Configuration, configuration(), default_filter(), every_output_file_is_byte_identical(), golden(), install_fixtures(), pairs() (+1 more)
 
-### Community 658 - "DataType"
-Cohesion: 0.14
-Nodes (12): Alignment, Left, Right, Column, DataType, Boolean, Character, Decimal (+4 more)
-
 ### Community 659 - "PairHmmLikelihoodEngineDump"
 Cohesion: 0.29
 Nodes (4): Case, PairHmmLikelihoodEngineDump, Params, Read
 
-### Community 660 - "stream.rs"
-Cohesion: 0.05
-Nodes (31): Body, Block, Text, Index, None, Tabix, Tribble, Lines (+23 more)
+### Community 660 - "Write"
+Cohesion: 0.19
+Nodes (7): BlockStop, Block, Sink, htsget_block(), htsget_get(), htsget_temp_file(), htsget_write_blocks()
 
 ### Community 661 - "given_alleles.rs"
 Cohesion: 0.36
 Nodes (8): alleles_are_consistent(), alleles_consistent_with_given_alleles(), forced_at(), given_events(), NUM_HAPLOTYPES_TO_INJECT_INTO, overlaps(), split_to_events(), usable()
 
 ### Community 662 - "src/build_bam_index.rs"
-Cohesion: 0.14
+Cohesion: 0.18
 Nodes (7): BAI_INDEX, build(), IndexError, NotBam, NotCoordinateSorted, Unreadable, is_bam()
 
 ### Community 663 - "population_priors.rs"
@@ -3579,28 +3587,28 @@ Cohesion: 0.27
 Nodes (7): dictionary(), every_run_writes_what_the_reference_writes(), golden(), input(), refusal(), the_two_refusals_carry_the_references_messages(), value()
 
 ### Community 665 - "plugin_descriptors.rs"
-Cohesion: 0.21
+Cohesion: 0.23
 Nodes (10): a_dangling_dependent_argument_names_the_filter_class(), an_unknown_filter_name_is_refused_by_the_descriptor(), definitions(), every_plugin_decision_is_the_one_the_reference_makes(), golden(), KNOWN, owner(), parser() (+2 more)
 
 ### Community 666 - "genomicsdb_import_end_to_end.rs"
-Cohesion: 0.16
-Nodes (16): GOLDEN, HEADER, PORT_OWN, refusals(), replay(), the_workspace_is_the_references_and_the_refusals_say_whose_they_are(), unescape(), vcf() (+8 more)
+Cohesion: 0.24
+Nodes (9): GOLDEN, HEADER, PORT_OWN, refusals(), replay(), the_workspace_is_the_references_and_the_refusals_say_whose_they_are(), unescape(), vcf() (+1 more)
 
 ### Community 667 - "interpreter_tools_end_to_end.rs"
 Cohesion: 0.30
 Nodes (11): annotations(), double(), every_run_replays_as_the_reference_ran_it(), GOLDEN, hex(), refusal_message(), replay(), scores_file() (+3 more)
 
 ### Community 668 - "fisher_exact.rs"
-Cohesion: 0.29
-Nodes (9): a_balanced_table_is_near_one_and_a_skewed_one_is_small(), a_support_of_one_point_is_exactly_one(), log10_e(), log10_sum_log10(), log_to_log10(), pow10(), REL_ERR, sum_log10() (+1 more)
+Cohesion: 0.23
+Nodes (11): a_balanced_table_is_near_one_and_a_skewed_one_is_small(), a_support_of_one_point_is_exactly_one(), log10_e(), log10_sum_log10(), log_to_log10(), pow10(), REL_ERR, sum_log10() (+3 more)
 
 ### Community 669 - "FilterAnalysisError"
 Cohesion: 0.22
 Nodes (11): a_filtered_false_negative_counts_without_the_flag_that_asks_for_it(), a_record_with_two_filters_increments_neither_unique_column(), an_undeclared_filter_is_the_references_null_pointer(), declared(), FilterAnalysis, FilterAnalysisError, HashOrder, UndeclaredFilter (+3 more)
 
 ### Community 670 - "value_classes.rs"
-Cohesion: 0.33
-Nodes (14): a_constructed_class_accepts_every_string(), a_feature_inputs_tag_is_its_name(), a_tag_is_a_tag_on_one_class_and_an_error_on_the_other(), definition(), field(), file(), golden(), outcome() (+6 more)
+Cohesion: 0.31
+Nodes (15): java_float(), a_constructed_class_accepts_every_string(), a_feature_inputs_tag_is_its_name(), a_tag_is_a_tag_on_one_class_and_an_error_on_the_other(), definition(), field(), file(), golden() (+7 more)
 
 ### Community 671 - "tests/downsample_by_duplicate_set.rs"
 Cohesion: 0.30
@@ -3610,9 +3618,9 @@ Nodes (13): a_rejected_set_consumes_no_draw(), every_downsampled_file_matches_th
 Cohesion: 0.42
 Nodes (10): every_parsed_datum_is_the_reference(), golden(), replace_in_table(), rows(), source(), the_arguments_are_the_reference(), the_read_group_keys_are_the_sorted_order(), the_refusals_are_worded_like_the_reference() (+2 more)
 
-### Community 673 - "src/collect_allelic_counts.rs"
-Cohesion: 0.11
-Nodes (17): additional_read_filter(), ADDITIONAL_READ_FILTERS, AllelicCount, BASES, collect_at_locus(), DEFAULT_MINIMUM_BASE_QUALITY, DEFAULT_MINIMUM_MAPPING_QUALITY, header() (+9 more)
+### Community 673 - "ReadPileup"
+Cohesion: 0.08
+Nodes (34): ReadPileup, additional_read_filter(), ADDITIONAL_READ_FILTERS, AllelicCount, BASES, collect_at_locus(), DEFAULT_MINIMUM_BASE_QUALITY, DEFAULT_MINIMUM_MAPPING_QUALITY (+26 more)
 
 ### Community 674 - "SvType"
 Cohesion: 0.18
@@ -3626,21 +3634,17 @@ Nodes (7): classes_in_jar(), cli_tool_names(), main(), parse_help(), refresh_und
 Cohesion: 0.33
 Nodes (9): enum_type(), ENUM_TYPES, EnumType, a_clp_enum_documents_its_constants(), an_arguments_default_is_one_of_the_constants(), golden(), rows(), the_constants_are_in_declaration_order() (+1 more)
 
-### Community 677 - "Driving"
-Cohesion: 0.29
-Nodes (4): Driving, Source, Comp, Eval
-
 ### Community 678 - "tests/series_stats.rs"
 Cohesion: 0.21
 Nodes (11): bins_line(), d(), every_csv_matches_the_golden(), every_series_matches_the_golden(), golden(), line(), pct_line(), series() (+3 more)
 
 ### Community 679 - "tests/contamination_model.rs"
-Cohesion: 0.55
+Cohesion: 0.42
 Nodes (11): bits(), every_minor_allele_fraction_and_contamination_matches_the_golden(), every_segment_matches_the_golden(), golden(), normal(), rows(), short_table(), sites() (+3 more)
 
 ### Community 680 - "src/gather_bam_files.rs"
-Cohesion: 0.16
-Nodes (13): gather(), GatherError, MissingInput, Unreadable, is_bam_file(), md5_digest(), md5_file(), md5_of_reader() (+5 more)
+Cohesion: 0.19
+Nodes (10): gather(), GatherError, MissingInput, Unreadable, md5_digest(), md5_file(), md5_of_reader(), unroll() (+2 more)
 
 ### Community 681 - "fgkl and Lorikeet against the callers' kernels"
 Cohesion: 0.17
@@ -3650,37 +3654,33 @@ Nodes (11): fgkl and Lorikeet against the callers' kernels, How it was measured,
 Cohesion: 0.21
 Nodes (3): main(), one(), rd32()
 
-### Community 683 - "tests/rank_sum.rs"
-Cohesion: 0.31
-Nodes (12): allele(), case(), every_annotation_answers_as_the_reference_answers(), golden(), likelihoods_for(), one(), read(), rendered() (+4 more)
-
 ### Community 684 - "with"
 Cohesion: 0.22
 Nodes (9): with, components, fail-on-cache-miss, if-no-files-found, key, name, path, pattern (+1 more)
 
-### Community 688 - "germline_wrapper.rs"
-Cohesion: 0.26
-Nodes (13): biallelic(), Case, case(), every_row_matches_the_golden(), golden(), normal(), printed(), probabilities() (+5 more)
+### Community 688 - "PrintError"
+Cohesion: 0.20
+Nodes (9): PrintError, IndexOutOfBounds, ManySampleNames, NoDictionary, NoHeader, NoReadGroups, NullSampleName, WrongFeatureType (+1 more)
 
-### Community 692 - "error_probabilities.rs"
-Cohesion: 0.34
-Nodes (13): a_filter_that_answers_an_empty_list_is_dropped(), a_site_filter_copies_its_answer_to_every_allele(), artifact(), by_type(), combined(), FilterAnswer, kept(), non_somatic() (+5 more)
+### Community 692 - "src/vcf_format_converter.rs"
+Cohesion: 0.27
+Nodes (7): Arguments, convert(), ConvertError, MissingIndex, NoSequenceDictionary, Vcf, Input
 
 ### Community 693 - "read_walker_refusals.rs"
 Cohesion: 0.18
 Nodes (15): every_run_matches_the_golden_in_the_dumps_order(), golden(), Run, scratch(), section(), unescape(), write_bam(), write_reference() (+7 more)
 
 ### Community 694 - "adaptive_chain_pruner.rs"
-Cohesion: 0.25
-Nodes (12): AdaptivePruning, Case, cases(), llr_lines(), lod(), params(), positions(), REF (+4 more)
+Cohesion: 0.14
+Nodes (20): Case, cases(), llr_lines(), lod(), params(), positions(), REF, render() (+12 more)
 
 ### Community 695 - "sv_feature_codecs.rs"
 Cohesion: 0.19
 Nodes (11): check_output(), BCI, BLOCK_COMPRESSED, Codec, Encoding, Bci, Text, find() (+3 more)
 
 ### Community 697 - "count_reads_plumbing.rs"
-Cohesion: 0.45
-Nodes (10): a_sam_text_input_is_read(), an_index_named_by_replacing_the_extension_is_found(), args(), field(), fixture(), fixture_named(), golden(), scratch() (+2 more)
+Cohesion: 0.42
+Nodes (11): a_sam_text_input_is_read(), a_sam_text_input_that_stops_parsing_is_refused(), an_index_named_by_replacing_the_extension_is_found(), args(), field(), fixture(), fixture_named(), golden() (+3 more)
 
 ### Community 698 - "Tag"
 Cohesion: 0.33
@@ -3703,28 +3703,28 @@ Cohesion: 0.33
 Nodes (7): class_of(), contexts(), every_expression_answers_what_the_reference_answers(), golden(), render(), render_double(), render_float()
 
 ### Community 704 - ".encode_snvs_as_codons"
-Cohesion: 0.15
-Nodes (10): base_value(), CodonVariation, CodonVariationGroup<'a>, CodonVariationType, Deletion, Frameshift, Insertion, Modification (+2 more)
+Cohesion: 0.16
+Nodes (9): base_value(), CodonTracker, CodonVariation, CodonVariationType, Deletion, Frameshift, Insertion, Modification (+1 more)
 
 ### Community 705 - "tests/collect_allelic_counts.rs"
 Cohesion: 0.29
 Nodes (12): a_window_with_no_reads_is_rows_of_zeroes(), an_n_in_the_reference_skips_the_locus(), file(), golden(), read(), reads(), reference_base(), table() (+4 more)
 
 ### Community 706 - "ReadReport"
-Cohesion: 0.39
-Nodes (5): combine(), combine_coverage(), combine_variations(), ReadReport, Snv
+Cohesion: 0.44
+Nodes (4): combine(), combine_variations(), ReadReport, Snv
 
 ### Community 707 - "ResolveError"
 Cohesion: 0.18
 Nodes (10): check_config(), ConfigError, MissingKey, UnknownType, SourceType, Cosmic, Gencode, LocatableXsv (+2 more)
 
 ### Community 708 - ".path"
-Cohesion: 0.23
-Nodes (3): PathPart, Contig, Gap
+Cohesion: 0.16
+Nodes (6): complement(), kmer_string(), PathPart, Contig, Gap, reverse_complement_bases()
 
 ### Community 709 - "string_hash_code"
-Cohesion: 0.24
-Nodes (5): byte_array_hash_code(), string_hash_code(), Canonical, list_hash(), fold()
+Cohesion: 0.20
+Nodes (6): byte_array_hash_code(), string_hash_code(), a_group_keeps_its_slot_order_and_first_key(), append_only_group(), list_hash(), fold()
 
 ### Community 710 - "tests/fix_vcf_header.rs"
 Cohesion: 0.40
@@ -3735,8 +3735,8 @@ Cohesion: 0.53
 Nodes (10): a_fixed_int_is_four_bytes_and_a_varint_is_not(), a_fixed_long_is_eight_bytes(), a_string_is_ascii_without_a_length_or_utf8_with_one(), an_object_is_preceded_by_a_reference_marker(), golden(), stream(), the_hopscotch_tables_land_where_the_reference_put_them(), the_taxonomy_is_the_reference_s_bytes() (+2 more)
 
 ### Community 712 - "Event"
-Cohesion: 0.24
-Nodes (8): Allele, allele_mapper(), compound(), Event, event_map(), is_regular_base(), merged_alleles(), overlapping_events()
+Cohesion: 0.32
+Nodes (6): Allele, allele_mapper(), compound(), Event, merged_alleles(), overlapping_events()
 
 ### Community 715 - "gatk-rs"
 Cohesion: 0.18
@@ -3750,9 +3750,9 @@ Nodes (11): Explaining the code as it is written, G1.1 Read filters, G1.2 Coordi
 Cohesion: 0.29
 Nodes (3): CombineSegmentBreakpointsDump, PreprocessIntervalsDump, SplitIntervalsDump
 
-### Community 727 - "ReportReadError"
-Cohesion: 0.21
-Nodes (8): ReportReadError, Empty, LineTooShort, MissingRow, MissingTable, NoSuchTable, UnknownVersion, split_fixed_width()
+### Community 727 - "Compatibility"
+Cohesion: 0.20
+Nodes (9): Compatibility, CommonSubset, DifferentIndices, Identical, NoCommonContigs, NonCanonicalHumanOrder, OutOfOrder, Superset (+1 more)
 
 ### Community 728 - "HcAnnotatedCallsDump"
 Cohesion: 0.42
@@ -3767,15 +3767,15 @@ Cohesion: 0.29
 Nodes (8): Breakpoint, End, Start, combine(), combine_and_sort_breakpoints(), DEFAULT_LABELS, output_header_map(), pieces_for_contig()
 
 ### Community 734 - "value_model.rs"
-Cohesion: 0.24
-Nodes (13): a_mode_sets_only_what_the_command_line_did_not(), an_overridden_value_replaces_the_command_lines(), bounded_byte(), bounded_long(), definitions(), ELEVEN, every_vector_is_read_the_way_the_reference_reads_it(), golden() (+5 more)
+Cohesion: 0.21
+Nodes (15): a_mode_sets_only_what_the_command_line_did_not(), an_initialised_field_is_optional_whatever_the_annotation_says(), an_overridden_value_replaces_the_command_lines(), bounded_byte(), bounded_long(), definitions(), ELEVEN, every_vector_is_read_the_way_the_reference_reads_it() (+7 more)
 
 ### Community 735 - "ChimeraType"
 Cohesion: 0.17
 Nodes (12): ChimeraType, DuplicationComplex, DuplicationContraction, DuplicationExpansion, InterChromosomeLeftMateFirst, InterChromosomeLeftMateSecond, InterChromosomeStrandSwitch, ReferenceOrderSwap (+4 more)
 
 ### Community 736 - "src/sort_vcf.rs"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (9): contig_lines(), sample_names_in_order(), sort(), SortError, DifferentDictionaries, DifferentSamples, MissingDictionary, UndeclaredContig (+1 more)
 
 ### Community 737 - "tests/clip_reads.rs"
@@ -3795,12 +3795,12 @@ Cohesion: 0.16
 Nodes (3): BaseDistributionMetric, InsertSizeRow, QualityYield
 
 ### Community 743 - "tests/dangling_ends.rs"
-Cohesion: 0.32
+Cohesion: 0.29
 Nodes (12): alt(), Case, case(), cases(), describe(), every_case_recovers_dangling_ends_as_the_reference_does(), mutate(), one() (+4 more)
 
-### Community 744 - "DataManager"
-Cohesion: 0.15
-Nodes (5): DataManager, double_compare(), model_report(), random_data_for_plotting(), shuffle()
+### Community 744 - "JavaRandom"
+Cohesion: 0.07
+Nodes (13): ADDEND, GATK_RANDOM_SEED, JavaRandom, MASK, MULTIPLIER, COUNT, every_sequence_matches_the_reference(), golden() (+5 more)
 
 ### Community 745 - "tests/filter_vcf.rs"
 Cohesion: 0.47
@@ -3830,9 +3830,9 @@ Nodes (9): concurrency, cancel-in-progress, group, jobs, test, name, name, runs-
 Cohesion: 0.17
 Nodes (12): A refusal that comes after the answer, An answer printed on stderr, An environment both sides source, Covering arrays, Fixtures, HDF5 outputs, Inputs the tool wants writable, One value is not a domain (+4 more)
 
-### Community 759 - "math_utils.rs"
-Cohesion: 0.29
-Nodes (10): an_all_zero_vector_normalises_to_nan(), fast_round(), fast_round_is_half_away_from_zero(), log10_sum_log10(), log10_sum_log10_range(), max_element_index(), normalize_from_log10_to_linear_space(), normalize_sum_to_one() (+2 more)
+### Community 759 - "hc_pdhmm.rs"
+Cohesion: 0.42
+Nodes (8): every_run_matches_the_golden_in_the_dumps_order(), golden(), Run, scratch(), section(), unescape(), write_bam(), write_reference()
 
 ### Community 761 - "HcGenotypingDump"
 Cohesion: 0.47
@@ -3842,9 +3842,9 @@ Nodes (3): Hap, HcGenotypingDump, Read
 Cohesion: 0.44
 Nodes (3): Hap, HcPhasingDump, Read
 
-### Community 763 - "Datum"
-Cohesion: 0.29
-Nodes (3): Datum, distance_squared(), Gaussian
+### Community 763 - "Token"
+Cohesion: 0.28
+Nodes (8): create_expression(), Expression, Token, Ident, Number, Str, Symbol, tokenize()
 
 ### Community 769 - "tests/allele_pseudo_depth.rs"
 Cohesion: 0.31
@@ -3865,6 +3865,10 @@ Nodes (8): every_run_matches_the_golden_in_the_dumps_order(), golden(), Run, scr
 ### Community 775 - "hc_linked_graph.rs"
 Cohesion: 0.39
 Nodes (8): every_run_matches_the_golden_in_the_dumps_order(), golden(), Run, scratch(), section(), unescape(), write_bam(), write_reference()
+
+### Community 776 - ".get"
+Cohesion: 0.39
+Nodes (3): decimal_format(), ReportTypeCounts, type_counts()
 
 ### Community 777 - "hc_pileup.rs"
 Cohesion: 0.39
@@ -3894,17 +3898,21 @@ Nodes (3): DecimationError, BadInput, DecimationTable
 Cohesion: 0.36
 Nodes (7): Arguments, classify_read(), fragment_trim(), has_sufficient_flank(), Interval, .NULL, quality_trim()
 
-### Community 785 - "record_transform.rs"
-Cohesion: 0.38
-Nodes (9): a_read_without_original_qualities_aborts_the_run(), Configuration, configuration(), every_output_file_is_byte_identical(), golden(), install_fixtures(), lookup(), pairs() (+1 more)
+### Community 785 - "Settings"
+Cohesion: 0.22
+Nodes (8): multi_map_weights(), MultiMapMethod, Equal, Ignore, MultiOverlapMethod, Equal, Proportional, Settings
 
 ### Community 786 - "with"
-Cohesion: 0.11
-Nodes (32): steps, steps, name, runs-on, steps, GATK_RS_GPU, steps, name (+24 more)
+Cohesion: 0.09
+Nodes (36): name, needs, runs-on, steps, steps, name, runs-on, steps (+28 more)
 
 ### Community 787 - "CellType"
 Cohesion: 0.22
 Nodes (6): CellType, Char, Float32, Int32, Int64, genomicsdb_cell_type()
+
+### Community 789 - "hdf5_second_reader.rs"
+Cohesion: 0.47
+Nodes (7): agrees_with_ours(), collect_read_counts_file(), every_shape_the_writer_has(), Leaf, Doubles, Strings, walk()
 
 ### Community 790 - "filter_to"
 Cohesion: 0.31
@@ -3919,7 +3927,7 @@ Cohesion: 0.22
 Nodes (8): VcType, .ALL, Indel, Mixed, Mnp, NoVariation, Snp, Symbolic
 
 ### Community 793 - "tests/gather_bqsr_reports.rs"
-Cohesion: 0.38
+Cohesion: 0.44
 Nodes (8): a_gather_of_empty_shards_refuses(), every_gather_writes_what_the_reference_writes(), golden(), refusal(), shards(), the_order_of_the_shards_does_not_reach_the_output(), unescape(), value()
 
 ### Community 795 - "tests/sort_vcf.rs"
@@ -3946,9 +3954,9 @@ Nodes (7): Constraints, and what they were worth, Reproducing, The numbers, The 
 Cohesion: 0.22
 Nodes (7): Licence, Pinning, The rule, The second application: the `.bai`, When a dependency is cheaper than a port, and when it is not, Where this does not apply, Why the FASTA half was taken back
 
-### Community 802 - "chain_pruner.rs"
-Cohesion: 0.33
-Nodes (9): Case, case(), cases(), describe(), every_case_prunes_and_disconnects_as_the_reference_does(), positions(), print(), REF (+1 more)
+### Community 802 - "tests/vcf_to_interval_list.rs"
+Cohesion: 0.53
+Nodes (8): a_header_with_no_contigs_walks_into_a_null_dictionary(), arguments(), every_interval_list_matches_the_golden(), golden(), refusal(), the_numbering_and_the_bridge_move_with_include_filtered(), unescape(), value()
 
 ### Community 805 - "BarclayValueModelDump"
 Cohesion: 0.25
@@ -3962,10 +3970,6 @@ Nodes (11): strategy, name, needs, runs-on, steps, strategy, fuzz, shard (+3 mor
 Cohesion: 0.22
 Nodes (8): GLIBC_TUNABLES, MKL_CBWR, MKL_DYNAMIC, MKL_NUM_THREADS, NPY_DISABLE_CPU_FEATURES, OMP_NUM_THREADS, PYTENSOR_EXTRA, gcnv_frozen_env.sh script
 
-### Community 808 - "java_double_to_string"
-Cohesion: 0.08
-Nodes (43): a_carry_runs_the_whole_way_up(), format_decimals(), plain_decimal(), the_formatter_rounds_half_up_where_rust_would_round_to_even(), the_non_finite_spellings_are_javas(), the_percentages_clip_reads_prints(), log_dirichlet_normalization(), java_double_to_string() (+35 more)
-
 ### Community 817 - "ResolveError"
 Cohesion: 0.24
 Nodes (9): resolve(), ResolveError, Config, DuplicateName, NoGencode, NoSources, Version, SourceConfig (+1 more)
@@ -3977,10 +3981,6 @@ Nodes (9): Contig, duplicate_check(), Field, filter_id(), fixed_length(), line_t
 ### Community 819 - "fix_misencoded.rs"
 Cohesion: 0.33
 Nodes (10): a_quality_below_the_fix_value_aborts_the_run(), Configuration, configuration(), every_output_file_is_byte_identical(), golden(), install_fixtures(), lookup(), pairs() (+2 more)
-
-### Community 822 - "tests/get_sample_name.rs"
-Cohesion: 0.44
-Nodes (8): configuration(), every_written_file_is_the_reference(), golden(), install(), rows(), run(), the_refusal_is_the_reference(), unescape()
 
 ### Community 826 - "DanglingEndDump"
 Cohesion: 0.49
@@ -4022,9 +4022,9 @@ Nodes (7): every_run_matches_the_golden_in_the_dumps_order(), golden(), scratch(
 Cohesion: 0.50
 Nodes (7): every_run_matches_the_golden_in_the_dumps_order(), golden(), scratch(), section(), unescape(), write_bam(), write_reference()
 
-### Community 837 - "gatk-tools/src/pileup.rs"
-Cohesion: 0.29
-Nodes (8): ADDITIONAL_READ_FILTERS, create_verbose_output(), default_read_filter(), features_string(), insert_length_output(), line(), line_unfiltered(), VERBOSE_DELIMITER
+### Community 837 - "hc_pedigree.rs"
+Cohesion: 0.46
+Nodes (7): every_run_matches_the_golden_in_the_dumps_order(), golden(), scratch(), section(), unescape(), write_bam(), write_reference()
 
 ### Community 838 - "mutect2_dragstr.rs"
 Cohesion: 0.50
@@ -4054,13 +4054,13 @@ Nodes (7): every_run_matches_the_golden_in_the_dumps_order(), golden(), scratch(
 Cohesion: 0.43
 Nodes (7): CONTIG_LENGTH, every_run_matches_the_golden(), golden(), scratch(), section(), unescape(), write_reference()
 
-### Community 845 - "tests/well19937c.rs"
-Cohesion: 0.42
-Nodes (8): COUNT, every_sequence_matches_the_reference(), golden(), inner(), join(), make(), the_gatk_data_generator_starts_where_the_reference_starts(), the_long_and_int_constructors_seed_different_pools()
+### Community 845 - "at"
+Cohesion: 0.32
+Nodes (4): at(), IntervalCounter, out_of_bounds(), Reference
 
-### Community 846 - "Mixture"
-Cohesion: 0.33
-Nodes (5): a_stream_sum_is_compensated(), generate_model(), Mixture, ModelArguments, stream_sum()
+### Community 846 - "DownloadError"
+Cohesion: 0.25
+Nodes (6): DownloadError, Corrupt, IncompleteTestingArguments, NoChecksum, NoDataSource, NoReference
 
 ### Community 847 - "Cell"
 Cohesion: 0.57
@@ -4070,13 +4070,13 @@ Nodes (4): Cell, load(), Loader, Pending
 Cohesion: 0.17
 Nodes (8): Failure, CommandLine, Other, OutOfMemory, PicardNonZero, User, is_user_exception(), Thrown
 
-### Community 850 - "generate_ci.py"
-Cohesion: 0.27
-Nodes (6): gate_job(), main(), oracle_jobs(), render(), repin(), wrap()
+### Community 850 - "Targets, chosen from the baseline"
+Cohesion: 0.25
+Nodes (8): 1. `jmath`'s correctly rounded logarithm (`ModelSegments`, `VariantRecalibrator`), 2. The shipped binary's profile, `dist` (W12, P0), 3. A global allocator (W12, P0), 4. PairHMM across pairs, dispatched at run time (W12, P3), Not targets yet, Out of scope, as S.2 says, P0 and P3, measured (W12), Targets, chosen from the baseline
 
 ### Community 851 - "Op"
-Cohesion: 0.15
-Nodes (12): known_op(), Op, Concatenate, Dp, ElementWiseSum, HistogramSum, Mean, Median (+4 more)
+Cohesion: 0.17
+Nodes (11): Op, Concatenate, Dp, ElementWiseSum, HistogramSum, Mean, Median, MoveToFormat (+3 more)
 
 ### Community 853 - "tests/usage_text.rs"
 Cohesion: 0.10
@@ -4086,17 +4086,25 @@ Nodes (22): maturity(), conditional_predicate(), entry_lines(), name_column(), w
 Cohesion: 0.25
 Nodes (7): FilterMutectCalls' `exp`, measured (2026-11-19), Reached through `jmath`, Reached through the host libm, bypassing `jmath`, The activity profile's `exp`, measured (2026-08-19), The read orientation model's `exp`, measured (2026-10-01), What this changes, Which numeric functions a ported call site reaches, and what each one is worth
 
-### Community 858 - "gatk-engine/tests/left_align_indels.rs"
-Cohesion: 0.38
-Nodes (7): every_left_aligned_cigar_is_the_reference_s(), golden(), normalize_alleles_moves_the_ranges_the_reference_moved(), range(), rows(), the_refusals_are_the_reference_s(), two_indels_that_meet_are_merged()
+### Community 858 - "spark_walkers_end_to_end.rs"
+Cohesion: 0.52
+Nodes (6): every_run_replays_as_the_reference_ran_it(), files_under(), golden(), sorted_summary(), unescape(), without_the_time()
 
-### Community 859 - "create_read_count_panel_of_normals"
-Cohesion: 0.31
-Nodes (5): CountsFile, create_read_count_panel_of_normals(), creation_failure(), dictionary_text(), read_counts()
+### Community 859 - "Kernel"
+Cohesion: 0.33
+Nodes (5): Kernel, Avx2, Avx512, Portable, Portable8
 
 ### Community 866 - "GenotypeType"
 Cohesion: 0.29
 Nodes (7): GenotypeType, Het, HomRef, HomVar, Mixed, NoCall, Unavailable
+
+### Community 867 - "CollectionError"
+Cohesion: 0.33
+Nodes (4): CollectionError, ContigNotInDictionary, NoLocatableColumns, NoRecords
+
+### Community 868 - "ContextType"
+Cohesion: 0.29
+Nodes (7): ContextType, Indel, Mixed, Mnp, NoVariation, Snp, Symbolic
 
 ### Community 869 - "ks_introsort"
 Cohesion: 0.62
@@ -4106,21 +4114,21 @@ Nodes (5): ks_combsort(), ks_heapdown(), ks_heapup(), ks_insertsort(), ks_intros
 Cohesion: 0.31
 Nodes (8): by_hand(), Case, from_reads(), KS, nan_sign_masked(), REF, search(), the_k_best_haplotypes_match_the_reference_bit_for_bit()
 
-### Community 871 - "ReadStrands"
-Cohesion: 0.33
-Nodes (5): ReadStrands, ForwardForward, ForwardReverse, ReverseForward, ReverseReverse
+### Community 871 - "count"
+Cohesion: 0.17
+Nodes (14): alignment_intervals(), count(), CountError, MissingMateCigar, MissingMateQuality, NoLabel, UnpairedRead, in_good_pair() (+6 more)
 
 ### Community 872 - "HaplotypeRecord"
-Cohesion: 0.30
+Cohesion: 0.27
 Nodes (10): best_group(), fitness_score(), groups(), HaplotypeRecord, is_haplotype_record(), Span, a_haplotype_is_a_record_named_hc(), haplotypes() (+2 more)
 
 ### Community 874 - "genomicsdb_query_end_to_end.rs"
 Cohesion: 0.39
 Nodes (7): GOLDEN, masked(), PORT_OWN, refusals(), replay(), the_callers_read_the_workspace_as_the_reference_does(), unescape()
 
-### Community 875 - "tests/seq_graph.rs"
-Cohesion: 0.33
-Nodes (9): by_hand(), Case, cleanup(), error(), every_stage_of_every_case_matches_the_reference(), from_reads(), print(), REF (+1 more)
+### Community 875 - "SeqGraphError"
+Cohesion: 0.11
+Nodes (22): find_best_haplotypes(), find_guilty(), has_cycles(), KBestHaplotype, remove_cycles(), SeqGraphError, CannotRemoveCycles, InfiniteSimplification (+14 more)
 
 ### Community 876 - "CallType"
 Cohesion: 0.29
@@ -4139,8 +4147,8 @@ Cohesion: 0.29
 Nodes (6): BreakpointSummary, MaxStartMinEnd, MeanStartMeanEnd, MedianStartMedianEnd, MinStartMaxEnd, Representative
 
 ### Community 880 - "gcnv_ploidy_end_to_end.rs"
-Cohesion: 0.18
-Nodes (13): cohort(), executable(), FIXTURE, GOLDEN, past_the_interpreter(), ploidy(), settings(), sha256() (+5 more)
+Cohesion: 0.12
+Nodes (20): cohort(), executable(), FIXTURE, GOLDEN, past_the_interpreter(), ploidy(), settings(), sha256() (+12 more)
 
 ### Community 881 - "A second reader: noodles reads what htsjdk-rs reads"
 Cohesion: 0.29
@@ -4166,9 +4174,9 @@ Nodes (7): Case, CASES, DEFAULTS, every_command_line_resolves_to_the_reference_f
 Cohesion: 0.43
 Nodes (6): count(), every_tool_and_group_the_reference_declares_is_here(), golden(), lines(), the_listing_is_the_reference_one_line_for_line(), unescape()
 
-### Community 888 - "tests/dump_tabix_index.rs"
-Cohesion: 0.47
-Nodes (8): a_file_that_is_not_gzipped_fails_before_the_magic(), every_dump_is_the_reference(), golden(), index_bytes(), rows(), the_format_number_is_the_files_and_not_the_tools(), the_wrong_magic_is_refused_with_the_references_message(), unescape()
+### Community 888 - "Interval"
+Cohesion: 0.57
+Nodes (3): Interval, merged_intervals(), overlap_weights()
 
 ### Community 893 - "ReadThreadingGraphDump"
 Cohesion: 0.50
@@ -4181,10 +4189,6 @@ Nodes (4): CASES, every_command_line_expands_as_the_reference_expands_it(), fiel
 ### Community 897 - "Reference"
 Cohesion: 0.33
 Nodes (4): Reference, B37, Hg19, Hg38
-
-### Community 898 - "variant_bases"
-Cohesion: 0.31
-Nodes (8): CigarElement, java_double(), matrix_line(), offset_on_read(), parse_cigar(), Read, variant_bases(), a_read_that_does_not_span_the_variant_is_dropped()
 
 ### Community 899 - "numpy_ziggurat.rs"
 Cohesion: 0.33
@@ -4210,13 +4214,13 @@ Nodes (5): Every cost sees the reduced matrix only through row inner products, S
 Cohesion: 0.57
 Nodes (4): every_clipped_read_is_the_read_the_reference_produced(), golden(), render(), run()
 
-### Community 908 - "sequence_dictionary_validation.rs"
-Cohesion: 0.33
-Nodes (5): CASES, dictionary(), every_pair_compares_as_the_reference_compares_it(), field(), unescape()
-
 ### Community 909 - "Decision"
 Cohesion: 0.33
 Nodes (6): Decision, Drop, Failed, Keep, NullResult, test_context()
+
+### Community 910 - "golden"
+Cohesion: 0.33
+Nodes (6): Arguments, output_location(), startup(), golden(), the_default_destination_is_relative(), the_startup_checks_misreport_which_argument_was_missing()
 
 ### Community 914 - "hc_error_correction.rs"
 Cohesion: 0.39
@@ -4227,8 +4231,8 @@ Cohesion: 0.53
 Nodes (7): a_refusal_reaches_the_dispatcher(), a_report_is_printed_where_a_file_is_not_named(), an_explicit_output_is_used_as_given(), args(), golden(), scratch(), the_index_is_written_beside_its_input()
 
 ### Community 920 - "codec_for"
-Cohesion: 0.46
-Nodes (6): Codec, Bed, Vcf, end_attribute(), feature_of_line(), features()
+Cohesion: 0.42
+Nodes (7): Codec, Bed, codec_for(), Vcf, end_attribute(), feature_of_line(), features()
 
 ### Community 921 - "propagation_order.rs"
 Cohesion: 0.70
@@ -4254,9 +4258,9 @@ Nodes (7): add_to_qual_report(), clamp(), deviation_to_bin(), four_level_row_cou
 Cohesion: 0.31
 Nodes (6): non_user_exception_report(), CASES, field(), the_non_user_handler_prints_the_class_and_the_message(), the_two_handlers_do_not_agree(), unescape()
 
-### Community 930 - "SampleSelectionError"
-Cohesion: 0.22
-Nodes (5): filter(), SampleSelectionError, AllExcluded, BadPattern, SamplesNotInHeader
+### Community 930 - "AlnModType"
+Cohesion: 0.33
+Nodes (5): AlnModType, ExtractedFromLargerAlignment, FromSplitGappedAlignment, None, UndergoneOverlapRemoval
 
 ### Community 932 - "A truncated alignment that looks finished"
 Cohesion: 0.40
@@ -4273,10 +4277,6 @@ Nodes (4): BWA through bwa-mem4, against the JNI GATK runs, Known limits, Measur
 ### Community 935 - "What makes a kernel eligible"
 Cohesion: 0.40
 Nodes (4): Determinism across architectures, The rule, What makes a kernel eligible, Why no kernel here is floating point
-
-### Community 936 - "A change made for speed may not move a byte"
-Cohesion: 0.40
-Nodes (4): A change made for speed may not move a byte, Slow on purpose, The gate has two halves, What the suites caught, and what they did not
 
 ### Community 937 - "Three readings of a tool's arguments, and which one a command line obeys"
 Cohesion: 0.40
@@ -4306,6 +4306,10 @@ Nodes (7): every_run_matches_the_golden_in_the_dumps_order(), golden(), scratch(
 Cohesion: 0.43
 Nodes (7): CONTIG_LENGTH, every_run_matches_the_golden(), golden(), scratch(), section(), unescape(), write_reference()
 
+### Community 953 - "Transform"
+Cohesion: 0.40
+Nodes (5): Transform, MergeCommonSuffices, MergeDiamonds, MergeTails, SplitCommonSuffices
+
 ### Community 954 - "error_probabilities"
 Cohesion: 0.36
 Nodes (4): error_probabilities(), GenomePrior, PercentileReport, PriorError
@@ -4314,37 +4318,29 @@ Nodes (4): error_probabilities(), GenomePrior, PercentileReport, PriorError
 Cohesion: 0.25
 Nodes (8): Route, Tool, Unknown, Usage, Version, Stream, Stderr, Stdout
 
-### Community 956 - "ComplicationClass"
-Cohesion: 0.40
-Nodes (5): ComplicationClass, InterChromosome, ReferenceOrderSwap, SimpleOrDuplication, StrandSwitch
+### Community 956 - "annotated_variant"
+Cohesion: 0.09
+Nodes (22): annotate_from_evidence(), annotated_variant(), CnvCall, Complication, ComplicationClass, InterChromosome, ReferenceOrderSwap, SimpleOrDuplication (+14 more)
 
 ### Community 957 - "SegmenterMode"
 Cohesion: 0.50
 Nodes (4): SegmenterMode, AlleleFractionOnly, Both, CopyRatioOnly
 
-### Community 958 - "Milestone GPU: accelerate without losing the byte"
-Cohesion: 0.50
-Nodes (4): GPU.1 What makes a kernel eligible, GPU.2 The targets, in order of tractability, GPU.3 How it is verified, Milestone GPU: accelerate without losing the byte
+### Community 958 - "the_snp_label_is_reserved"
+Cohesion: 0.40
+Nodes (5): check_resource_labels(), sorted_labels(), refusal(), the_snp_label_is_reserved(), unescape()
 
-### Community 960 - "java_parse_double"
-Cohesion: 0.29
-Nodes (5): java_parse_double(), mixture_from_tables(), read_report_tables(), ReportTable, TrainingSet
+### Community 960 - "AlignmentSignature"
+Cohesion: 0.40
+Nodes (5): AlignmentSignature, Complex, Normal, SimpleChimera, Unknown
 
 ### Community 961 - "Tool inventory"
 Cohesion: 0.50
 Nodes (3): By archetype, Largest argument surfaces, Tool inventory
 
-### Community 964 - "walker_usage.rs"
-Cohesion: 0.43
-Nodes (4): a_walkers_usage_is_the_goldens(), every_declared_tool_answers_help_with_the_references_usage(), golden(), unescape()
-
-### Community 966 - "JavaHashCode"
-Cohesion: 0.29
-Nodes (4): i32, JavaHashCode, String, HaplotypeKey
-
-### Community 970 - "CommentError"
-Cohesion: 0.29
-Nodes (5): CommentError, ContainsNewline, NotBlockCompressed, SamNotSupported, Unreadable
+### Community 970 - "Milestone S: speed, once the bytes are settled"
+Cohesion: 0.50
+Nodes (4): Milestone S: speed, once the bytes are settled, The boxes, The constraint that makes this unlike ordinary optimisation, What is actually in dispute
 
 ### Community 972 - "HmmState"
 Cohesion: 0.50
@@ -4355,12 +4351,8 @@ Cohesion: 0.29
 Nodes (6): cycle_skip_status(), CycleSkipStatus, CS, NS, PCS, PeriodGuard
 
 ### Community 983 - "javascript_variant_filter.rs"
-Cohesion: 0.06
-Nodes (21): json_i64(), a_script_that_does_not_compile_is_refused_when_the_filter_is_built(), attribute_json(), compound(), filter_vcf_sets_the_script_name_on_what_it_rejects_and_declares_it(), function(), JavascriptVariantFilter, PRELUDE (+13 more)
-
-### Community 991 - "decode_annotation"
-Cohesion: 0.18
-Nodes (9): AttributeValue, Absent, Many, One, close(), decode_annotation(), digamma(), ln() (+1 more)
+Cohesion: 0.08
+Nodes (15): a_script_that_does_not_compile_is_refused_when_the_filter_is_built(), compound(), filter_vcf_sets_the_script_name_on_what_it_rejects_and_declares_it(), function(), JavascriptVariantFilter, PRELUDE, print(), record_json() (+7 more)
 
 ### Community 992 - "argument-coverage-t3-merge"
 Cohesion: 0.33
@@ -4370,14 +4362,6 @@ Nodes (6): if, name, needs, runs-on, steps, argument-coverage-t3-merge
 Cohesion: 0.53
 Nodes (4): every_coordinate_maps_the_way_the_reference_maps_it(), golden(), show(), show_base()
 
-### Community 995 - "InputError"
-Cohesion: 0.33
-Nodes (4): InputError, BothBamAndVcf, ManyReadInputs, NoInput
-
-### Community 997 - "on"
-Cohesion: 0.40
-Nodes (5): on, pull_request, push, workflow_dispatch, branches
-
 ### Community 999 - "steps"
 Cohesion: 0.40
 Nodes (5): name, needs, runs-on, steps, argument-coverage-t3
@@ -4386,41 +4370,37 @@ Nodes (5): name, needs, runs-on, steps, argument-coverage-t3
 Cohesion: 0.40
 Nodes (5): VariantType, Indel, NonRef, Other, SpanningDeletion
 
-### Community 1004 - "header_line"
-Cohesion: 0.40
-Nodes (5): header_line(), VariantKind, Mixed, Other, the_header_omits_the_end_for_a_mixed_variant()
+### Community 1004 - "Stream"
+Cohesion: 0.67
+Nodes (3): Stream, Cram, Sam
 
 ### Community 1006 - "Scoring"
 Cohesion: 0.40
 Nodes (5): score(), Scoring, FlowSumOfBaseQualities, SumOfBaseQualities, TotalMappedReferenceLength
 
-### Community 1046 - "SvKind"
-Cohesion: 0.40
-Nodes (5): SvKind, BreakEnd, Deletion, DuplicationTandem, Insertion
-
-### Community 1059 - "include"
-Cohesion: 0.40
-Nodes (5): group, index, slug, suites, include
+### Community 1067 - "super"
+Cohesion: 0.18
+Nodes (11): support_read(), an_empty_header_is_written_rather_than_refused(), an_empty_shard_leaves_a_header_and_a_terminator(), convert_headerless_shard(), EMPTY_GZIP_BLOCK, header(), header_block(), the_header_block_at_htsjdk_level_is_the_plain_one() (+3 more)
 
 ## Knowledge Gaps
-- **1598 isolated node(s):** `Traversal`, `Chosen`, `Block`, `Sink`, `EndsWithDeletion` (+1593 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 7349 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **244 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1603 isolated node(s):** `Cram`, `Traversal`, `Chosen`, `Block`, `Sink` (+1598 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 7395 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **254 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `SimpleInterval` connect `SimpleInterval` to `tests/methylation_type_caller.rs`, `ReadsDataSource`, `FeatureCache`, `tests/assembly_region_iterator.rs`, `given_alleles.rs`, `tests/base_recalibrator.rs`, `src/haplotype_caller.rs`, `src/base_recalibration_engine.rs`, `src/vcf_comparator.rs`, `src/assembly_region_iterator.rs`, `traverse`, `Event`, `tests/read_threading_assembler.rs`, `ReferenceContext`, `traverse`, `AlignmentContext`, `src/collect_allelic_counts.rs`, `src/read_threading_assembler.rs`, `.trim`, `tests/collect_read_counts.rs`, `src/hc_genotyping.rs`, `count_reads_and_bases.rs`, `tests/count_false_positives.rs`, `reference_confidence_model.rs`, `ActivityProfile`, `tests/assembly_region_walker.rs`, `src/base_recalibrator.rs`, `IntervalArguments`, `Haplotype`, `src/baq.rs`, `src/mutect2.rs`, `ramp_files.rs`, `AssemblyRegion`, `readsdatasource`, `src/contamination_tables.rs`, `read_utils.rs`, `src/count_false_positives.rs`, `src/haplotype_caller.rs`, `src/fasta_alternate_reference_maker.rs`, `src/interval_arguments.rs`, `src/overhang_fixing_manager.rs`, `TrimmerError`, `tests/count_variants.rs`, `write_records_with`, `SequenceRecord`, `src/create_read_count_panel_of_normals.rs`, `interval_iterators.rs`, `haplotype_bam_writer.rs`, `hc_region.rs`?**
-  _High betweenness centrality (0.061) - this node is a cross-community bridge._
+- **Why does `SimpleInterval` connect `SimpleInterval` to `interval_file.rs`, `SwParameters`, `ReadsDataSource`, `FeatureCache`, `tests/assembly_region_iterator.rs`, `given_alleles.rs`, `src/haplotype_caller.rs`, `tests/base_recalibrator.rs`, `src/base_recalibration_engine.rs`, `src/vcf_comparator.rs`, `src/assembly_region_iterator.rs`, `traverse`, `Event`, `tests/read_threading_assembler.rs`, `src/methylation_type_caller.rs`, `ReadsDataSource`, `AlignmentContext`, `src/read_threading_assembler.rs`, `.trim`, `tests/collect_read_counts.rs`, `src/hc_genotyping.rs`, `tests/count_false_positives.rs`, `reference_confidence_model.rs`, `ActivityProfile`, `tests/assembly_region_walker.rs`, `src/base_recalibrator.rs`, `ReferenceContext`, `partially_determined.rs`, `src/baq.rs`, `src/mutect2.rs`, `ramp_files.rs`, `AssemblyRegion`, `readsdatasource`, `src/contamination_tables.rs`, `read_utils.rs`, `Hdf5File`, `src/count_false_positives.rs`, `src/fasta_alternate_reference_maker.rs`, `tests/compare_interval_lists.rs`, `with_header`, `src/overhang_fixing_manager.rs`, `TrimmerError`, `tests/count_variants.rs`, `write_records_with`, `interval_iterators.rs`, `haplotype_bam_writer.rs`, `hc_region.rs`?**
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `SimpleInterval` (e.g. with `PartiallyDetermined` and `genome_loc_to_string()`) actually correct?**
   _`SimpleInterval` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Traversal`, `Chosen`, `Block` to the rest of the system?**
-  _1598 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Cram`, `Traversal`, `Chosen` to the rest of the system?**
+  _1603 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `list` be split into smaller, more focused modules?**
-  _Cohesion score 0.023598239110287304 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.020861678004535148 - nodes in this community are weakly interconnected._
 - **Why does `Declaration` connect `src/tool_declarations.rs` to `value`, `ValueClass`, `tests/tool_declarations.rs`, `tests/usage_text.rs`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Should `htsjdk.variant.variantcontext.VariantContext` be split into smaller, more focused modules?**
-  _Cohesion score 0.018687998553770367 - nodes in this community are weakly interconnected._
-- **Why does `ClusteringParameters` connect `src/sv_cluster.rs` to `src/grouped_sv_cluster.rs`, `tests/sv_cluster.rs`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
+  _Cohesion score 0.018325516762202537 - nodes in this community are weakly interconnected._
+- **Why does `arguments()` connect `runners.rs` to `run`, `tests/analyze_saturation_mutagenesis.rs`, `tests/ground_truth_scorer.rs`, `runners_spark.rs`, `tests/create_read_count_panel_of_normals.rs`, `flag`, `tests/ground_truth_reads_builder.rs`, `runners_interpreter_tools.rs`, `tests/picard_gather_vcfs.rs`, `runners/funcotator.rs`, `runners/haplotype_caller.rs`, `tests/left_align_and_trim_variants.rs`, `tests/funcotator_data_source_downloader.rs`, `hashmap`, `genomics_db_import`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
