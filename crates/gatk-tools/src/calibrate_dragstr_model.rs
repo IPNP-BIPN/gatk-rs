@@ -333,6 +333,9 @@ pub fn flanks(period: usize, parameters: &HyperParameters, cases: &Cases) -> (us
 /// When the two flanks have not crossed the groups are `[1..left]`, then every single repeat
 /// length up to the right flank, then `[right+1..max]`. When they HAVE crossed there is too
 /// little data to split at all and the whole range is one group.
+// One range per group, starting with a single group: the lint reads `vec![a..=b]` as a mistyped
+// range collect, which it is not here.
+#[allow(clippy::single_range_in_vec_init)]
 pub fn initial_groups(
     parameters: &HyperParameters,
     left: usize,
@@ -612,7 +615,9 @@ impl Site {
 /// `sites.bin`, 23 big-endian bytes a site.
 pub fn read_sites(bytes: &[u8]) -> Vec<Site> {
     bytes
-        .chunks_exact(23)
+        .as_chunks::<23>()
+        .0
+        .iter()
         .map(|chunk| Site {
             contig: i32::from_be_bytes(chunk[0..4].try_into().expect("four bytes")),
             start: i64::from_be_bytes(chunk[4..12].try_into().expect("eight bytes")),
