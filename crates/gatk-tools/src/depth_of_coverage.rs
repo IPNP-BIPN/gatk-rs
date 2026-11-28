@@ -408,3 +408,326 @@ pub fn check_base_quality(argument: &str, value: i64) -> Result<(), CoverageErro
     }
     Ok(())
 }
+
+/// `CoverageUtils.calculateCoverageHistogramBinEndpoints`: `bins + 1` left endpoints from `start`
+/// to `stop`, spaced on a log scale and pushed apart wherever two would land on one integer.
+/// The caller has refused `bins > stop - start` and `start < 1` already.
+pub fn bin_endpoints(start: i32, stop: i32, bins: i32) -> Vec<i32> {
+    let mut ends = vec![0; bins as usize + 1];
+    ends[0] = start;
+    let scale = jmath::math::log10(f64::from(stop - start)) / f64::from(bins);
+    for b in 1..bins as usize {
+        let mut left =
+            start + gatk_engine::math_utils::pow10((b as f64 - 1.0) * scale).floor() as i32;
+        while left <= ends[b - 1] {
+            left += 1;
+        }
+        ends[b] = left;
+    }
+    ends[bins as usize] = stop;
+    ends
+}
+
+/// `DepthOfCoverageStats` over one gene or one interval, every column of every partition at once:
+/// a partition's own figures are the sums over its columns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stats {
+    /// Per column, `endpoints.len() + 1` bins: bin `b` counts the loci whose depth is below
+    /// `endpoints[b]` and at or above every earlier endpoint.
+    pub histograms: Vec<Vec<i64>>,
+    pub totals: Vec<i64>,
+    pub loci: i64,
+}
+
+impl Stats {
+    pub fn new(width: usize, endpoints: &[i32]) -> Stats {
+        Stats {
+            histograms: vec![vec![0; endpoints.len() + 1]; width],
+            totals: vec![0; width],
+            loci: 0,
+        }
+    }
+
+    /// `update`: one locus, whose depth per column is the per-base table's.
+    pub fn update(&mut self, depths: &[i32], endpoints: &[i32]) {
+        for (column, depth) in depths.iter().enumerate() {
+            self.totals[column] += i64::from(*depth);
+            let bin = endpoints
+                .iter()
+                .position(|end| depth < end)
+                .unwrap_or(endpoints.len());
+            self.histograms[column][bin] += 1;
+        }
+        self.loci += 1;
+    }
+}
+
+/// `CoverageUtils.getQuantile`: the bin in which the cumulative count first reaches `prop` of
+/// the total, and bin zero for an empty histogram.
+pub fn quantile(histogram: &[i64], prop: f64) -> usize {
+    let total: i64 = histogram.iter().sum();
+    let (mut counts, mut bin) = (0i64, -1i64);
+    while (counts as f64) < prop * total as f64 {
+        counts += histogram[(bin + 1) as usize];
+        bin += 1;
+    }
+    bin.max(0) as usize
+}
+
+/// `DepthOfCoverageStats.value2bin`: the first bin whose left endpoint is above `value`, and the
+/// LAST endpoint's index rather than one past it when none is.
+pub fn value_to_bin(endpoints: &[i32], value: i32) -> usize {
+    endpoints
+        .iter()
+        .position(|end| *end > value)
+        .unwrap_or(endpoints.len() - 1)
+}
+
+/// `CoverageUtils.getPctBasesAbove`, which is `NaN` over no loci.
+pub fn percent_above(histogram: &[i64], bin: usize) -> f64 {
+    let below: i64 = histogram[..bin.min(histogram.len())].iter().sum();
+    let above: i64 = histogram[bin.min(histogram.len())..].iter().sum();
+    100.0 * above as f64 / (above + below) as f64
+}
+
+/// `CoverageOutputWriter.formatBin`.
+fn format_bin(endpoints: &[i32], bin: usize) -> String {
+    match endpoints.get(bin) {
+        Some(end) => end.to_string(),
+        None => format!(">{}", endpoints[endpoints.len() - 1]),
+    }
+}
+
+/// `getIntervalSummaryHeader`: `title` is `Target` for the interval summary and `Gene` for the
+/// gene summary.
+pub fn summary_header(title: &str, samples: &[String], thresholds: &[i32], sep: char) -> String {
+    let mut out = format!("{title}{sep}total_coverage{sep}average_coverage");
+    for sample in samples {
+        for suffix in [
+            "_total_cvg",
+            "_mean_cvg",
+            "_granular_Q1",
+            "_granular_median",
+            "_granular_Q3",
+        ] {
+            out.push_str(&format!("{sep}{sample}{suffix}"));
+        }
+        for threshold in thresholds {
+            out.push_str(&format!("{sep}{sample}_%_above_{threshold}"));
+        }
+    }
+    out
+}
+
+/// `printIntervalSummaryLine` over the columns `columns` of `stats`, one partition's.
+pub fn summary_line(
+    name: &str,
+    stats: &Stats,
+    columns: std::ops::Range<usize>,
+    endpoints: &[i32],
+    thresholds: &[i32],
+    sep: char,
+) -> String {
+    use gatk_engine::java_format::format_decimals;
+    let loci = stats.loci as f64;
+    let total: i64 = stats.totals[columns.clone()].iter().sum();
+    let mut out = format!(
+        "{name}{sep}{total}{sep}{}",
+        format_decimals(total as f64 / loci, 2)
+    );
+    for column in columns {
+        let histogram = &stats.histograms[column];
+        out.push_str(&format!(
+            "{sep}{}{sep}{}{sep}{}{sep}{}{sep}{}",
+            stats.totals[column],
+            format_decimals(stats.totals[column] as f64 / loci, 2),
+            format_bin(endpoints, quantile(histogram, 0.25)),
+            format_bin(endpoints, quantile(histogram, 0.5)),
+            format_bin(endpoints, quantile(histogram, 0.75)),
+        ));
+        for threshold in thresholds {
+            let above = percent_above(histogram, value_to_bin(endpoints, *threshold));
+            out.push_str(&format!("{sep}{}", format_decimals(above, 1)));
+        }
+    }
+    out
+}
+
+/// `CoverageUtils.updateTargetTable`: row `n - 1` of a bin counts the targets whose median is in
+/// that bin or above for at least `n` of the partition's samples.
+pub fn update_target_table(table: &mut [Vec<i64>], stats: &Stats, columns: std::ops::Range<usize>) {
+    let mut at_least = vec![0usize; table.first().map_or(0, Vec::len)];
+    for column in columns {
+        for count in at_least
+            .iter_mut()
+            .take(quantile(&stats.histograms[column], 0.5) + 1)
+        {
+            *count += 1;
+        }
+    }
+    for (bin, count) in at_least.into_iter().enumerate() {
+        for samples in 1..=count {
+            table[samples - 1][bin] += 1;
+        }
+    }
+}
+
+/// `printIntervalTable`, the `_interval_statistics` and `_gene_statistics` files.
+pub fn target_table(table: &[Vec<i64>], endpoints: &[i32], sep: char) -> String {
+    let mut out = format!("Number_of_sources{sep}depth>=0");
+    for end in &endpoints[..table[0].len() - 1] {
+        out.push_str(&format!("{sep}depth>={end}"));
+    }
+    out.push('\n');
+    for (row, counts) in table.iter().enumerate() {
+        out.push_str(&format!("At_least_{}_samples", row + 1));
+        for count in counts {
+            out.push_str(&format!("{sep}{count}"));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// A span `LocusWalkerByInterval` tracks: a `-L` interval, or a RefSeq gene with its exons.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub name: String,
+    pub contig: String,
+    pub start: i32,
+    pub end: i32,
+    /// One-based closed exons; a locus counts toward a gene only inside one, and toward an interval
+    /// (which has none) anywhere inside it.
+    pub exons: Vec<(i32, i32)>,
+}
+
+impl Span {
+    /// `RefSeqFeature.contains`, or `SimpleInterval.contains` when there are no exons.
+    fn counts(&self, position: i32) -> bool {
+        if self.exons.is_empty() {
+            return (self.start..=self.end).contains(&position);
+        }
+        self.exons
+            .iter()
+            .any(|(start, end)| (*start..=*end).contains(&position))
+    }
+}
+
+/// `LocusWalkerByInterval.traverse` with `DepthOfCoverage`'s hooks: each span opens at the first
+/// traversed locus inside it and closes at the first one past it, or at the end, and only a span
+/// some traversed locus reaches is returned. The order is the order they close in.
+///
+/// The loci must come in traversal order, a contig at a time and ascending within it.
+///
+/// shortcut: spans closing at the same locus come out in start order, where the reference's
+/// `HashSet` gives an identity-hash order of its own; a fixture keeps them apart.
+pub fn track(
+    loci: impl IntoIterator<Item = Locus>,
+    spans: &[Span],
+    width: usize,
+    endpoints: &[i32],
+) -> Vec<(usize, Stats)> {
+    let mut by_contig: std::collections::HashMap<&str, Vec<usize>> = Default::default();
+    for (at, span) in spans.iter().enumerate() {
+        by_contig.entry(&span.contig).or_default().push(at);
+    }
+    for list in by_contig.values_mut() {
+        list.sort_by_key(|at| spans[*at].start);
+    }
+    let mut closed = Vec::new();
+    let mut open: Vec<(usize, Stats)> = Vec::new();
+    let (mut contig, mut cursor): (Option<String>, usize) = (None, 0);
+    let empty = Vec::new();
+    for locus in loci {
+        if contig.as_deref() != Some(locus.contig.as_str()) {
+            closed.append(&mut open);
+            contig = Some(locus.contig.clone());
+            cursor = 0;
+        }
+        let list = by_contig.get(locus.contig.as_str()).unwrap_or(&empty);
+        let (passed, kept): (Vec<_>, Vec<_>) = open
+            .drain(..)
+            .partition(|(at, _)| spans[*at].end < locus.position);
+        closed.extend(passed);
+        open = kept;
+        while cursor < list.len() && spans[list[cursor]].start <= locus.position {
+            if spans[list[cursor]].end >= locus.position {
+                open.push((list[cursor], Stats::new(width, endpoints)));
+            }
+            cursor += 1;
+        }
+        for (at, stats) in &mut open {
+            if spans[*at].counts(locus.position) {
+                stats.update(&locus.depths, endpoints);
+            }
+        }
+    }
+    closed.append(&mut open);
+    closed
+}
+
+/// `RefSeqCodec.decode` over a whole file: the genes in file order, one-based and closed, with
+/// a transcript of zero coding length dropped as the codec drops it.
+pub fn read_refseq(text: &str) -> Result<Vec<Span>, String> {
+    let mut genes = Vec::new();
+    for line in text.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        // `String.split` drops trailing empty fields.
+        let mut fields: Vec<&str> = line.split('\t').collect();
+        while fields.last() == Some(&"") {
+            fields.pop();
+        }
+        if fields.len() < 16 {
+            return Err(format!(
+                "RefSeq (decode) : Unable to parse line -> {line}, we expected at least 16 \
+                 columns, we saw {}",
+                fields.len()
+            ));
+        }
+        let number = |text: &str| -> Result<i32, String> {
+            text.parse()
+                .map_err(|_| format!("For input string: \"{text}\""))
+        };
+        if fields[3] != "+" && fields[3] != "-" {
+            return Err(format!(
+                "Expected strand symbol (+/-), found: {} for line={line}",
+                fields[3]
+            ));
+        }
+        if number(fields[6])? + 1 > number(fields[7])? {
+            continue;
+        }
+        let split = |text: &str| -> Vec<String> {
+            let mut parts: Vec<String> = text.split(',').map(str::to_string).collect();
+            while parts.last().is_some_and(String::is_empty) {
+                parts.pop();
+            }
+            parts
+        };
+        let (starts, ends, frames) = (split(fields[9]), split(fields[10]), split(fields[15]));
+        if starts.len() != ends.len() {
+            return Err(format!(
+                "Data format error: numbers of exon start and stop positions differ for line={line}"
+            ));
+        }
+        if starts.len() != frames.len() {
+            return Err(format!(
+                "Data format error: numbers of exons and exon frameshifts differ for line={line}"
+            ));
+        }
+        let mut exons = Vec::new();
+        for (start, end) in starts.iter().zip(&ends) {
+            exons.push((number(start)? + 1, number(end)?));
+        }
+        genes.push(Span {
+            name: fields[12].to_string(),
+            contig: fields[2].to_string(),
+            start: number(fields[4])? + 1,
+            end: number(fields[5])?,
+            exons,
+        });
+    }
+    Ok(genes)
+}

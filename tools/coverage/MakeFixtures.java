@@ -3459,6 +3459,17 @@ public class MakeFixtures {
             }
             other.startSequence("chrOther").appendBases(bases.toString());
         }
+        // A RefSeq gene list over `reference.fasta` for DepthOfCoverage's per-gene tables. GENEA has
+        // three exons inside chr1:101-200 and an intron the exclusion chr1:150-160 cuts into, GENED
+        // starts inside that window and runs past it, GENEB is half outside chr1:50000-50010, and
+        // GENEC lies where no row traverses. No two of them end at the same traversed locus,
+        // because the reference closes genes in a hash order when they do.
+        Files.writeString(dir.resolve("doc_genes.refseq"),
+                "0\tNM_000001\tchr1\t+\t100\t190\t100\t190\t3\t100,129,169,\t120,150,190,\t0\tGENEA\tcmpl\tcmpl\t0,0,0,\n"
+                + "0\tNM_000004\tchr1\t-\t180\t260\t180\t260\t2\t180,239,\t195,260,\t0\tGENED\tcmpl\tcmpl\t0,0,\n"
+                + "0\tNM_000003\tchr1\t+\t3000\t3100\t3000\t3100\t1\t3000,\t3100,\t0\tGENEC\tcmpl\tcmpl\t0,\n"
+                + "0\tNM_000002\tchr1\t+\t49990\t50005\t49990\t50005\t2\t49990,49999,\t49995,50005,\t0\tGENEB\tcmpl\tcmpl\t0,0,\n",
+                StandardCharsets.UTF_8);
         // The same bases as `other.fasta` under a different contig name. `CompareReferences` keys
         // its table by the sequence's MD5 and not by its name, so this reference and that one land
         // on ONE row carrying two names, which is the DIFFER_IN_SEQUENCE_NAMES answer. Without it

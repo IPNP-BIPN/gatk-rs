@@ -5,7 +5,7 @@
  * writes a family of files rather than one, and which of them appear is decided by four `omit`
  * arguments rather than by the data.
  *
- * Ten behaviours this is built to catch.
+ * Eleven behaviours this is built to catch.
  *
  *   - THE PER-LOCUS TABLE IS EVERY BASE OF EVERY INTERVAL, including those no read reaches, so its
  *     length is the intervals' and not the reads';
@@ -21,6 +21,9 @@
  *     is a function of the arguments alone;
  *   - --omit-interval-statistics AND --calculate-coverage-over-genes ARE MUTUALLY EXCLUSIVE, and
  *     the refusal names both;
+ *   - A GENE COUNTS ONLY THE LOCI INSIDE ITS EXONS but is opened by any locus of its transcript,
+ *     so a gene reached only in an intron is a row over no loci, all `NaN`; and its tables are
+ *     the SAMPLE partition's, so without it the first gene the traversal closes is refused;
  *   - A QUALITY OUTSIDE 0..127 IS REFUSED BY THE ARGUMENT ITSELF, before a read is seen;
  *   - AND THE SUMMARY CARRIES A `Total` ROW whose quantiles are `N/A`, because a quantile over
  *     the partitions is not a quantile over anything the tool measured.
@@ -140,6 +143,41 @@ public class DepthOfCoverageDump {
                 List.of("--omit-interval-statistics", "true"));
 
         // The two mutually exclusive arguments.
+        // The gene and interval tables, with the two cumulative families omitted. GENEA has an
+        // intron, GENEB starts before the traversal, GENEC is never reached, GENED runs past its
+        // end, GENEE is reached only outside its exon (a row over no loci), and GENEZ has no
+        // coding length and is dropped by the codec. No two close at the same locus.
+        final Path genes = write(dir, "genes.refseq",
+                "0\tNM_1\tchr1\t+\t995\t1012\t995\t1012\t2\t995,1004,\t1000,1012,\t0\tGENEA\tcmpl\tcmpl\t0,0,\n"
+                + "0\tNM_2\tchr1\t-\t979\t997\t979\t997\t1\t979,\t997,\t0\tGENEB\tcmpl\tcmpl\t0,\n"
+                + "0\tNM_3\tchr1\t+\t4999\t5010\t4999\t5010\t1\t4999,\t5010,\t0\tGENEC\tcmpl\tcmpl\t0,\n"
+                + "0\tNM_4\tchr1\t+\t1009\t1030\t1009\t1030\t2\t1009,1025,\t1015,1030,\t0\tGENED\tcmpl\tcmpl\t0,0,\n"
+                + "0\tNM_5\tchr1\t+\t1000\t1003\t1000\t1003\t1\t1100,\t1110,\t0\tGENEE\tcmpl\tcmpl\t0,\n"
+                + "0\tNM_6\tchr1\t+\t1000\t1008\t1000\t1000\t1\t1000,\t1008,\t0\tGENEZ\tcmpl\tcmpl\t0,\n");
+        final List<String> tablesOnly = List.of(
+                "--omit-locus-table", "true", "--omit-per-sample-statistics", "true");
+        run(dir, "genes", bam, fasta, intervals, concat(tablesOnly,
+                List.of("--calculate-coverage-over-genes", genes.toString())));
+        run(dir, "genes-entirely-covered", bam, fasta, intervals, concat(tablesOnly, List.of(
+                "--calculate-coverage-over-genes", genes.toString(),
+                "--omit-genes-not-entirely-covered-by-traversal", "true")));
+        // Two overlapping intervals, an exclusion inside both, other bins, two thresholds and
+        // two partitions, of which only the sample one has gene tables.
+        run(dir, "intervals-partitions", bam, fasta, intervals, concat(tablesOnly, List.of(
+                "-L", "chr1:1003-1007", "-XL", "chr1:1001-1002",
+                "--start", "1", "--stop", "10", "--nBins", "4",
+                "--summary-coverage-threshold", "2", "--summary-coverage-threshold", "4",
+                "--partition-type", "readgroup", "--partition-type", "sample",
+                "--calculate-coverage-over-genes", genes.toString())));
+        run(dir, "genes-without-sample-partition", bam, fasta, intervals, concat(tablesOnly,
+                List.of("--partition-type", "readgroup",
+                        "--calculate-coverage-over-genes", genes.toString())));
+
+        run(dir, "entirely-covered-without-sample-partition", bam, fasta, intervals,
+                concat(tablesOnly, List.of("--partition-type", "readgroup",
+                        "--calculate-coverage-over-genes", genes.toString(),
+                        "--omit-genes-not-entirely-covered-by-traversal", "true")));
+
         run(dir, "both-interval-arguments", bam, fasta, intervals, List.of(
                 "--omit-interval-statistics", "true",
                 "--calculate-coverage-over-genes", intervals.toString()));
@@ -148,6 +186,12 @@ public class DepthOfCoverageDump {
                 List.of("--min-base-quality", "200"));
         run(dir, "quality-negative", bam, fasta, intervals,
                 List.of("--min-base-quality", "-1"));
+    }
+
+    static List<String> concat(final List<String> one, final List<String> two) {
+        final List<String> both = new ArrayList<>(one);
+        both.addAll(two);
+        return both;
     }
 
     static Path write(final Path dir, final String name, final String text) throws Exception {

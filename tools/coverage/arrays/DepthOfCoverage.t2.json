@@ -17,9 +17,9 @@
     {
       "argument": "--calculate-coverage-over-genes",
       "type": "List[String]",
-      "reason": "excluded by the repository: no value is declared for this tool",
-      "held_at": null,
-      "source": "none"
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/doc_genes.refseq",
+      "source": "fixture"
     },
     {
       "argument": "--gatk-config-file",
@@ -74,7 +74,7 @@
       "argument": "--omit-interval-statistics",
       "type": "boolean",
       "reason": "only one value available (fixture[0])",
-      "held_at": "true",
+      "held_at": "false",
       "source": "fixture"
     },
     {
