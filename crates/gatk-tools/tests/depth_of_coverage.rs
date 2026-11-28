@@ -3,9 +3,9 @@
 //!
 //! Golden from `tools/readfilter-conformance/DepthOfCoverageDump.java`.
 //!
-//! The summary and interval tables are reported by the golden but not recomputed here: their
-//! quantiles come from the partitioned data store, which is not ported. What is ported is which
-//! bases are counted, how, and which files a set of arguments produces.
+//! The cumulative tables and the per-sample summaries are reported by the golden but not
+//! recomputed here, because they are not ported. The interval and gene tables are, and one case of
+//! them is recomputed below from the oracle's lines.
 //!
 //! # What this suite is for
 //!
@@ -281,4 +281,82 @@ fn the_three_refusals() {
     // A quality inside the range is accepted.
     assert!(check_base_quality("min-base-quality", 10).is_ok());
     assert!(check_base_quality("min-base-quality", 127).is_ok());
+}
+
+/// The `intervals-partitions` case of the dump, sample partition, recomputed from its per-base
+/// depths: the two `-L` intervals and the genes over chr1:995-1015 less chr1:1001-1002, binned at
+/// 1..10 in four, thresholds 2 and 4. Expected lines from the oracle's run of that case.
+#[test]
+fn gene_and_interval_tables_match_the_reference() {
+    use gatk_tools::depth_of_coverage::{
+        bin_endpoints, read_refseq, summary_line, target_table, track, update_target_table, Locus,
+        Span,
+    };
+    let genes = read_refseq(concat!(
+        "0\tNM_1\tchr1\t+\t995\t1012\t995\t1012\t2\t995,1004,\t1000,1012,\t0\tGENEA\tcmpl\tcmpl\t0,0,\n",
+        "0\tNM_2\tchr1\t-\t979\t997\t979\t997\t1\t979,\t997,\t0\tGENEB\tcmpl\tcmpl\t0,\n",
+        "0\tNM_3\tchr1\t+\t4999\t5010\t4999\t5010\t1\t4999,\t5010,\t0\tGENEC\tcmpl\tcmpl\t0,\n",
+        "0\tNM_4\tchr1\t+\t1009\t1030\t1009\t1030\t2\t1009,1025,\t1015,1030,\t0\tGENED\tcmpl\tcmpl\t0,0,\n",
+        "0\tNM_5\tchr1\t+\t1000\t1003\t1000\t1003\t1\t1100,\t1110,\t0\tGENEE\tcmpl\tcmpl\t0,\n",
+        "0\tNM_6\tchr1\t+\t1000\t1008\t1000\t1000\t1\t1000,\t1008,\t0\tGENEZ\tcmpl\tcmpl\t0,\n",
+    ))
+    .unwrap();
+    assert_eq!(genes.len(), 5, "GENEZ has no coding length");
+    let loci: Vec<Locus> = (995..=1000)
+        .chain(1003..=1015)
+        .map(|position| {
+            let (a, b) = match position {
+                1000..=1004 => (2, 3),
+                1005..=1009 => (2, 2),
+                _ => (0, 0),
+            };
+            Locus {
+                contig: "chr1".to_string(),
+                position,
+                depths: vec![a, b],
+                base_counts: vec![[0; 6]; 2],
+            }
+        })
+        .collect();
+    let endpoints = bin_endpoints(1, 10, 4);
+    assert_eq!(endpoints, [1, 2, 3, 4, 10]);
+    let thresholds = [2, 4];
+
+    let closed = track(loci.clone(), &genes, 2, &endpoints);
+    let lines: Vec<String> = closed
+        .iter()
+        .map(|(at, stats)| {
+            summary_line(&genes[*at].name, stats, 0..2, &endpoints, &thresholds, ',')
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "GENEB,0,0.00,0,0.00,1,1,1,0.0,0.0,0,0.00,1,1,1,0.0,0.0",
+            "GENEE,0,NaN,0,NaN,1,1,1,NaN,NaN,0,NaN,1,1,1,NaN,NaN",
+            "GENEA,25,1.92,12,0.92,1,1,3,46.2,0.0,13,1.00,1,1,3,46.2,0.0",
+            "GENED,0,0.00,0,0.00,1,1,1,0.0,0.0,0,0.00,1,1,1,0.0,0.0",
+        ]
+    );
+
+    let spans: Vec<Span> = [(995, 1015), (1003, 1007)]
+        .into_iter()
+        .map(|(start, end)| Span {
+            name: format!("chr1:{start}-{end}"),
+            contig: "chr1".to_string(),
+            start,
+            end,
+            exons: Vec::new(),
+        })
+        .collect();
+    let mut table = vec![vec![0i64; endpoints.len() + 1]; 2];
+    for (_, stats) in track(loci, &spans, 2, &endpoints) {
+        update_target_table(&mut table, &stats, 0..2);
+    }
+    assert_eq!(
+        target_table(&table, &endpoints, ','),
+        "Number_of_sources,depth>=0,depth>=1,depth>=2,depth>=3,depth>=4,depth>=10\n\
+         At_least_1_samples,2,1,1,0,0,0\n\
+         At_least_2_samples,2,1,1,0,0,0\n"
+    );
 }

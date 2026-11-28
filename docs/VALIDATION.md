@@ -132,7 +132,7 @@ Each run's inputs, toolchain and container are in the `provenance` artefact CI k
 | CrosscheckFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 24/24 (100.0%) | 2 | not measured | 0 | 0 | none |
 | CrosscheckReadGroupFingerprints | picard-rs | oracle-backed | not vendored | not vendored | 20/20 (100.0%) | 2 | not measured | 0 | 0 | none |
 | DenoiseReadCounts | gatk-rs | oracle-backed | 13 suite | 0 suite | 6/6 (100.0%) | 2 | 1458 probes (+0), 0/3 diverge | 1 | 3 | none |
-| DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 2 | 1 | none |
+| DepthOfCoverage | gatk-rs | oracle-backed | 60 suite | 0 suite | 20/20 (100.0%) | 2 | 3023 probes (+74), 0/14 diverge | 3 | 0 | none |
 | DetermineGermlineContigPloidy | gatk-rs | oracle-backed | 306 suite | 150 suite | 32/32 (100.0%) | 2 | 1046 probes (+2), 0/4 diverge | 2 | 0 | none |
 | DiscoverVariantsFromContigAlignmentsSAMSpark | gatk-rs | oracle-backed | 96 | 12 | 19/19 (100.0%) | 2 | 3995 probes (+6), 0/12 diverge | 5 | 5 | none |
 | DownsampleByDuplicateSet | gatk-rs | oracle-backed | 23 suite | 0 suite | 18/18 (100.0%) | 2 | 1955 probes (+0), 0/9 diverge | 2 | 6 | none |
@@ -837,7 +837,7 @@ depth.rd.txt is ten adjacent hundred-base bins, a one-base gap, two more and a c
 
 ### ConvertCountsToDepthFile
 
-Suites: `convert-counts-to-depth-file`.
+Suites: `convert-counts-to-depth-file`, `port-limitations`.
 
 Inputs: `counts.tsv`, `sv.counts.tsv`.
 
@@ -975,11 +975,11 @@ counts.tsv, written by the REFERENCE's own CollectReadCounts: this tool is the n
 
 Suites: `depth-of-coverage`.
 
-Inputs: `reads.bai`, `reads.bam`.
+Inputs: `doc_genes.refseq`, `reads.bai`, `reads.bam`.
 
-Held out: `--calculate-coverage-over-genes`.
+Held out: none.
 
-A SMALL window, chr1:101-200, because every base of the interval is a row whether a read reaches it or not: the corpus's usual chr1:1-6000 would make a corpus file of six thousand rows per accepted row of the array. The three table omissions are held at TRUE. The files they would write carry quantiles computed in a partitioned data store this port does not carry, so the port refuses a run that asks for them; holding them true is what makes the array measure the per-base table rather than that refusal, and it narrows the claim to exactly that file. --output-format is held at CSV and --partition-type at `sample` for the same reason: the other format is a padded table and the other partitions are the read group, the library and the centre, none of which this port writes. --calculate-coverage-over-genes is held out: it writes a per-gene table that is not written here either. --min-base-quality and --max-base-quality carry values INSIDE the byte range. Outside it the parser refuses two different ways, which the tool's own golden measures. --include-deletions is held at FALSE: it adds a sixth column, D, to every base-count field, and the ported counter has the five bases and no deletion slot, so the port refuses the run rather than writing a table a column short. --start, --stop and --nBins carry values inside their declared ranges, and --exclude-intervals a window OFF the reads as well as one inside them. The generator steps each numeric argument below its minimum and the shared exclusion covers the whole window, so twenty-two of twenty-three rows measured a parser refusal rather than the counting.
+A SMALL window, chr1:101-200, because every base of the interval is a row whether a read reaches it or not: the corpus's usual chr1:1-6000 would make a corpus file of six thousand rows per accepted row of the array. --omit-locus-table and --omit-per-sample-statistics are held at TRUE: the cumulative tables and the per-sample summaries are not written by this port, which refuses a run that asks for them, and holding them true is what makes the array measure the run rather than that refusal. --omit-interval-statistics is held at FALSE, because every row carries --calculate-coverage-over-genes and the parser refuses the two together. --output-format is held at CSV and --partition-type at `sample` for the same reason: the other format is a padded table and the other partitions are the read group, the library and the centre, none of which this port writes. --calculate-coverage-over-genes is doc_genes.refseq, whose genes the fixture places around both windows and the exclusion. The array compares the per-base file and the run; the gene and interval tables themselves are measured by the depth-of-coverage suite. --min-base-quality and --max-base-quality carry values INSIDE the byte range. Outside it the parser refuses two different ways, which the tool's own golden measures. --include-deletions is held at FALSE: it adds a sixth column, D, to every base-count field, and the ported counter has the five bases and no deletion slot, so the port refuses the run rather than writing a table a column short. --start, --stop and --nBins carry values inside their declared ranges, and --exclude-intervals a window OFF the reads as well as one inside them. The generator steps each numeric argument below its minimum and the shared exclusion covers the whole window, so twenty-two of twenty-three rows measured a parser refusal rather than the counting.
 
 ### DetermineGermlineContigPloidy
 
@@ -1003,7 +1003,7 @@ Contigs with each signature and a smaller set; the refusals, and the contigs the
 
 ### DownsampleByDuplicateSet
 
-Suites: `downsample-by-duplicate-set`.
+Suites: `downsample-by-duplicate-set`, `port-limitations`.
 
 Inputs: `molecules.bam`, `molecules_backwards.bam`.
 
@@ -1285,7 +1285,7 @@ Held out: none.
 
 ### GatherPileupSummaries
 
-Suites: `mutect-gathers`.
+Suites: `mutect-gathers`, `port-limitations`.
 
 Inputs: `matching.dict`, `mixed_pileups.list`, `pileups.list`, `summaries_b.table`, `sv.dict`.
 
@@ -1479,7 +1479,7 @@ Every row reaches the pinned htsget-rs server run_array.py starts beside it, ser
 
 ### JointGermlineCNVSegmentation
 
-Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`.
+Suites: `multi-variant-walker`, `joint-germline-cnv-segmentation`, `port-limitations`.
 
 Inputs: `jgcs.ped`, `jgcs_bins.interval_list`, `jgcs_cohort.vcf`, `jgcs_male1.vcf`, `jgcs_ref.fasta`, `jgcs_swapped.ped`.
 
@@ -1971,7 +1971,7 @@ The tool aborts on the first read with no `OQ` rather than skipping it, so the t
 
 ### RevertSamSpark
 
-Suites: `spark-walkers`.
+Suites: `spark-walkers`, `port-limitations`.
 
 Inputs: `reads.bai`, `reads.bam`, `reads2.bai`, `reads2.bam`.
 
@@ -1991,7 +1991,7 @@ Held out: `--dont-require-soft-clips-both-ends`, `--exclude-intervals`, `--input
 
 ### SVCluster
 
-Suites: `multi-variant-walker`, `sv-cluster`.
+Suites: `multi-variant-walker`, `sv-cluster`, `port-limitations`.
 
 Inputs: `sv_calls.vcf`, `sv_cluster_input.vcf`, `sv_ploidy.tsv`, `sv_ploidy_haploid.tsv`, `sv_reference.fasta`.
 

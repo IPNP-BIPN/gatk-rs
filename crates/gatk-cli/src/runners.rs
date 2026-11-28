@@ -5597,9 +5597,10 @@ pub fn concordance(parser: &Parser) -> Outcome {
 ///
 /// The first tool here that writes a FAMILY of files, and which of them appear is a function of the
 /// four `omit` arguments alone: no omission depends on whether the data would have filled the file.
-/// This port writes ONE of the seven, the per-base table, and refuses a command line that asks for
-/// any of the other six: their quantiles come from the partitioned data store, which is not ported,
-/// and a file of plausible numbers would be worse than a refusal.
+/// This port writes the per-base table, the interval tables of every partition and, with
+/// `--calculate-coverage-over-genes`, the sample partition's gene tables. It refuses a command
+/// line that asks for the cumulative tables or the per-sample summaries, which are not ported, and
+/// a file of plausible numbers would be worse than a refusal.
 ///
 /// What IS ported is what a row of that table holds: every base of the interval is a row whether a
 /// read reaches it or not, the partition is the SAMPLE rather than the read group, and
@@ -5622,13 +5623,6 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
         Some("TABLE") => '\t',
         _ => ',',
     };
-    if argument(parser, "calculate-coverage-over-genes").is_some() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "--calculate-coverage-over-genes writes a per-gene table this port does not write \
-             yet. This message is the port's own and not GATK's.",
-        ));
-    }
 
     let omissions = coverage::Omissions {
         locus_table: flag(parser, "omit-locus-table"),
@@ -5636,19 +5630,18 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
         per_sample_statistics: flag(parser, "omit-per-sample-statistics"),
         interval_statistics: flag(parser, "omit-interval-statistics"),
     };
-    // The per-base file's suffix is the EMPTY one; every other suffix is a table this port does
-    // not compute.
+    // The per-base file's suffix is the EMPTY one, and the interval tables are ported; the
+    // cumulative tables and the per-sample summaries are not.
     let unported: Vec<&str> = coverage::written_suffixes(&omissions)
         .into_iter()
-        .filter(|suffix| !suffix.is_empty())
+        .filter(|suffix| !suffix.is_empty() && !suffix.contains("_interval_"))
         .collect();
     if !unported.is_empty() {
         return Err(Thrown::non_user(
             PORT_LIMITATION,
             format!(
-                "This run asks for {}, whose quantiles come from a partitioned data store this \
-                 port does not carry yet. Pass --omit-locus-table, --omit-interval-statistics and \
-                 --omit-per-sample-statistics. This message is the port's own and not GATK's.",
+                "This run asks for {}, which this port does not write yet. Pass \
+                 --omit-locus-table and --omit-per-sample-statistics. This message is the port's own and not GATK's.",
                 unported.join(", ")
             ),
         ));
@@ -5824,9 +5817,148 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
             "Fragment based counting is currently unsupported",
         ));
     }
-    // `--omit-depth-output-at-each-base` removes the per-base file, which is the only file this
-    // port writes: the run then writes nothing at all, and so does the reference once the other
-    // three omissions have taken their files away.
+    // Every base of every traversal interval is a locus, covered or not.
+    let loci = || {
+        intervals.iter().flat_map(|interval| {
+            (interval.start..=interval.end).map(|position| {
+                pileups
+                    .get(&(interval.contig.clone(), position))
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        coverage::count_pileup(&interval.contig, position, width, [], 0, 0)
+                    })
+            })
+        })
+    };
+    let endpoints = coverage::bin_endpoints(start, stop, bins);
+    let thresholds: Vec<i32> = match arguments(parser, "summary-coverage-threshold") {
+        given if given.is_empty() => vec![15],
+        given => given
+            .iter()
+            .filter_map(|value| value.parse().ok())
+            .collect(),
+    };
+    // A partition's columns, in the order `partitions` lays them out.
+    let mut ranges = Vec::new();
+    let mut offset = 0;
+    for (partition, ids) in &partitions {
+        ranges.push((*partition, ids, offset..offset + ids.len()));
+        offset += ids.len();
+    }
+
+    // The gene tables are the sample partition's alone. Without it the writer has no stream for
+    // them, and the first gene the traversal closes is refused.
+    let gene_lists = arguments(parser, "calculate-coverage-over-genes");
+    let sample = ranges
+        .iter()
+        .find(|(partition, _, _)| *partition == "sample");
+    let mut genes = Vec::new();
+    for path in &gene_lists {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+        genes.extend(coverage::read_refseq(&text).map_err(|message| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(message),
+        })?);
+    }
+    let mut closed_genes = coverage::track(loci(), &genes, width, &endpoints);
+    if sample.is_none() && !closed_genes.is_empty() {
+        // The writer opened its files at startup and never closes them, so each is left empty.
+        if !omissions.depth_output_at_each_base {
+            write_file(&output, b"")?;
+        }
+        if !omissions.interval_statistics {
+            for (partition, _, _) in &ranges {
+                let base = format!("{output}.{}_interval", file_partition(partition));
+                write_file(&format!("{base}_summary"), b"")?;
+                write_file(&format!("{base}_statistics"), b"")?;
+            }
+        }
+        // `--omit-genes-not-entirely-covered-by-traversal` reads the missing stats first.
+        return Err(
+            if flag(parser, "omit-genes-not-entirely-covered-by-traversal") {
+                Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.coverage.\
+                     DepthOfCoverageStats.getNumberOfLociCovered()\" because \
+                     \"coverageBySample\" is null",
+                )
+            } else {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    "Unable to find appropriate stream for partition = sample, \
+                     aggregation = gene, file type = summary",
+                )
+            },
+        );
+    }
+    // `onIntervalEnd` over the unmerged `-L` intervals: a summary row per interval the traversal
+    // reached, per partition, and the table of medians once the traversal is over.
+    if !omissions.interval_statistics {
+        let unmerged = gatk_engine::interval_arguments::intervals_without_merging(
+            &arguments(parser, "intervals"),
+            &header,
+            number(parser, "interval-padding"),
+        )
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+        let spans: Vec<coverage::Span> = unmerged
+            .iter()
+            .map(|interval| coverage::Span {
+                name: format!("{}:{}-{}", interval.contig, interval.start, interval.end),
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+                exons: Vec::new(),
+            })
+            .collect();
+        let closed = coverage::track(loci(), &spans, width, &endpoints);
+        for (partition, ids, columns) in &ranges {
+            write_target_files(
+                &format!("{output}.{}_interval", file_partition(partition)),
+                "Target",
+                &closed,
+                &spans,
+                ids,
+                columns.clone(),
+                &endpoints,
+                &thresholds,
+                separator,
+            )?;
+        }
+    }
+
+    if let Some((_, ids, columns)) = sample.filter(|_| !gene_lists.is_empty()) {
+        // `--omit-genes-not-entirely-covered-by-traversal`: a gene whose exons were not every one
+        // of them traversed is dropped from both tables.
+        if flag(parser, "omit-genes-not-entirely-covered-by-traversal") {
+            closed_genes.retain(|(at, stats)| {
+                let length: i64 = if genes[*at].exons.is_empty() {
+                    i64::from(genes[*at].end - genes[*at].start + 1)
+                } else {
+                    genes[*at]
+                        .exons
+                        .iter()
+                        .map(|(start, end)| i64::from(end - start + 1))
+                        .sum()
+                };
+                length <= stats.loci
+            });
+        }
+        write_target_files(
+            &format!("{output}.sample_gene"),
+            "Gene",
+            &closed_genes,
+            &genes,
+            ids,
+            columns.clone(),
+            &endpoints,
+            &thresholds,
+            separator,
+        )?;
+    }
+
+    // `--omit-depth-output-at-each-base` removes the per-base file.
     if omissions.depth_output_at_each_base {
         return Ok(Some("success".to_string()));
     }
@@ -5834,30 +5966,68 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     let print_base_counts = flag(parser, "print-base-counts");
     let mut text = coverage::per_locus_header_for(&partitions, print_base_counts, separator);
     text.push('\n');
-    for interval in &intervals {
-        // Every base of the interval is a row, covered or not.
-        for position in interval.start..=interval.end {
-            let empty;
-            let locus = match pileups.get(&(interval.contig.clone(), position)) {
-                Some(locus) => locus,
-                None => {
-                    empty = coverage::count_pileup(&interval.contig, position, width, [], 0, 0);
-                    &empty
-                }
-            };
-            text.push_str(&coverage::per_locus_row_for(
-                locus,
-                &widths,
-                print_base_counts,
-                include_deletions,
-                separator,
-            ));
-            text.push('\n');
-        }
+    for locus in loci() {
+        text.push_str(&coverage::per_locus_row_for(
+            &locus,
+            &widths,
+            print_base_counts,
+            include_deletions,
+            separator,
+        ));
+        text.push('\n');
     }
     write_file(&output, text.as_bytes())?;
     // `onTraversalSuccess` returns the word, lower case, which `handleResult` prints.
     Ok(Some("success".to_string()))
+}
+
+/// `DoCOutputType.getFilePath`'s name for a partition.
+fn file_partition(partition: &str) -> &str {
+    if partition == "readgroup" {
+        "read_group"
+    } else {
+        partition
+    }
+}
+
+/// The `_summary` and `_statistics` pair of one target kind: a summary row per closed span, in
+/// the order they closed, and the table of medians, which stays EMPTY, header and all, when no
+/// span closed because the reference creates it on the first one.
+#[allow(clippy::too_many_arguments)]
+fn write_target_files(
+    base: &str,
+    title: &str,
+    closed: &[(usize, gatk_tools::depth_of_coverage::Stats)],
+    spans: &[gatk_tools::depth_of_coverage::Span],
+    ids: &[String],
+    columns: std::ops::Range<usize>,
+    endpoints: &[i32],
+    thresholds: &[i32],
+    separator: char,
+) -> Result<(), Thrown> {
+    use gatk_tools::depth_of_coverage as coverage;
+    let mut summary = coverage::summary_header(title, ids, thresholds, separator);
+    summary.push('\n');
+    let mut table = vec![vec![0i64; endpoints.len() + 1]; ids.len()];
+    for (at, stats) in closed {
+        summary.push_str(&coverage::summary_line(
+            &spans[*at].name,
+            stats,
+            columns.clone(),
+            endpoints,
+            thresholds,
+            separator,
+        ));
+        summary.push('\n');
+        coverage::update_target_table(&mut table, stats, columns.clone());
+    }
+    let statistics = if closed.is_empty() {
+        String::new()
+    } else {
+        coverage::target_table(&table, endpoints, separator)
+    };
+    write_file(&format!("{base}_summary"), summary.as_bytes())?;
+    write_file(&format!("{base}_statistics"), statistics.as_bytes())
 }
 
 /// `CalculateGenotypePosteriors.apply`: likelihoods turned into posteriors under a prior built

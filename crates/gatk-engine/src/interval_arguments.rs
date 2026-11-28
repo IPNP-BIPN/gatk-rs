@@ -470,3 +470,32 @@ pub fn intervals_only(
 ) -> Result<Vec<SimpleInterval>, ParseError> {
     load_intervals(include, header, merging_rule)
 }
+
+/// `getIntervalsWithoutMerging`: each `-L` resolved and padded on its own, sorted, never merged
+/// and with no `-XL` taken away. `LocusWalkerByInterval` tracks these, one row of its tables each.
+pub fn intervals_without_merging(
+    include: &[String],
+    header: &SamHeader,
+    padding: i32,
+) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
+    let mut all = Vec::new();
+    for query in include.iter().filter(|query| query.as_str() != UNMAPPED) {
+        for interval in resolve_query(query, header)? {
+            if padding > 0 {
+                all.extend(
+                    interval.expand_within_contig(padding, contig_length(header, &interval.contig)),
+                );
+            } else {
+                all.push(interval);
+            }
+        }
+    }
+    all.sort_by_key(|interval| {
+        (
+            contig_index(header, &interval.contig),
+            interval.start,
+            interval.end,
+        )
+    });
+    Ok(all)
+}
