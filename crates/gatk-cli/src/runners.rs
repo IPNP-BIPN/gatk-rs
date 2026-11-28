@@ -6637,7 +6637,7 @@ pub fn print_read_counts(parser: &Parser) -> Outcome {
 
     // `-L` and `-XL` against the best dictionary, then the dictionaries: neither codec hands the
     // engine one, so only the master, reference and reads meet. The index is `FeatureWalker`'s.
-    let traversal = tool_intervals(parser)?;
+    let traversal = tool_intervals(parser, std::slice::from_ref(&input))?;
     validate_tool_dictionaries(parser)?;
     require_feature_index(&input, traversal.as_deref())?;
     let dictionary = master_dictionary(parser)?.map(|header| header.sequences);
@@ -13088,7 +13088,7 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
     // nothing and "Found contigs with the same name but different lengths" for two that do.
     // A BAM under `--input` is opened too, and the master meets the reads before the reference.
     // `-L` and `-XL` are resolved first, as `initializeIntervals` precedes the validation.
-    let intervals = tool_intervals(parser)?;
+    let intervals = tool_intervals(parser, std::slice::from_ref(&input))?;
     validate_tool_dictionaries(parser)?;
     require_feature_index(&input, intervals.as_deref())?;
     let dictionary = match master_dictionary(parser)? {
@@ -18382,7 +18382,7 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
             ));
         }
     }
-    let intervals = tool_intervals(parser)?;
+    let intervals = tool_intervals(parser, std::slice::from_ref(&input))?;
     // `validateSequenceDictionaries`, once the input is open: the text codec carries no
     // dictionary, so the pairs are the master's, the reference's and a BAM's under `--input`.
     validate_tool_dictionaries(parser)?;
@@ -18461,7 +18461,7 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
     let _ = resolve_read_filters(parser, "ConvertCountsToDepthFile")?;
-    let master = master_dictionary(parser)?;
+    master_dictionary(parser)?;
     // `initializeReference` comes before `initializeFeatures`, so a missing reference is refused
     // before the counts are opened.
     reference_dictionary(parser)?;
@@ -18524,26 +18524,10 @@ pub fn convert_counts_to_depth_file(parser: &Parser) -> Outcome {
         }
     };
 
-    // `validateSequenceDictionaries`, once the input is open: the text codec carries no
-    // dictionary, so the pairs are the master's, the reference's and a BAM's under `--input`.
+    // `initializeIntervals`, then `validateSequenceDictionaries` once the input is open: the text
+    // codec carries no dictionary, so the pairs are the master's, the reference's and a BAM's.
+    let intervals = tool_intervals(parser, std::slice::from_ref(&input))?;
     validate_tool_dictionaries(parser)?;
-
-    let intervals = match &master {
-        Some(header) => interval_arguments(parser, header)?.map(|parameters| parameters.intervals),
-        None if !arguments(parser, "intervals").is_empty()
-            || !arguments(parser, "exclude-intervals").is_empty() =>
-        {
-            return Err(Thrown::user(
-                "We require a sequence dictionary from a reference, a source of reads, or a source \
-                 of variants to process intervals.  Since reference and reads files generally \
-                 contain sequence dictionaries, this error most commonly occurs for VariantWalkers \
-                 that do not require a reference or reads.  You can fix the problem by passing a \
-                 reference file with a sequence dictionary via the -R argument or you can run the \
-                 tool UpdateVCFSequenceDictionary on your vcf.",
-            ));
-        }
-        None => None,
-    };
 
     let encoding =
         convert::check_output(&output, &format!("file://{}", java_absolute_path(&output)))
@@ -18713,7 +18697,7 @@ pub fn print_sv_evidence(parser: &Parser) -> Outcome {
         });
     }
     // `initializeIntervals`, the dictionaries, then each input's `setIntervalsForTraversal`.
-    let intervals = tool_intervals(parser)?;
+    let intervals = tool_intervals(parser, &inputs)?;
     validate_tool_dictionaries(parser)?;
     for input in &inputs {
         require_feature_index(input, intervals.as_deref())?;
@@ -18951,7 +18935,8 @@ pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
         files.push(records);
     }
     // `initializeIntervals`, the dictionaries, then each input's `setIntervalsForTraversal`.
-    let intervals = tool_intervals(parser)?;
+    let features: Vec<String> = inputs.iter().cloned().chain([sites_path.clone()]).collect();
+    let intervals = tool_intervals(parser, &features)?;
     validate_tool_dictionaries(parser)?;
     for input in &inputs {
         require_feature_index(input, intervals.as_deref())?;
@@ -19321,6 +19306,7 @@ fn best_dictionary(parser: &Parser) -> Result<Vec<String>, Thrown> {
 /// the reference's, then the reads'. With none of them, giving either is refused.
 fn tool_intervals(
     parser: &Parser,
+    features: &[String],
 ) -> Result<Option<Vec<gatk_engine::interval::SimpleInterval>>, Thrown> {
     let inputs = arguments(parser, "input");
     let best = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
@@ -19330,7 +19316,19 @@ fn tool_intervals(
                 sequences: reads_dictionary(parser, path, inputs.len())?,
                 ..SamHeader::default()
             }),
-            None => None,
+            // `features.getAllSequenceDictionaries()`: the one feature source with a dictionary,
+            // its header's or else its index's, and none when two have one.
+            None => {
+                let mut found: Vec<SamHeader> = features
+                    .iter()
+                    .filter_map(|path| feature_source_dictionary(path))
+                    .collect();
+                if found.len() == 1 {
+                    found.pop()
+                } else {
+                    None
+                }
+            }
         },
     };
     match best {
@@ -19349,6 +19347,20 @@ fn tool_intervals(
         }
         None => Ok(None),
     }
+}
+
+/// `FeatureDataSource.getSequenceDictionary`: a VCF's `##contig` lines, else the index's contigs.
+///
+/// shortcut: only a plain-text `.vcf` header is read, since the SV text codecs carry no dictionary
+/// and no caller passes a block-compressed VCF; read the `.vcf.gz` header when one does.
+fn feature_source_dictionary(path: &str) -> Option<SamHeader> {
+    let own = path
+        .ends_with(".vcf")
+        .then(|| std::fs::read_to_string(path).ok())
+        .flatten()
+        .map(|text| vcf_dictionary(&text))
+        .filter(|header| !header.sequences.is_empty());
+    own.or_else(|| index_dictionary(path))
 }
 
 /// `FeatureWalker.onStartup`, past the engine's: `setIntervalsForTraversal` on a driving file with
@@ -20092,7 +20104,7 @@ pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
         );
     }
     // `initializeIntervals`, then each input's `setIntervalsForTraversal`, which needs its index.
-    let intervals = tool_intervals(parser)?;
+    let intervals = tool_intervals(parser, &inputs)?;
     for input in &inputs {
         require_feature_index(input, intervals.as_deref())?;
     }
@@ -24004,7 +24016,9 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
     use gatk_tools::sequence_dictionary::{compare, Compatibility};
 
     let _ = resolve_read_filters(parser, "CombineSegmentBreakpoints")?;
-    // `GATKTool.onStartup`: a BAM given to this tool is still opened, and its dictionary checked.
+    // `GATKTool.onStartup`: `initializeIntervals` needs a dictionary for -L, which this tool then
+    // ignores; a BAM given to it is still opened, and its dictionary checked.
+    tool_intervals(parser, &[])?;
     validate_tool_dictionaries(parser)?;
     let segments = arguments(parser, "segments");
     // The declaration's default is `[1, 2]`, and `--labels null` empties it.
@@ -24450,6 +24464,9 @@ pub fn filter_funcotations(parser: &Parser) -> Outcome {
         intervals,
         ..
     } = variant_walker_startup(parser, "FilterFuncotations")?;
+    // `VariantWalker.onStartup`'s `setIntervalsForTraversal`, before `onTraversalStart` reads the
+    // FUNCOTATION header line.
+    require_feature_index(&input, intervals.as_deref())?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;

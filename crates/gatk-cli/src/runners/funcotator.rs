@@ -1076,7 +1076,7 @@ pub fn funcotate_segments(parser: &Parser) -> Outcome {
             false,
         ))
     })?;
-    let intervals = tool_intervals(parser)?;
+    let intervals = tool_intervals(parser, std::slice::from_ref(&segments_path))?;
     // `validateSequenceDictionaries`: a BAM under `--input` is opened and checked too.
     validate_tool_dictionaries(parser)?;
     // `FeatureWalker.onStartup`: `-L` needs the segment file's index.

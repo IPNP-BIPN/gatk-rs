@@ -425,7 +425,16 @@ pub fn traversal_parameters(
 
     let include_set = if included.is_empty() {
         if include.is_empty() {
-            // No `-L` at all: the include set is the whole reference.
+            // No `-L` at all: the include set is the whole reference, each contig through
+            // `createOverEntireContig`, which refuses the unknown length an index's dictionary has.
+            if let Some(sequence) = header.sequences.iter().find(|s| s.length == 0) {
+                return Err(IntervalArgumentError::File(
+                    crate::interval_args::IntervalArgumentError::MalformedGenomeLoc(format!(
+                        "The stop position 0 is less than start 1 in contig {}",
+                        sequence.name
+                    )),
+                ));
+            }
             whole_reference(header)
         } else {
             // `-L unmapped` alone: every mapped interval is gone, and the flag is the answer.
