@@ -223,6 +223,12 @@
       "cases": 1
     },
     {
+      "id": "vcf-lazy-writer-samples",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "vcf-lazy-genotypes",
       "status": "oracle-backed",
       "tools": [],
@@ -530,5 +536,5 @@
     }
   ],
   "source": "htsjdk-rs origin/main",
-  "commit": "0730c93b27ae561c891c711240f27c2d8dd789f5"
+  "commit": "44030f598f042bba74350042c5e320e08d5ddebe"
 }
