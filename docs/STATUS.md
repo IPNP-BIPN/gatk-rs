@@ -266,7 +266,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `HaplotypeCallerSpark` | assembly-caller | oracle-backed | spark-walkers | 1 | t=2, 49/49 rows (100%) | not measured |
 | `HtsgetReader` | unclassified | oracle-backed | htsget-reader | 1 | t=2, 12/12 rows (100%) | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums | 3 | t=2, 8/8 rows (100%) | 0.002 / 0.063 |
-| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker | 2 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
+| `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation, multi-variant-walker, port-limitations | 3 | t=2, 22/22 rows (100%) | 0.003 / 0.065 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.023 / 0.302 |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | t=2, 22/22 rows (100%) | 0.004 / 0.091 |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.044 |
@@ -316,7 +316,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) | 0.003 / 0.043 |
 | `RevertSamSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 28/28 rows (100%) | not measured |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | t=2, 18/18 rows (100%) | 0.003 / 0.067 |
-| `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, sv-cluster | 2 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
+| `SVCluster` | sv-caller | oracle-backed | multi-variant-walker, port-limitations, sv-cluster | 3 | t=2, 24/24 rows (100%) | 0.002 / 0.048 |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | t=2, 40/40 rows (100%) | 0.003 / 0.064 |
 | `SVStratify` | sv-caller | oracle-backed | multi-variant-walker, sv-stratify | 2 | t=2, 16/16 rows (100%) | 0.002 / 0.059 |
 | `ScoreVariantAnnotations` | variant-transform | oracle-backed | interpreter-tools, vets-isolation-forest | 2 | t=2, 27/27 rows (100%) | not measured |

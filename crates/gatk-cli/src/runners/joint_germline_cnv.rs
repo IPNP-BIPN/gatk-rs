@@ -643,12 +643,9 @@ pub fn joint_germline_cnv_segmentation(parser: &Parser) -> Outcome {
     let pedigree_path = argument(parser, "pedigree").ok_or_else(|| {
         Thrown::command_line("Argument pedigree was missing: Argument 'pedigree' is required")
     })?;
-    let Some(reference_path) = argument(parser, "reference") else {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "A walker without --reference is refused by the engine before it starts, which this port does not word yet. This message is the port's own and not GATK's.",
-        ));
-    };
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
     let Some(dictionary) = reference_dictionary(parser)? else {
         return Err(Thrown::user("Reference sequence dictionary required"));
     };
