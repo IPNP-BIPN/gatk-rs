@@ -2735,41 +2735,7 @@ pub fn pileup(parser: &Parser) -> Outcome {
         intervals,
         filters,
     } = read_walker_startup(parser, "Pileup")?;
-    // Each `--metadata` source opened at startup, in the order the command line gave them.
-    enum Metadata {
-        Vcf(Vec<(gatk_tools::variants_to_table::Record, String)>),
-        /// BED spans, one-based and closed: a feature only refused once it would be printed.
-        Bed(Vec<(String, i32, i32)>),
-    }
-    let mut metadata = Vec::new();
-    for path in arguments(parser, "metadata") {
-        let (codec, text) = open_feature_input(&path)?;
-        let source = match codec {
-            gatk_tools::feature_codec::Codec::Vcf => Metadata::Vcf(vcf_records(
-                &text,
-                &samples_in_file_order(&text),
-                &vcf_declarations(&text),
-            )),
-            gatk_tools::feature_codec::Codec::Bed => Metadata::Bed(
-                text.lines()
-                    .filter(|line| {
-                        !(line.starts_with('#')
-                            || line.starts_with("track")
-                            || line.starts_with("browser"))
-                    })
-                    .filter_map(|line| {
-                        let field: Vec<&str> = line.split('\t').collect();
-                        Some((
-                            field.first()?.to_string(),
-                            field.get(1)?.parse::<i32>().ok()? + 1,
-                            field.get(2)?.parse().ok()?,
-                        ))
-                    })
-                    .collect(),
-            ),
-        };
-        metadata.push((path, source));
-    }
+    let metadata = open_pileup_metadata(parser)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -2820,12 +2786,9 @@ pub fn pileup(parser: &Parser) -> Outcome {
     // The first locus queries the metadata, in order, before it asks for its reference base, and a
     // source without an index cannot be queried. The output is open by then, so it is left empty.
     if !applied.is_empty() {
-        if let Some((path, _)) = metadata.iter().find(|(path, _)| !has_feature_index(path)) {
+        if let Some(refusal) = pileup_metadata_unqueryable(&metadata) {
             write_file(&output, b"")?;
-            return Err(Thrown::user(format!(
-                "Input {path} must support random access to enable queries by interval. If it's \
-                 a file, please index it using the bundled tool IndexFeatureFile"
-            )));
+            return Err(refusal);
         }
     }
 
@@ -2865,42 +2828,7 @@ pub fn pileup(parser: &Parser) -> Outcome {
             .map(|base| *base as char)
             .unwrap_or('N');
         // `FeatureContext.getValues(metadata)`: each source's records over the locus, in file order.
-        let position = one.context.position;
-        let mut features: Vec<String> = Vec::new();
-        for (path, source) in &metadata {
-            match source {
-                Metadata::Vcf(records) => features.extend(
-                    records
-                        .iter()
-                        .filter(|(record, _)| {
-                            record.contig == one.context.contig
-                                && record.start <= position
-                                && position < record.start + record.reference.len() as i32
-                        })
-                        .map(|(record, raw)| {
-                            // A sites-only record's genotypes are an empty list, not lazy text.
-                            variant_context_to_string(
-                                record,
-                                if raw.is_empty() { "[]" } else { raw },
-                            )
-                        }),
-                ),
-                Metadata::Bed(spans) => {
-                    if spans.iter().any(|(contig, start, end)| {
-                        *contig == one.context.contig && *start <= position && position <= *end
-                    }) {
-                        return Err(Thrown::non_user(
-                            PORT_LIMITATION,
-                            format!(
-                                "Pileup's --metadata {path} prints a BED feature as \
-                                 Object.toString renders it, an identity hash only the JVM \
-                                 knows. This message is the port's own and not GATK's."
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
+        let features = pileup_features(&metadata, &one.context.contig, one.context.position)?;
         text.push_str(&gatk_tools::pileup::line(
             &one.context.pileup,
             base,
@@ -2913,6 +2841,100 @@ pub fn pileup(parser: &Parser) -> Outcome {
     std::fs::write(&output, &text)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// A `--metadata` source of `Pileup` or `PileupSpark`.
+pub(crate) enum PileupMetadata {
+    Vcf(Vec<(gatk_tools::variants_to_table::Record, String)>),
+    /// BED spans, one-based and closed: a feature only refused once it would be printed.
+    Bed(Vec<(String, i32, i32)>),
+}
+
+/// Each `--metadata` source opened at startup, in the order the command line gave them.
+pub(crate) fn open_pileup_metadata(
+    parser: &Parser,
+) -> Result<Vec<(String, PileupMetadata)>, Thrown> {
+    let mut metadata = Vec::new();
+    for path in arguments(parser, "metadata") {
+        let (codec, text) = open_feature_input(&path)?;
+        let source = match codec {
+            gatk_tools::feature_codec::Codec::Vcf => PileupMetadata::Vcf(vcf_records(
+                &text,
+                &samples_in_file_order(&text),
+                &vcf_declarations(&text),
+            )),
+            gatk_tools::feature_codec::Codec::Bed => PileupMetadata::Bed(
+                text.lines()
+                    .filter(|line| {
+                        !(line.starts_with('#')
+                            || line.starts_with("track")
+                            || line.starts_with("browser"))
+                    })
+                    .filter_map(|line| {
+                        let field: Vec<&str> = line.split('\t').collect();
+                        Some((
+                            field.first()?.to_string(),
+                            field.get(1)?.parse::<i32>().ok()? + 1,
+                            field.get(2)?.parse().ok()?,
+                        ))
+                    })
+                    .collect(),
+            ),
+        };
+        metadata.push((path, source));
+    }
+    Ok(metadata)
+}
+
+/// The first locus queries every source, and one without an index cannot be queried.
+pub(crate) fn pileup_metadata_unqueryable(metadata: &[(String, PileupMetadata)]) -> Option<Thrown> {
+    let (path, _) = metadata.iter().find(|(path, _)| !has_feature_index(path))?;
+    Some(Thrown::user(format!(
+        "Input {path} must support random access to enable queries by interval. If it's a file, \
+         please index it using the bundled tool IndexFeatureFile"
+    )))
+}
+
+/// `FeatureContext.getValues(metadata)` at one locus, each feature as its `toString`: each source's
+/// records over the locus, in file order.
+pub(crate) fn pileup_features(
+    metadata: &[(String, PileupMetadata)],
+    contig: &str,
+    position: i32,
+) -> Result<Vec<String>, Thrown> {
+    let mut features: Vec<String> = Vec::new();
+    for (path, source) in metadata {
+        match source {
+            PileupMetadata::Vcf(records) => features.extend(
+                records
+                    .iter()
+                    .filter(|(record, _)| {
+                        record.contig == contig
+                            && record.start <= position
+                            && position < record.start + record.reference.len() as i32
+                    })
+                    .map(|(record, raw)| {
+                        // A sites-only record's genotypes are an empty list, not lazy text.
+                        variant_context_to_string(record, if raw.is_empty() { "[]" } else { raw })
+                    }),
+            ),
+            PileupMetadata::Bed(spans) => {
+                if spans.iter().any(|(name, start, end)| {
+                    name == contig && *start <= position && position <= *end
+                }) {
+                    return Err(Thrown::non_user(
+                        PORT_LIMITATION,
+                        format!(
+                            "--metadata {path} prints a BED feature as \
+                             Object.toString renders it, an identity hash only the JVM \
+                             knows. This message is the port's own and not GATK's."
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(features)
 }
 
 /// `CheckPileup.apply`, once per locus, against the samtools mpileup file `--pileup` names.
