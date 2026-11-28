@@ -2828,7 +2828,6 @@ pub fn pileup(parser: &Parser) -> Outcome {
             .map(|base| *base as char)
             .unwrap_or('N');
         // `FeatureContext.getValues(metadata)`: each source's records over the locus, in file order.
-        let position = one.context.position;
         let features = pileup_features(&metadata, &one.context.contig, one.context.position)?;
         text.push_str(&gatk_tools::pileup::line(
             &one.context.pileup,
@@ -2916,10 +2915,7 @@ pub(crate) fn pileup_features(
                     })
                     .map(|(record, raw)| {
                         // A sites-only record's genotypes are an empty list, not lazy text.
-                        variant_context_to_string(
-                            record,
-                            if raw.is_empty() { "[]" } else { raw },
-                        )
+                        variant_context_to_string(record, if raw.is_empty() { "[]" } else { raw })
                     }),
             ),
             PileupMetadata::Bed(spans) => {
