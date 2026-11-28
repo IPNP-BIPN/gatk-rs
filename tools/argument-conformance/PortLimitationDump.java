@@ -209,6 +209,11 @@ public class PortLimitationDump {
                 + "chr1\t101\t.\tT\tC,G\t12.5\tq10\t.\tGT:DP\t0/1:3\t1/2:4\n"));
         run("pileup-metadata-genotyped", "Pileup", "-R", fasta, "-I", piled, "-L", "chr1:99-106",
                 "--metadata", genotyped, "--metadata", indexedVcf, "-O", "{out}/out.txt");
+        // PileupSpark runs the same lookup inside its tasks.
+        run("pileupspark-metadata", "PileupSpark", "-R", fasta, "-I", piled, "-L", "chr1:99-106",
+                "--metadata", genotyped, "--metadata", indexedVcf, "-O", "{out}/out");
+        run("pileupspark-metadata-unindexed", "PileupSpark", "-R", fasta, "-I", piled, "-L",
+                "chr1:99-106", "--metadata", vcf, "-O", "{out}/out");
         run("pileup-metadata-no-reads", "Pileup", "-R", fasta, "-I", piled, "-L", "chr2:99-106",
                 "--metadata", vcf, "-O", "{out}/out.txt");
 

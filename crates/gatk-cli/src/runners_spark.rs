@@ -644,20 +644,13 @@ pub(super) fn write_spark_vcf(
 /// the shards through `SparkSharder.joinOverlapping`, which fails inside a task when the filtered
 /// reads are empty: every partition is, so the shards are given partition `-1`.
 pub fn pileup_spark(parser: &Parser) -> Outcome {
-    if !arguments(parser, "metadata").is_empty() {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "PileupSpark's --metadata is a feature source this port does not open yet, and a run \
-             that ignored it would answer without the column it asks for. This message is the \
-             port's own and not GATK's.",
-        ));
-    }
     let SparkStart {
         source,
         header,
         intervals,
         filters,
     } = spark_startup(parser, "PileupSpark")?;
+    let metadata = super::open_pileup_metadata(parser)?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -738,10 +731,12 @@ pub fn pileup_spark(parser: &Parser) -> Outcome {
                 .map(|base| *base as char)
                 .unwrap_or('N');
             // `saveAsTextFile` ends every record with a newline of its own, after the tool's.
+            let features =
+                super::pileup_features(&metadata, &one.context.contig, one.context.position)?;
             text.push_str(&gatk_tools::pileup::line_unfiltered(
                 &one.context.pileup,
                 base,
-                &[],
+                &features,
                 output_insert_length,
                 show_verbose,
             ));
